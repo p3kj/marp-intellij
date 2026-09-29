@@ -1,5 +1,7 @@
 package cz.p3kj.marp.editor
 
+import com.intellij.openapi.actionSystem.ActionGroup
+import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.fileEditor.FileEditor
 import com.intellij.openapi.fileEditor.FileEditorPolicy
 import com.intellij.openapi.fileEditor.FileEditorProvider
@@ -53,7 +55,12 @@ internal class MarpPreviewFileEditorProvider : FileEditorProvider, DumbAware {
     override fun getPolicy(): FileEditorPolicy = FileEditorPolicy.PLACE_AFTER_DEFAULT_EDITOR
 }
 
-/** Text editor + Marp preview, with editor <-> preview scroll sync. */
+/**
+ * Text editor + Marp preview, with editor <-> preview scroll sync and the preview toolbar.
+ *
+ * The toolbar (group [TOOLBAR_GROUP_ID]) goes into the right group only: the platform shows it in the floating toolbar
+ * of the editor, so the editor gets no permanent toolbar row. The left group stays empty for the same reason.
+ */
 class MarpSplitEditor(textEditor: TextEditor, preview: MarpPreviewFileEditor) :
     TextEditorWithPreview(textEditor, preview, MarpBundle.message("editor.name"), TextEditorWithPreview.Layout.SHOW_EDITOR_AND_PREVIEW) {
 
@@ -63,10 +70,17 @@ class MarpSplitEditor(textEditor: TextEditor, preview: MarpPreviewFileEditor) :
         Disposer.register(this, scrollSync)
     }
 
+    override fun createRightToolbarActionGroup(): ActionGroup? = ActionManager.getInstance().getAction(TOOLBAR_GROUP_ID) as? ActionGroup
+
     override fun onLayoutChange(oldValue: TextEditorWithPreview.Layout?, newValue: TextEditorWithPreview.Layout?) {
         scrollSync.layoutChanged(newValue)
     }
 
     override val splitterProportionKey: String
         get() = "MarpPreview.SplitterProportionKey"
+
+    companion object {
+        /** Id of the toolbar action group in plugin.xml. */
+        const val TOOLBAR_GROUP_ID: String = "Marp.PreviewToolbar"
+    }
 }

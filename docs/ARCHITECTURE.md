@@ -29,7 +29,7 @@ avoids internal, deprecated and experimental APIs.
 |---|---|
 | `webview/` | npm project: preview page, marp-core bundle (esbuild), vitest tests |
 | `cz.p3kj.marp.MarpDetector` | front-matter `marp: true` detection |
-| `cz.p3kj.marp.editor` | file editor provider, split editor, preview file editor |
+| `cz.p3kj.marp.editor` | file editor provider, split editor, preview file editor, preview toolbar actions (group `Marp.PreviewToolbar`) |
 | `cz.p3kj.marp.preview` | JCEF panel, JS bridge, resource request handler |
 | `cz.p3kj.marp.sync` | editor <-> preview scroll sync, caret -> active slide |
 | `cz.p3kj.marp.notifications` | "Marp deck detected, reopen with preview" banner |

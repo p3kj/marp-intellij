@@ -83,6 +83,7 @@ A Markdown file is treated as a Marp deck when its front matter contains `marp: 
 - **Scrolling** the editor scrolls the preview to the same source line, and the other way round.
 - **The caret** highlights the slide it is in.
 - **Double-click** a slide to move the caret to its source line and focus the editor.
+- **Toolbar**: move the mouse over the editor or the preview and a small toolbar appears in the top-right corner. It toggles scroll sync and presenter notes and opens Settings | Tools | Marp. Turning scroll sync back on realigns the preview with the editor.
 - **Links**: links to files inside the project open in the IDE. `http(s)` and `mailto` links open in the system browser. Everything else is ignored. The preview page itself never navigates away.
 - **Errors** (a theme that cannot be loaded, a render error, a `theme:` directive that names an unknown theme) show as a banner in the preview that you can dismiss.
 - **Theme CSS edits** are picked up while you type.
@@ -101,6 +102,8 @@ Open Settings | Tools | Marp.
 | Math typesetting | MathJax, KaTeX or Off. The `math:` directive in the front matter takes precedence over this setting where marp-core allows it. |
 | Show presenter notes under slides | Shows each slide's presenter notes (HTML comments that are not directives, like `<!-- Say hello -->`) under the slide. Off by default, applies to all projects. |
 | Synchronize scrolling between editor and preview | Turns scroll sync on or off. This setting applies to all projects. |
+
+Presenter notes and scroll sync can also be toggled from the preview toolbar; that changes these same settings.
 
 The theme, HTML and math settings are stored per project in `.idea/marp.xml`. You can commit that file to share them with your team. Presenter notes and scroll sync are personal preferences and are stored in the IDE configuration.
 

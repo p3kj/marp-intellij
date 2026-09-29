@@ -9,7 +9,7 @@
         <p><b>Features</b></p>
         <ul>
             <li><b>Live preview</b> rendered by <a href="https://github.com/marp-team/marp-core">marp-core</a> inside the IDE's built-in browser (JCEF). No Node.js, no Marp CLI, no external process.</li>
-            <li><b>Scroll sync</b> in both directions, the slide under the caret is highlighted, double-click a slide to jump to its source line.</li>
+            <li><b>Scroll sync</b> in both directions, the slide under the caret is highlighted, double-click a slide to jump to its source line. Toolbar toggles for scroll sync and presenter notes.</li>
             <li><b>Custom themes</b> from CSS files, folders or URLs (the same entries as <code>markdown.marp.themes</code> in VS Code), plus automatic pickup of <code>themeSet</code> from <code>.marprc.yml</code>. Theme edits show up live.</li>
             <li><b>Local images</b> with relative paths, <code>![bg](...)</code> backgrounds, fitting headers, Twemoji.</li>
             <li><b>Math</b> with MathJax (works offline) or KaTeX.</li>
@@ -47,4 +47,24 @@
                 key="settings.displayName"
                 bundle="messages.MarpBundle"/>
     </extensions>
+
+    <actions>
+        <!-- Shown in the floating toolbar of the Marp editor, see MarpSplitEditor.createRightToolbarActionGroup. The synonyms make the toggles findable by "marp" in Find Action. -->
+        <group id="Marp.PreviewToolbar">
+            <action id="Marp.ToggleScrollSync"
+                    class="cz.p3kj.marp.editor.MarpScrollSyncToggleAction"
+                    icon="AllIcons.Actions.SynchronizeScrolling">
+                <synonym key="action.Marp.ToggleScrollSync.synonym"/>
+            </action>
+            <action id="Marp.TogglePresenterNotes"
+                    class="cz.p3kj.marp.editor.MarpPresenterNotesToggleAction"
+                    icon="AllIcons.General.Note">
+                <synonym key="action.Marp.TogglePresenterNotes.synonym"/>
+            </action>
+            <separator/>
+            <action id="Marp.OpenSettings"
+                    class="cz.p3kj.marp.editor.MarpOpenSettingsAction"
+                    icon="AllIcons.General.Settings"/>
+        </group>
+    </actions>
 </idea-plugin>
