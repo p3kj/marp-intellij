@@ -28,7 +28,9 @@ avoids internal, deprecated and experimental APIs.
 | Path | Owner / purpose |
 |---|---|
 | `webview/` | npm project: preview page, marp-core bundle (esbuild), vitest tests |
-| `cz.p3kj.marp.MarpDetector` | front-matter `marp: true` detection |
+| `cz.p3kj.marp.MarpDetector` | front-matter `marp: true` detection, and where the front matter ends |
+| `cz.p3kj.marp.slides` | slide model: Markdown PSI -> blocks (`MarpSlideParser`), Marp's split rules (`MarpSlideSplitter`, `MarpHeadingDivider`), `MarpDeck` / `MarpSlide` |
+| `cz.p3kj.marp.structure` | slide outline for the Structure tool window and the File Structure popup |
 | `cz.p3kj.marp.editor` | file editor provider, split editor, preview file editor, preview toolbar actions (group `Marp.PreviewToolbar`) |
 | `cz.p3kj.marp.preview` | JCEF panel, JS bridge, resource request handler |
 | `cz.p3kj.marp.sync` | editor <-> preview scroll sync, caret -> active slide |
@@ -210,6 +212,38 @@ string:
 - Theme CSS is sent as text; marp-core's `themeSet.add(css)` picks it up by its `@theme` name. Relative `url()`
   inside theme CSS resolve against the document base (same as marp-vscode).
 
+## Slide model (Kotlin)
+
+`MarpDeck` (package `cz.p3kj.marp.slides`) is the Kotlin side's view of a deck: a list of `MarpSlide`s that partition the
+whole text (`startOffset` / `endOffset`, the front matter belongs to slide 1, a `---` line belongs to the slide it
+starts), the headings of each slide, and `slideIndexAt(offset)`. Features that need slides use it: the Structure view
+today, slide navigation and folding later.
+
+- `MarpSlideParser.deck(MarkdownFile)` (cached per PSI modification, call in a read action) walks the Markdown plugin's
+  PSI for the blocks that matter: top-level thematic breaks, headings at any depth, HTML comments (block and inline,
+  they carry directives) and "other visible content". CommonMark parsing therefore decides what is a break: code
+  fences and indented code, setext headings, `---` inside `<!-- -->` or `<style>`, blockquotes and lists are handled
+  by the parser, like markdown-it does for Marpit. The front matter is located by `MarpDetector.findFrontMatter`
+  (same rules as detection), not by the PSI front matter elements (`@ApiStatus.Experimental`); PSI nodes that start
+  inside it are skipped. Only `MarkdownFile`, `MarkdownHeader.level` / `name` and the element and token type
+  constants are used from the Markdown plugin.
+- `MarpSlideSplitter.split` (pure, unit-tested) mirrors Marpit's `markdown/slide.js` (split at every top-level `hr`)
+  and `markdown/heading_divider.js` (a hidden `hr` before headings of the `headingDivider` levels, only when something
+  visible precedes it, so a real `---` followed by a divider heading leaves an empty slide between them). This has to
+  agree with the preview: keep it in sync if the webview ever sets marp options that change slide splitting, such as a
+  default `headingDivider`, or if Marpit changes the rules (the code cites the Marpit files it ports).
+- `MarpHeadingDivider.resolve` finds the `headingDivider` global directive like Marpit: front matter first, then every
+  directive comment in document order, the last valid value wins for the whole deck. Values follow Marpit's conversion
+  (a number `n` means levels 1..n, a list keeps 1..6, `false` is off, anything else is ignored). YAML is not parsed,
+  only `headingDivider:` at the start of a line (inline value, `[1, 3]` list or block sequence) is recognised.
+- `MarpStructureViewBuilder` (returned by `MarpSplitEditor.getStructureViewBuilder`, so only Marp decks get it, other
+  Markdown files keep the Markdown plugin's outline) lists one node per slide, `Slide 3: Agenda`, titled by its first
+  heading, with the other headings nested by level. Tree values are keys (`MarpSlideKey`, `MarpHeadingKey`: indices, not
+  offsets) so that node identity, expansion and selection survive typing. Navigation goes through
+  `OpenFileDescriptor`, which the split editor routes to its text editor; the caret listener of the scroll sync then
+  highlights the slide in the preview. The tree follows the caret through `getCurrentEditorElement`. It does not
+  implement `ExpandInfoProvider` (experimental).
+
 ## Threading and lifecycle rules
 
 - No blocking work on the EDT; document text read in read actions; file I/O and HTTP on `Dispatchers.IO`.
@@ -241,7 +275,8 @@ string:
 
 - Kotlin (`src/test`): light platform tests based on `MarpLightTestCase` (editor provider, settings page and settings,
   theme service including trust, `.marprc` confinement and download limits), plus plain unit tests for logic that does
-  not need the platform: `MarpDetector`, `MarpBridgeState`, `MarpScrollEchoGuard`, `MarpLinkPolicy` (and request
+  not need the platform: `MarpDetector`, `MarpSlideSplitter` and `MarpHeadingDivider` (slide splitting, tricky cases by
+  hand-built blocks; `MarpSlideParserTest` and `MarpStructureViewTest` cover the PSI adapter and the tree), `MarpBridgeState`, `MarpScrollEchoGuard`, `MarpLinkPolicy` (and request
   routing), `MarpResourcePaths`, `MarpJcefStartup`, the `.marprc` parser, `MarpThemePaths`, `MarpThemeFolder`,
   `MarpThemeWatch` and the theme URL validation of the settings page.
 - Webview (`webview/test`, vitest with jsdom): the host bridge and message queue, marp-core plugins and render options,

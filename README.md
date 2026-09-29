@@ -64,6 +64,7 @@ For a bigger example open the `samples/` folder of this repository as a project.
 
 - Live preview of Marp decks next to the Markdown editor, refreshed while typing
 - Two-way scroll sync, highlight of the slide under the caret, double-click a slide to jump to its source line
+- Slide outline in the Structure tool window and the File Structure popup (Ctrl+F12 / Cmd+F12), with each slide's headings; click a slide to jump to it
 - File | New | Marp Presentation starter deck, and live templates `slide`, `lead`, `bg` and `notes` (type the abbreviation and press Tab)
 - Custom themes from files, folders and URLs, and automatic pickup of `themeSet` from `.marprc.yml`
 - Theme CSS edits show up live, before the file is saved
@@ -83,6 +84,7 @@ A Markdown file is treated as a Marp deck when its front matter contains `marp: 
 - **Typing** re-renders the preview at most every 150 ms. Nothing needs to be saved.
 - **Scrolling** the editor scrolls the preview to the same source line, and the other way round.
 - **The caret** highlights the slide it is in.
+- **Structure view** (Structure tool window, Ctrl+F12 / Cmd+F12): one node per slide, named after its first heading, with the other headings of the slide nested below it. Slides follow the same rules as the preview, including `headingDivider`. Clicking a node moves the caret there, so the preview highlights that slide and, with scroll sync on, scrolls to it. Other Markdown files keep the regular heading outline.
 - **Double-click** a slide to move the caret to its source line and focus the editor.
 - **Toolbar**: move the mouse over the editor or the preview and a small toolbar appears in the top-right corner. It toggles scroll sync and presenter notes and opens Settings | Tools | Marp. Turning scroll sync back on realigns the preview with the editor.
 - **Links**: links to files inside the project open in the IDE. `http(s)` and `mailto` links open in the system browser. Everything else is ignored. The preview page itself never navigates away.
