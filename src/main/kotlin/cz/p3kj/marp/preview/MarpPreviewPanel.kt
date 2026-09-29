@@ -95,6 +95,8 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
         Disposer.register(this, requestHandler)
 
         browser.setProperty(JBCefBrowserBase.Properties.NO_CONTEXT_MENU, true)
+        // No JCEF error page: it is loaded as a navigation away from the preview page, which is always cancelled.
+        browser.setErrorPage(null)
         query.addHandler { message ->
             onMessage(message)
             null
@@ -247,20 +249,22 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
         }
     }
 
-    /** Link clicked in the preview: local files open in the IDE, web and mail links in the system browser. */
+    /**
+     * Link clicked in the preview (or a popup / cancelled navigation), see [MarpLinkPolicy]: local files inside the
+     * allowed roots open in the IDE, web and mail links in the system browser, anything else is ignored.
+     */
     private suspend fun openLink(href: String) {
-        if (href.startsWith(MarpResourcePaths.DOC_URL_PREFIX, ignoreCase = true)) {
-            val target = MarpResourcePaths.parse(href) as? MarpResourcePaths.Target.Doc ?: return
-            val file = withContext(Dispatchers.IO) {
-                LocalFileSystem.getInstance().refreshAndFindFileByNioFile(target.path)
-            } ?: return
-            if (file.isDirectory) return
-            withContext(Dispatchers.EDT) {
-                if (!project.isDisposed && file.isValid) OpenFileDescriptor(project, file).navigate(true)
+        when (val action = withContext(Dispatchers.IO) { MarpLinkPolicy.decide(href, allowedRoots) }) {
+            is MarpLinkPolicy.Action.OpenFile -> {
+                val file = withContext(Dispatchers.IO) {
+                    LocalFileSystem.getInstance().refreshAndFindFileByNioFile(action.path)
+                } ?: return
+                withContext(Dispatchers.EDT) {
+                    if (!project.isDisposed && file.isValid && !file.isDirectory) OpenFileDescriptor(project, file).navigate(true)
+                }
             }
-        }
-        else if (!MarpResourcePaths.isMarpUrl(href) && MarpResourceRequestHandler.isExternalUrl(href)) {
-            BrowserUtil.browse(href, project)
+            is MarpLinkPolicy.Action.Browse -> BrowserUtil.browse(action.url, project)
+            MarpLinkPolicy.Action.Ignore -> LOG.debug("Ignoring preview link $href")
         }
     }
 

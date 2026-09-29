@@ -25,10 +25,13 @@ private val LOG = logger<MarpResourceRequestHandler>()
 
 /**
  * Serves `https://marp.localhost/app/...` from the plugin jar and `https://marp.localhost/doc/...` from disk (only inside
- * [allowedRoots]) for one preview browser; every other request goes to the network as usual.
+ * [allowedRoots], and only for requests made by the preview page itself) for one preview browser; every other request
+ * goes to the network as usual.
  *
- * Main-frame navigations away from the preview page are cancelled and handed to [onNavigation] (the page prevents link
- * navigation itself, this is the safety net). Runs on CEF threads, never on the EDT.
+ * The main frame never leaves the preview page: every main-frame navigation to anything but an `/app/` URL is cancelled
+ * (`about:blank`, `data:`, `file:`, `<meta http-equiv=refresh>` targets would replace the page and its bridge), and
+ * user-initiated ones to `http(s)` / `mailto` URLs are handed to [onNavigation], which applies [MarpLinkPolicy]. The page
+ * prevents link navigation itself, this is the safety net. Runs on CEF threads, never on the EDT.
  *
  * Responses use [JBCefStreamResourceHandler], which streams the file and works in both in-process and out-of-process
  * JCEF modes.
@@ -47,6 +50,11 @@ internal class MarpResourceRequestHandler(
             createResourceHandler(request.url)
     }
 
+    /** Answers 404 without looking at the file system. */
+    private val notFoundRequestHandler = object : CefResourceRequestHandlerAdapter() {
+        override fun getResourceHandler(browser: CefBrowser?, frame: CefFrame?, request: CefRequest): CefResourceHandler? = notFound()
+    }
+
     override fun getResourceRequestHandler(
         browser: CefBrowser?,
         frame: CefFrame?,
@@ -55,15 +63,30 @@ internal class MarpResourceRequestHandler(
         isDownload: Boolean,
         requestInitiator: String?,
         disableDefaultHandling: BoolRef?,
-    ): CefResourceRequestHandler? = if (MarpResourcePaths.isMarpUrl(request.url)) resourceRequestHandler else null
+    ): CefResourceRequestHandler? {
+        val url = request.url
+        if (!MarpResourcePaths.isMarpUrl(url)) return null
+        // Local files only for the preview page's own requests; never let such a request reach the network.
+        if (!isPreviewInitiator(requestInitiator) && MarpResourcePaths.parse(url) is MarpResourcePaths.Target.Doc) {
+            LOG.debug("Refusing $url requested by $requestInitiator")
+            return notFoundRequestHandler
+        }
+        return resourceRequestHandler
+    }
 
     override fun onBeforeBrowse(browser: CefBrowser?, frame: CefFrame?, request: CefRequest, userGesture: Boolean, isRedirect: Boolean): Boolean {
-        if (frame != null && !frame.isMain) return false
-        val url = request.url ?: return false
-        if (url.startsWith(MarpResourcePaths.APP_URL_PREFIX, ignoreCase = true)) return false
-        if (!isExternalUrl(url)) return false
-        if (userGesture) onNavigation(url)
-        return true
+        val url = request.url
+        return when (navigation(url, mainFrame = frame?.isMain ?: true, userGesture = userGesture)) {
+            Navigation.ALLOW -> false
+            Navigation.CANCEL -> {
+                LOG.debug("Cancelled preview navigation to $url")
+                true
+            }
+            Navigation.CANCEL_AND_OPEN -> {
+                onNavigation(url)
+                true
+            }
+        }
     }
 
     override fun onRenderProcessTerminated(
@@ -140,8 +163,22 @@ internal class MarpResourceRequestHandler(
         }
     }
 
+    enum class Navigation { ALLOW, CANCEL, CANCEL_AND_OPEN }
+
     companion object {
         private val NO_CACHE = mapOf("Cache-Control" to "no-cache")
+
+        /**
+         * The main frame only ever shows `/app/` pages (the preview page and its reloads). Everything else is cancelled;
+         * user-initiated navigations to [isExternalUrl] URLs are opened through [MarpLinkPolicy] instead. Subframes
+         * cannot load at all (CSP `frame-src 'none'`), so they are left to the CSP.
+         */
+        fun navigation(url: String?, mainFrame: Boolean, userGesture: Boolean): Navigation = when {
+            !mainFrame || url == null -> Navigation.ALLOW
+            url.startsWith(MarpResourcePaths.APP_URL_PREFIX, ignoreCase = true) -> Navigation.ALLOW
+            userGesture && isExternalUrl(url) -> Navigation.CANCEL_AND_OPEN
+            else -> Navigation.CANCEL
+        }
         private val NOT_FOUND_BODY = "Not Found".toByteArray(Charsets.UTF_8)
 
         /** Links the preview hands to the IDE: `http(s)` (including `https://marp.localhost/doc/...`) and `mailto`. */
@@ -149,5 +186,12 @@ internal class MarpResourceRequestHandler(
             url.startsWith("http://", ignoreCase = true) ||
             url.startsWith("https://", ignoreCase = true) ||
             url.startsWith("mailto:", ignoreCase = true)
+
+        /**
+         * CEF's request initiator (the origin of the page that made the request): `https://marp.localhost` for the
+         * preview's own subresources, empty or `null` for browser-initiated requests.
+         */
+        fun isPreviewInitiator(initiator: String?): Boolean =
+            initiator.isNullOrEmpty() || initiator.removeSuffix("/").equals(MarpResourcePaths.ORIGIN, ignoreCase = true)
     }
 }

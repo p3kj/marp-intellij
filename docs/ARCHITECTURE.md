@@ -46,6 +46,35 @@ the network as usual (remote images, Google Fonts `@import`, CDN fonts).
 The document's base href is `https://marp.localhost/doc/<markdown file dir>/`, so relative images, `![bg](...)` and
 links resolve to local files.
 
+## Page security
+
+Deck HTML (`html: all` in a trusted project) must never run script in the page that holds `window.__marpHost`, is
+same-origin with the project files under `/doc/`, and could otherwise navigate the main frame.
+
+- `index.html` sets this Content-Security-Policy (the dev page in `webview/dev/` gets the same one, with `'self'` for
+  scripts and `connect-src 'self'` for the mock host):
+
+  ```
+  default-src 'none'; script-src https://marp.localhost/app/; style-src 'self' 'unsafe-inline' https:;
+  img-src 'self' https: http: data: blob:; font-src 'self' https: data:; media-src 'self' https: http:;
+  connect-src 'none'; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri 'self'
+  ```
+
+  Only the bundled `/app/` script runs; inline `<script>`, event handler attributes, `javascript:` URLs, frames,
+  plugins, forms and `fetch` are blocked. Theme CSS (injected as a `<style>` text), marp-core's inline styles, KaTeX /
+  Google Fonts `@import`s, remote and local images, fonts and media keep working. Kotlin's `executeJavaScript` and the
+  `JBCefJSQuery` function are not subject to the page CSP.
+- The main frame only ever shows `https://marp.localhost/app/...` (initial load and reloads). `onBeforeBrowse` cancels
+  every other main-frame navigation (`about:blank`, `data:`, `file:`, `<meta http-equiv=refresh>` targets, links that
+  escape the page's click handler); user-initiated ones to `http(s)` / `mailto` URLs go to the `openLink` rules below.
+  JCEF's error page is disabled (it would be such a navigation).
+- `/doc/` files are only served for requests whose CEF request initiator is the preview page (`https://marp.localhost`,
+  or empty / `null` for browser-initiated requests); other initiators get 404 and the request never reaches the network.
+- `openLink` (click messages, popups, cancelled navigations): `https://marp.localhost/doc/...` opens the file in the IDE
+  only when it passes the same allowed-roots check as the resource handler (any file type); other URLs on
+  `marp.localhost` are ignored; `http(s)` with a host and `mailto` go to `BrowserUtil.browse`; everything else is
+  ignored (debug log).
+
 ## JS bridge (Kotlin -> JS)
 
 The page defines `window.marpBridge`. Kotlin calls it with `executeJavaScript` and JSON-encoded arguments, only after
@@ -98,7 +127,7 @@ string:
 | `{"type":"ready"}` | bridge is installed; Kotlin sends `setIdeTheme`, `setThemes`, `update`, `scrollToLine`, `setActiveLine` |
 | `{"type":"revealLine","line":n}` | the user scrolled the preview; scroll the editor so fractional line `n` is at the top |
 | `{"type":"didClick","line":n}` | double-click in a slide; move the caret to line `n` and focus the editor |
-| `{"type":"openLink","href":"..."}` | a link was clicked (the page always prevents navigation). `https://marp.localhost/doc/...` -> open that file in the IDE; `http(s)`/`mailto` -> `BrowserUtil.browse` |
+| `{"type":"openLink","href":"..."}` | a link was clicked (the page always prevents navigation). `https://marp.localhost/doc/...` inside the allowed roots -> open that file in the IDE; `http(s)`/`mailto` -> `BrowserUtil.browse`; anything else ignored (see Page security) |
 | `{"type":"error","message":"..."}` | render/theme error, already shown in the preview; Kotlin logs it |
 
 ## Kotlin contracts
