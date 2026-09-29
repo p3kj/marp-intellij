@@ -7,7 +7,8 @@
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "dev": "node dev/serve.mjs"
   },
   "dependencies": {
     "@marp-team/marp-core": "4.4.0"
