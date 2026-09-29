@@ -7,12 +7,21 @@ renderer API).
 ```
 Markdown file with `marp: true`
   -> MarpSplitEditorProvider (HIDE_OTHER_EDITORS)
-     -> TextEditorWithPreview(text editor, MarpPreviewFileEditor)
+     -> TextEditorWithPreview(text editor, MarpPreviewFileEditor)   (see Platform API note)
         -> MarpPreviewPanel (placeholder, then JBCefBrowser; see Threading and lifecycle rules)
            loads https://marp.localhost/app/index.html
            Kotlin -> JS: window.marpBridge.*(json)
            JS -> Kotlin: one JBCefJSQuery, JSON messages
 ```
+
+## Platform API note
+
+The split editor builds on `TextEditorWithPreviewProvider`. JetBrains marks the Kotlin file that declares it
+`@file:ApiStatus.Internal`, although the class itself carries no annotation in bytecode, so the Plugin Verifier does not
+flag it. Its `createSplitEditorAsync` is `@ApiStatus.Experimental`. JetBrains' own Markdown plugin subclasses the same
+class, so breaking changes are unlikely. The risk is accepted knowingly and covered by verification against the next
+EAP (`verifyPlugin` with `recommended()` plus the weekly `verify-eap.yml` workflow). Apart from this class, the plugin
+avoids internal, deprecated and experimental APIs.
 
 ## Source layout
 
@@ -29,19 +38,21 @@ Markdown file with `marp: true`
 
 ## Build wiring
 
-`buildWebview` (Gradle `Exec`) runs `npm ci` + `node build.mjs --outdir=build/generated/webview/webview`. That
-directory is a resources source dir, so the jar contains `/webview/index.html`, `/webview/marp-preview.js`,
-`/webview/marp-preview.css`. `testWebview` (vitest) runs as part of `check`.
+`webviewInstall` (Gradle `Exec`) runs `npm ci`. `buildWebview` runs the build (`node build.mjs
+--outdir=build/generated/webview/webview`) after it. That directory is a resources source dir, so the jar contains `/webview/index.html`, `/webview/marp-preview.js`,
+`/webview/marp-preview.css`. `testWebview` (vitest), `typecheckWebview` (tsc) and `checkNotices` run as part of `check`.
 
 ## URLs served inside JCEF
 
-A `CefRequestHandler` on the preview browser answers every request to host `marp.localhost`; everything else goes to
-the network as usual (remote images, Google Fonts `@import`, CDN fonts).
+A `CefRequestHandler` on the preview browser answers every request to host `marp.localhost`, whatever the scheme or
+port and also with a trailing dot (`MarpResourceRequestHandler.route`): the URLs below are served, anything else on that
+host gets 404, because Chromium resolves `*.localhost` to the loopback interface and such a request must never reach
+it. Requests to other hosts go to the network as usual (remote images, Google Fonts `@import`, CDN fonts).
 
 | URL | Served from |
 |---|---|
 | `https://marp.localhost/app/<name>` | plugin classpath `/webview/<name>` |
-| `https://marp.localhost/doc/<absolute path>` | local file. Path uses `/` separators, each segment percent-encoded; Windows drive paths look like `/doc/C:/Users/...`, UNC paths keep an empty first segment: `\\server\share\x` is `/doc//server/share/x` (only valid on Windows). Only served when the canonical file is inside the project base dir, a project content root, or the directory of the Markdown file being previewed (recomputed on every render; a content root change re-renders); otherwise 404. |
+| `https://marp.localhost/doc/<absolute path>` | local file. Path uses `/` separators, each segment percent-encoded; Windows drive paths look like `/doc/C:/Users/...`, UNC paths keep an empty first segment: `\\server\share\x` is `/doc//server/share/x` (only valid on Windows). Only served when the canonical file is inside the project base dir, a project content root, or the directory of the Markdown file being previewed (recomputed on every render; a content root change re-renders); otherwise 404. `MarpResourcePaths.resolveAllowedFile` checks the normalized path against the roots lexically before any file-system access (on Windows merely looking up `\\host\share\x` opens an SMB connection that sends NTLM credentials), accepts a UNC path only when that root is UNC too, and then checks the real path (no symlink escape). |
 
 The document's base href is `https://marp.localhost/doc/<markdown file dir>/`, so relative images, `![bg](...)` and
 links resolve to local files.
@@ -60,8 +71,13 @@ same-origin with the project files under `/doc/`, and could otherwise navigate t
   connect-src 'none'; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri 'self'
   ```
 
-  Only the bundled `/app/` script runs; inline `<script>`, event handler attributes, `javascript:` URLs, frames,
-  plugins, forms and `fetch` are blocked. Theme CSS (injected as a `<style>` text), marp-core's inline styles, KaTeX /
+  `frame-src 'none'` blocks frames with a `src`. Frames without one (`about:blank`, `srcdoc`) are not covered by it, so the
+page removes `<meta http-equiv>`, `<iframe>`, `<frame>`, `<object>`, `<embed>`, `<portal>`, `<base>` and
+`<link rel=import>` from the deck HTML, and every `autofocus` attribute, before it is inserted (under every HTML
+setting). The page also cancels `dragover` / `drop`, so a dropped file or link never becomes a navigation. Remote
+images work over https. `http:` images are mixed content in Chromium (upgraded to https or blocked) although the CSP
+lists `http:`. Only the bundled `/app/` script runs; inline `<script>`, event handler attributes, `javascript:` URLs, frames,
+  plugins and `fetch` are blocked, and forms cannot submit (`form-action 'none'`, they still render). Theme CSS (injected as a `<style>` text), marp-core's inline styles, KaTeX /
   Google Fonts `@import`s, remote and local images, fonts and media keep working. Kotlin's `executeJavaScript` and the
   `JBCefJSQuery` function are not subject to the page CSP.
 - The main frame only ever shows `https://marp.localhost/app/...` (initial load and reloads). `onBeforeBrowse` cancels
@@ -99,6 +115,7 @@ interface MarpBridge {
     themeError: string   // {0} theme source, {1} marp-core's error
     renderError: string  // {0} error message
     unknownTheme: string // {0} theme name from a `theme:` directive that no built-in/registered theme has
+    emptyDeck: string    // hint under a deck without content; no placeholders
   }): void
   /** Replace custom themes. errors: Kotlin-side problems (missing file, download failed) shown in the preview. */
   setThemes(arg: { themes: { source: string; css: string }[]; errors: string[] }): void
@@ -106,7 +123,11 @@ interface MarpBridge {
   update(arg: {
     markdown: string
     baseHref: string            // https://marp.localhost/doc/<dir>/
-    options: { html: 'off' | 'default' | 'all'; math: 'mathjax' | 'katex' | 'off' }
+    options: {
+      html: 'off' | 'default' | 'all'
+      math: 'mathjax' | 'katex' | 'off'
+      notes?: boolean           // presenter notes under each slide; absent or false = off
+    }
   }): void
   /** Editor scrolled: make the preview show `line` at its top (VS Code scroll-sync interpolation). */
   scrollToLine(line: number): void
@@ -120,8 +141,19 @@ interface MarpBridge {
 Rendering follows marp-vscode's preview options: `container: {tag:'div', id:'__marp-preview'}`,
 `slideContainer: {tag:'div', 'data-marp-slide-wrapper': ''}`, `inlineSVG: {backdropSelector: false}`,
 `minifyCSS: false`, `script: false`, `html` (`off` -> `false`, `default` -> marp-core allowlist, `all` -> `true`),
-`math`. Front-matter `math:` wins over the setting, as in marp-core. After each render the page calls `browser()`
+`math`. Front-matter `math:` can pick the library (`mathjax`, `katex`) or turn math off for a deck. It cannot enable
+math when the setting is off, because the math plugin is then not loaded at all. After each render the page calls `browser()`
 update from `@marp-team/marp-core/browser` (fitting headers, auto-scaling).
+
+With `options.notes` (the IDE-wide "Show presenter notes" setting), the page inserts an
+`<aside class="marp-notes" data-marp-notes-for="N" role="note">` (1-based slide number) after every slide wrapper with
+the slide's non-directive comments from `marp.render().comments` as text paragraphs, hidden when the slide has none.
+Cards are siblings of the wrappers, so the slide diff replaces only a changed card; they carry no `code-line` and
+scroll sync ignores them. Toggling notes does not rebuild Marp. When the deck has no content (Marpit renders one empty
+slide) the page shows the `emptyDeck` hint below it.
+
+Scroll sync interpolates the same way in both directions: linearly between the tops of adjacent visible `code-line`
+elements, proportionally inside fenced code, so a preview position maps to a line that maps back to the same position.
 
 ## JS -> Kotlin messages
 
@@ -145,18 +177,35 @@ string:
 
 ## Kotlin contracts
 
-- `MarpSettings` (project service, `.idea/marp.xml`): `themes`, `useMarprcThemeSet`, `html`, `math`, `scrollSync`;
+- `MarpSettings` (project service, `.idea/marp.xml`): `themes`, `useMarprcThemeSet`, `html`, `math`;
   `update { }` publishes `MarpSettingsListener.TOPIC` when the block changed anything.
+- `MarpAppSettings` (application service, `options/marp.xml`, settings category Tools): `scrollSync` and
+  `presenterNotes`, personal preferences that must not travel with `.idea/marp.xml`; `update { }` publishes `MarpAppSettingsListener.TOPIC` on the
+  application bus. Settings | Tools | Marp (`MarpConfigurable`) edits both.
 - `MarpThemeService` (project service): `suspend fun loadThemes(): MarpThemeSet` (cached, never on EDT);
   publishes `MarpThemeListener.TOPIC` when watched theme files, folders or `.marprc` change, or theme settings change.
-- Theme sources: settings `themes` entries (file / folder = all `**/*.css` inside, recursive and skipping `node_modules`
-  like marp-cli / `http(s)` URL; relative to the project dir) plus, when enabled, `themeSet` from `.marprc.yml` / `.marprc.yaml` / `.marprc.json` in the
-  project root (string or list; relative to the `.marprc` file). Remote URLs: `HttpRequests`, 5 s connect + 5 s read
-  timeout, all URLs of one load downloaded in parallel (theme order stays the entry order); successful downloads are
-  cached until settings change, failed ones for 60 s (or until settings change).
+- Theme sources: settings `themes` entries (file / folder / `http(s)` URL; relative paths resolve against the project
+  dir, and are reported as invalid when there is none) plus, when enabled, `themeSet` from `.marprc.yml` /
+  `.marprc.yaml` / `.marprc.json` / `.marprc` (no extension) in the project root (string or list; relative to the
+  `.marprc` file). `.marprc` entries must stay inside the project directory, also by real path (the traversal check of
+  marp-vscode 3.5.2), otherwise they are skipped with an error; settings entries are the user's own choice and may
+  point anywhere.
+- Folder entries (`MarpThemeFolder`): every `*.css` below the folder like marp-cli, but bounded because users do pick a
+  whole project: `node_modules` and hidden directories are never entered, hidden files are skipped, symlinked
+  directories inside are not followed, at most 8 levels deep and 200 files (an error line says when files were left
+  out).
+- Remote URLs: `HttpRequests`, 5 s connect + 5 s read timeout, all URLs of one load downloaded in parallel (theme
+  order stays the entry order). A response must be `text/css`, `text/plain` or have no Content-Type, and at most 5 MB
+  (declared length checked first, the body is never read past the limit). Successful downloads are cached until
+  settings change, failed or rejected ones for 60 s (or until settings change).
+- Invalidation (`MarpThemeWatch`): VFS events arrive on the EDT inside the write action, so matching is string
+  comparison only. File entries react to the file and its parent directories; folder entries (and missing entries, which
+  may become either) to the folder, its parents, and CSS files or directories inside where `MarpThemeFolder` looks;
+  plus `.marprc*` files in the project root and document edits of the theme files that were read.
 - Untrusted projects (`TrustedProjects.isProjectTrusted` is false), same as marp-vscode's restricted mode: `html` is
-  always `off`; only local file / folder entries from the settings are loaded, URL entries and the `.marprc` `themeSet`
-  are skipped and one line in `errors` says so. `MarpThemeService` invalidates and publishes `MarpThemeListener.TOPIC`
+  always `off` and no custom theme is loaded at all (the settings can come from the repository as much as the
+  `.marprc`); when any theme is configured, one line in `errors` says so. Problems of an untrusted `.marprc` are not
+  shown. `MarpThemeService` invalidates and publishes `MarpThemeListener.TOPIC`
   on `TrustedProjectsListener` trust changes; open previews re-request themes and re-render.
 - Theme CSS is sent as text; marp-core's `themeSet.add(css)` picks it up by its `@theme` name. Relative `url()`
   inside theme CSS resolve against the document base (same as marp-vscode).
@@ -168,13 +217,43 @@ string:
   registered with `Disposer`; message bus connections are tied to a disposable or scope.
 - `MarpPreviewPanel` starts as an empty placeholder and creates its `JBCefBrowser` in a coroutine: first
   `MarpJcefStartup.prepare()` reads `ProxySettings.getProxyConfiguration()` on `Dispatchers.IO` (once per IDE session),
-  then the browser is created on the EDT (any modality) and added to the placeholder. Bridge calls made before that are
+  then the browser is created on `Dispatchers.UI` (the EDT without the write-intent lock, any modality) and added to
+  the placeholder. Page reloads also run on `Dispatchers.UI`; only calls that touch the editor (`revealLine`,
+  `didClick`) and `BrowserUtil.browse` (which may show a dialog) run on `Dispatchers.EDT`. Bridge calls made before that are
   only recorded and replayed on `ready`, as during a reload. Reason: the first browser of the session starts JCEF,
   and `JBCefApp`'s class initializer reads the proxy settings. If the platform has not read them yet (it does so on its
   first HTTP request, usually but not always before editors are restored at startup), creating the proxy settings
   service requests `ProxyMigrationService` from inside that class initializer, and the platform reports a SEVERE
   "`JBCefApp$Holder <clinit> requests ... ProxyMigrationService instance`" blaming the plugin that created the browser.
   If the browser cannot be created, the placeholder shows the "JCEF not available" text.
-- Everything is `DumbAware`. No components, no `@Internal` / deprecated / experimental APIs, so the plugin stays
-  dynamic and passes the Plugin Verifier clean.
+- Everything is `DumbAware`. No components. Apart from the class described under Platform API note, no `@Internal` /
+  deprecated / experimental APIs, so the plugin stays dynamic. `verifyPlugin` in CI checks this against the recommended
+  IDEs and the next EAP, and fails on any finding (`failureLevel = ALL`). The settings page's list toolbar still gets
+  `AnActionButton`s from `ToolbarDecorator.setAddAction` / `setEditAction` (the class is `@ApiStatus.Obsolete`, the
+  methods are not); the add menu itself is a plain `DumbAwareAction` popup.
+- Marp detection (`MarpDetector`) looks at the first 64 K characters only: the front matter has to end within them.
+  The front matter regular expression of marp-vscode is matched by a linear scanner (a backtracking engine needs
+  seconds for `---` followed by many blank lines, and detection runs in read actions); the editor banner only checks
+  loaded documents, never the disk, and document edits past that offset do not trigger a new check.
 - All user-visible strings in `messages/MarpBundle.properties`.
+
+## Tests
+
+- Kotlin (`src/test`): light platform tests based on `MarpLightTestCase` (editor provider, settings page and settings,
+  theme service including trust, `.marprc` confinement and download limits), plus plain unit tests for logic that does
+  not need the platform: `MarpDetector`, `MarpBridgeState`, `MarpScrollEchoGuard`, `MarpLinkPolicy` (and request
+  routing), `MarpResourcePaths`, `MarpJcefStartup`, the `.marprc` parser, `MarpThemePaths`, `MarpThemeFolder`,
+  `MarpThemeWatch` and the theme URL validation of the settings page.
+- Webview (`webview/test`, vitest with jsdom): the host bridge and message queue, marp-core plugins and render options,
+  scroll sync, active slide, link and click handling, the unknown-theme warning and the string table.
+- `./gradlew check` runs all of them plus `tsc --noEmit` and the NOTICE freshness check. `verifyPlugin` covers binary
+  compatibility with the recommended IDEs and the next EAP.
+
+## Dev page
+
+`npm run dev` in `webview/` runs `webview/dev/serve.mjs`: esbuild in watch mode plus a small server on
+`http://127.0.0.1:5173/` with a mock IDE host (`window.__marpHost`). Query parameters: `deck` (absolute path of a
+Markdown file), `themes` (comma-separated absolute CSS paths), `dark=1`, and the render options such as `html` and
+`math`. The page gets the production CSP (with `'self'` for scripts and `connect-src 'self'` for the mock host). Set
+`CSP=0` in the environment to disable it. `notes=1` turns presenter notes on. The server only answers requests whose
+`Host` is `localhost` or `127.0.0.1` (DNS rebinding). Messages the page sends to the host are collected in `window.__hostLog`.

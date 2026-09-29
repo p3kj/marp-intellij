@@ -39,10 +39,40 @@ body:
     validations:
       required: true
 
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime and JCEF
+      description: Help | About, the "Runtime version" line. If the preview shows "JCEF not available", say so here.
+      placeholder: 25.0.2+8-b1421.12 amd64 (JetBrains s.r.o.)
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Remote Development
+      description: Do you use the IDE through JetBrains Gateway or a thin client?
+      options:
+        - "No, local IDE"
+        - "Yes, Remote Development"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: trust
+    attributes:
+      label: Is the project trusted?
+      description: Untrusted projects render without HTML and without remote or .marprc themes.
+      options:
+        - "Yes"
+        - "No"
+        - Not sure
+    validations:
+      required: true
+
   - type: textarea
     id: deck
     attributes:
-      label: Minimal deck that reproduces the problem
+      label: Sample deck that reproduces the problem
       description: |
         The smallest Markdown deck (and theme CSS, if relevant) that shows the bug.
         *This will be formatted as Markdown code, so there is no need for backticks.*

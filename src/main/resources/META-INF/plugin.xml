@@ -1,18 +1,26 @@
 <!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
-<idea-plugin>
+<idea-plugin url="https://github.com/p3kj/marp-intellij">
     <id>cz.p3kj.marp</id>
     <name>Marp Preview</name>
-    <vendor url="https://github.com/p3kj">p3kj</vendor>
+    <vendor email="p3k.jaros@gmail.com" url="https://github.com/p3kj/marp-intellij">p3kj</vendor>
     <description><![CDATA[
-        <p>Live preview for <a href="https://marp.app">Marp</a> slide decks, right next to the Markdown editor.</p>
+        <p>Live preview for <a href="https://marp.app">Marp</a> slide decks, right next to the Markdown editor, in every JetBrains IDE.</p>
+        <p>Open a Markdown file whose front matter contains <code>marp: true</code> and it gets an Editor / Split / Preview toggle. The preview refreshes while you type, no save needed.</p>
+        <p><b>Features</b></p>
         <ul>
-            <li>Markdown files with <code>marp: true</code> in the front matter open with an Editor / Split / Preview toggle.</li>
-            <li>The preview refreshes while you type, no save needed.</li>
-            <li>Editor and preview scroll together, the slide under the caret is highlighted.</li>
-            <li>Custom themes from CSS files, folders or URLs (like <code>markdown.marp.themes</code> in VS Code).</li>
-            <li>Local images and <code>![bg](...)</code> backgrounds, math (MathJax / KaTeX), fitting headers.</li>
+            <li><b>Live preview</b> rendered by <a href="https://github.com/marp-team/marp-core">marp-core</a> inside the IDE's built-in browser (JCEF). No Node.js, no Marp CLI, no external process.</li>
+            <li><b>Scroll sync</b> in both directions, the slide under the caret is highlighted, double-click a slide to jump to its source line.</li>
+            <li><b>Custom themes</b> from CSS files, folders or URLs (the same entries as <code>markdown.marp.themes</code> in VS Code), plus automatic pickup of <code>themeSet</code> from <code>.marprc.yml</code>. Theme edits show up live.</li>
+            <li><b>Local images</b> with relative paths, <code>![bg](...)</code> backgrounds, fitting headers, Twemoji.</li>
+            <li><b>Math</b> with MathJax (works offline) or KaTeX.</li>
+            <li><b>Inline HTML</b> in slides: off, Marp's safe allow list, or all. Untrusted projects render without HTML and without remote themes.</li>
+            <li>The preview follows the IDE light or dark theme. Links open in the IDE (project files) or in the system browser.</li>
         </ul>
-        <p>Rendering uses <a href="https://github.com/marp-team/marp-core">marp-core</a> inside the IDE's built-in browser (JCEF), so no Node.js is needed.</p>
+        <p>Settings: <b>Settings | Tools | Marp</b>.</p>
+        <p><a href="https://github.com/p3kj/marp-intellij">Source code</a> (MIT) |
+        <a href="https://github.com/p3kj/marp-intellij/issues">Issues</a> |
+        <a href="https://github.com/p3kj/marp-intellij/blob/main/CHANGELOG.md">Changelog</a></p>
+        <p>Marp Preview is an independent project and is not affiliated with the Marp team.</p>
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>

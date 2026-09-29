@@ -50,7 +50,7 @@ jobs:
 
       - name: Qodana Scan
         if: steps.token.outputs.available == 'true'
-        uses: JetBrains/qodana-action@v2026.2.1
+        uses: JetBrains/qodana-action@v2026.2.2
         with:
           pr-mode: false
           cache-default-branch-only: true

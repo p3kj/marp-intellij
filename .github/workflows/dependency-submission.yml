@@ -1,0 +1,29 @@
+# Submits the Gradle dependency graph so Dependabot alerts cover Gradle dependencies.
+# npm is covered through webview/package-lock.json.
+
+name: Dependency graph
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  submit:
+    name: Submit dependencies
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Fetch Sources
+        uses: actions/checkout@v7
+
+      - name: Setup Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - name: Submit Gradle dependency graph
+        uses: gradle/actions/dependency-submission@v6

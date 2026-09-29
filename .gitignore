@@ -5,3 +5,4 @@
 .kotlin
 build
 node_modules
+.qodana
