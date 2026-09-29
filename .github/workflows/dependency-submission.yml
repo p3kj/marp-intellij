@@ -27,3 +27,7 @@ jobs:
 
       - name: Submit Gradle dependency graph
         uses: gradle/actions/dependency-submission@v6
+        with:
+          # The action's forced dependency resolution cannot be stored in the configuration cache that
+          # gradle.properties turns on ("error writing value of type 'java.util.ArrayList'").
+          additional-arguments: --no-configuration-cache
