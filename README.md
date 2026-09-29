@@ -9,9 +9,7 @@
 
 Marp Preview renders [Marp](https://marp.app/) slide decks inside your JetBrains IDE. The slides appear in a JCEF preview next to the Markdown editor and refresh while you type.
 
-<!-- Screenshot: add docs/screenshot.png (1200 x 760 or larger) and replace the line below with ![Marp Preview](docs/screenshot.png) -->
-
-Screenshot: coming with the first release (`docs/screenshot.png`).
+![Marp Preview: Markdown on the left, the rendered slides on the right, the slide under the caret outlined](docs/screenshot.png)
 
 The plugin works in all IntelliJ-based IDEs on the 2026.2 platform and newer (IntelliJ IDEA, PhpStorm, WebStorm, PyCharm, GoLand, CLion, Rider, RubyMine and others). It depends only on the bundled Markdown plugin and JCEF. No Node.js is needed for the preview.
 
