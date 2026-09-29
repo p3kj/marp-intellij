@@ -17,7 +17,6 @@ import cz.p3kj.marp.editor.MarpPreviewFileEditor
 import cz.p3kj.marp.preview.MarpPreviewPanel
 import cz.p3kj.marp.settings.MarpSettings
 import java.awt.Point
-import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.roundToInt
 
@@ -29,7 +28,7 @@ import kotlin.math.roundToInt
  * - double-click in a slide (`didClick`) -> caret to that line, scroll it into view, focus the editor.
  *
  * Programmatic scrolls of one side must not bounce back from the other, so events arriving right after this class
- * scrolled the other side are ignored ([EDITOR_ECHO_MS], [PREVIEW_ECHO_MS]).
+ * scrolled the other side are ignored ([MarpScrollEchoGuard]).
  */
 class MarpScrollSync(
     private val project: Project,
@@ -38,10 +37,7 @@ class MarpScrollSync(
     private val splitEditor: TextEditorWithPreview?,
 ) : Disposable, MarpPreviewPanel.Listener {
 
-    private var revealing = false
-    private var lastRevealAt = 0L
-    private var lastScrollSentAt = 0L
-    private var lastSentLine = Double.NaN
+    private val echoGuard = MarpScrollEchoGuard()
     private var lastActiveLine = -1
 
     init {
@@ -68,20 +64,16 @@ class MarpScrollSync(
     private fun scrollSyncEnabled(): Boolean = !project.isDisposed && MarpSettings.getInstance(project).scrollSync
 
     private fun onEditorScrolled() {
-        if (revealing || editor.isDisposed || !scrollSyncEnabled()) return
+        if (!echoGuard.acceptEditorScroll() || editor.isDisposed || !scrollSyncEnabled()) return
         // Hidden editor (preview-only layout) or not laid out yet: nothing meaningful to report.
         if (!editor.component.isShowing || editor.scrollingModel.visibleArea.height <= 0) return
-        if (now() - lastRevealAt < EDITOR_ECHO_MS) return
         sendTopLine(force = false)
     }
 
     private fun sendTopLine(force: Boolean) {
         val panel = preview.panel ?: return
         val line = topVisibleLine()
-        if (!force && abs(line - lastSentLine) < LINE_EPSILON) return
-        lastSentLine = line
-        lastScrollSentAt = now()
-        panel.scrollToLine(line)
+        if (echoGuard.beforeSendToPreview(line, force)) panel.scrollToLine(line)
     }
 
     private fun sendActiveLine() {
@@ -95,22 +87,21 @@ class MarpScrollSync(
     override fun revealLine(line: Double) {
         if (editor.isDisposed || !scrollSyncEnabled()) return
         // The preview reporting the position we just sent it.
-        if (now() - lastScrollSentAt < PREVIEW_ECHO_MS) return
+        if (!echoGuard.acceptPreviewScroll()) return
         val y = lineToY(line) ?: return
         val scrollingModel = editor.scrollingModel
-        revealing = true
-        try {
+        echoGuard.reveal {
             scrollingModel.disableAnimation()
-            scrollingModel.scrollVertically(y)
+            try {
+                scrollingModel.scrollVertically(y)
+            }
+            finally {
+                scrollingModel.enableAnimation()
+            }
+            // Where the editor actually is (whole pixels, clamped at the end), so a later visible-area event without a
+            // real scroll (typing that changes the line width) does not send a slightly different line back.
+            topVisibleLine()
         }
-        finally {
-            scrollingModel.enableAnimation()
-            revealing = false
-        }
-        lastRevealAt = now()
-        // Where the editor actually is (whole pixels, clamped at the end), so a later visible-area event without a real
-        // scroll (typing that changes the line width) does not send a slightly different line back to the preview.
-        lastSentLine = topVisibleLine()
     }
 
     override fun didClick(line: Int) {
@@ -168,16 +159,7 @@ class MarpScrollSync(
         if (panel != null && panel.listener === this) panel.listener = null
     }
 
-    private fun now(): Long = System.nanoTime() / 1_000_000
-
     private companion object {
-        /** Ignore editor scroll events this long after a preview-driven scroll. */
-        const val EDITOR_ECHO_MS = 150L
-
-        /** Ignore `revealLine` this long after sending `scrollToLine`. */
-        const val PREVIEW_ECHO_MS = 400L
-
-        const val LINE_EPSILON = 0.001
         const val MAX_FRACTION = 0.999
     }
 }

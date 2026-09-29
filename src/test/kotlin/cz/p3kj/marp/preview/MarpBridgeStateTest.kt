@@ -1,0 +1,127 @@
+package cz.p3kj.marp.preview
+
+import cz.p3kj.marp.preview.MarpBridgeState.Companion.MAX_CRASH_RELOADS
+import cz.p3kj.marp.preview.MarpBridgeState.Companion.REPLAY_ORDER
+import cz.p3kj.marp.preview.MarpBridgeState.Companion.SCROLL_TO_LINE
+import cz.p3kj.marp.preview.MarpBridgeState.Companion.SET_ACTIVE_LINE
+import cz.p3kj.marp.preview.MarpBridgeState.Companion.SET_IDE_THEME
+import cz.p3kj.marp.preview.MarpBridgeState.Companion.SET_THEMES
+import cz.p3kj.marp.preview.MarpBridgeState.Companion.STABLE_MS
+import cz.p3kj.marp.preview.MarpBridgeState.Companion.UPDATE
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class MarpBridgeStateTest {
+
+    private var now = 1_000L
+    private val executed = mutableListOf<Pair<String, String>>()
+    private val bridge = MarpBridgeState(now = { now }) { method, json -> executed += method to json }
+
+    @Test
+    fun callsBeforeReadyAreQueuedAndTheLatestArgumentWins() {
+        bridge.call(UPDATE, "1")
+        bridge.call(SCROLL_TO_LINE, "3")
+        bridge.call(UPDATE, "2")
+        assertEquals(emptyList<Pair<String, String>>(), executed)
+
+        bridge.onReady()
+        assertEquals(listOf(UPDATE to "2", SCROLL_TO_LINE to "3"), executed)
+    }
+
+    @Test
+    fun replayFollowsTheContractOrderNotTheCallOrder() {
+        for (method in REPLAY_ORDER.reversed()) bridge.call(method, "\"$method\"")
+        bridge.onReady()
+        assertEquals(REPLAY_ORDER, executed.map { it.first })
+        assertEquals(listOf(SET_IDE_THEME, SET_THEMES, UPDATE, SCROLL_TO_LINE, SET_ACTIVE_LINE), REPLAY_ORDER.take(5))
+    }
+
+    @Test
+    fun callsWhileReadyExecuteImmediately() {
+        bridge.onReady()
+        assertTrue(bridge.isReady)
+        bridge.call(SET_ACTIVE_LINE, "4")
+        bridge.call(SET_ACTIVE_LINE, "5")
+        assertEquals(listOf(SET_ACTIVE_LINE to "4", SET_ACTIVE_LINE to "5"), executed)
+    }
+
+    @Test
+    fun unchangedArgumentsCanBeSkipped() {
+        bridge.onReady()
+        bridge.call(UPDATE, "u1", skipUnchanged = true)
+        bridge.call(UPDATE, "u1", skipUnchanged = true)
+        bridge.call(UPDATE, "u2", skipUnchanged = true)
+        bridge.call(SCROLL_TO_LINE, "1")
+        bridge.call(SCROLL_TO_LINE, "1")
+        assertEquals(listOf(UPDATE to "u1", UPDATE to "u2", SCROLL_TO_LINE to "1", SCROLL_TO_LINE to "1"), executed)
+    }
+
+    @Test
+    fun reloadResetsReadyAndReplaysTheLatestStateAgain() {
+        bridge.call(SET_THEMES, "t1")
+        bridge.call(UPDATE, "u1")
+        bridge.onReady()
+        executed.clear()
+
+        bridge.onLoadStart()
+        assertFalse(bridge.isReady)
+        bridge.call(UPDATE, "u2")
+        assertEquals("nothing reaches a page that is loading", emptyList<Pair<String, String>>(), executed)
+
+        bridge.onReady()
+        assertEquals(listOf(SET_THEMES to "t1", UPDATE to "u2"), executed)
+    }
+
+    @Test
+    fun nothingExecutesAfterDispose() {
+        bridge.call(UPDATE, "u1")
+        bridge.onReady()
+        executed.clear()
+
+        bridge.dispose()
+        bridge.call(UPDATE, "u2")
+        bridge.onReady()
+        assertFalse(bridge.isReady)
+        assertFalse(bridge.onRenderProcessGone())
+        assertEquals(emptyList<Pair<String, String>>(), executed)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun unknownMethodsAreRejected() {
+        bridge.call("eval", "1")
+    }
+
+    @Test
+    fun crashReloadsAreCapped() {
+        bridge.onReady()
+        repeat(MAX_CRASH_RELOADS) {
+            assertTrue("reload #${it + 1}", bridge.onRenderProcessGone())
+            assertFalse(bridge.isReady)
+            // The reloaded page comes up and crashes again right away.
+            bridge.onReady()
+        }
+        assertFalse(bridge.onRenderProcessGone())
+    }
+
+    @Test
+    fun crashesDuringLoadCountTowardsTheCap() {
+        bridge.onReady()
+        now += STABLE_MS
+        repeat(MAX_CRASH_RELOADS) { assertTrue(bridge.onRenderProcessGone()) }
+        now += STABLE_MS
+        assertFalse("never ready again, so the old ready does not count as stable", bridge.onRenderProcessGone())
+    }
+
+    @Test
+    fun aPageThatStayedUpStartsANewRowOfReloads() {
+        bridge.onReady()
+        repeat(MAX_CRASH_RELOADS) {
+            assertTrue(bridge.onRenderProcessGone())
+            bridge.onReady()
+        }
+        now += STABLE_MS
+        assertTrue(bridge.onRenderProcessGone())
+    }
+}

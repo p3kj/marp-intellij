@@ -51,6 +51,11 @@ links resolve to local files.
 The page defines `window.marpBridge`. Kotlin calls it with `executeJavaScript` and JSON-encoded arguments, only after
 the page sent `ready`. Line numbers are 0-based editor lines; fractional values mean "part way into that line".
 
+Every method is a state setter. `MarpBridgeState` keeps the latest argument per method; calls made while the page is
+loading are only recorded, and on every `ready` (also after a reload) the latest arguments are replayed in the order
+listed under `ready` below. When the renderer process dies the page is reloaded, at most 3 times in a row (a page that
+stayed up for 10 s starts a new row).
+
 ```ts
 interface MarpBridge {
   /** Replace custom themes. errors: Kotlin-side problems (missing file, download failed) shown in the preview. */

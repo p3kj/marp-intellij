@@ -46,8 +46,8 @@ private val LOG = logger<MarpPreviewPanel>()
  * The JCEF browser showing the Marp preview page (`https://marp.localhost/app/index.html`) plus the JS bridge
  * described in `docs/ARCHITECTURE.md`.
  *
- * Bridge calls are state setters, so the panel keeps the latest argument of every call and sends them all (in contract
- * order) whenever the page reports `ready`, including after a reload. All public methods are thread-safe.
+ * Bridge calls are state setters, so [MarpBridgeState] keeps the latest argument of every call and sends them all (in
+ * contract order) whenever the page reports `ready`, including after a reload. All public methods are thread-safe.
  * Create only when `JBCefApp.isSupported()`.
  */
 class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope) : Disposable {
@@ -83,19 +83,9 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
         onRenderProcessGone = ::onRenderProcessGone,
     )
 
-    private val lock = Any()
-    private var ready = false
-    private var disposed = false
-    private var crashReloads = 0
-
-    /** Latest JSON argument per bridge method, in the order they are replayed on `ready`. */
-    private val state = linkedMapOf<String, String?>(
-        SET_IDE_THEME to null,
-        SET_THEMES to null,
-        UPDATE to null,
-        SCROLL_TO_LINE to null,
-        SET_ACTIVE_LINE to null,
-    )
+    private val bridge = MarpBridgeState { method, json ->
+        browser.cefBrowser.executeJavaScript("window.marpBridge && window.marpBridge.$method($json);", MarpResourcePaths.APP_INDEX_URL, 0)
+    }
 
     val component: JComponent get() = browser.component
 
@@ -115,7 +105,7 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
         client.addRequestHandler(requestHandler, cefBrowser)
         client.addLoadHandler(object : CefLoadHandlerAdapter() {
             override fun onLoadStart(browser: CefBrowser?, frame: CefFrame?, transitionType: CefRequest.TransitionType?) {
-                if (frame?.isMain == true) synchronized(lock) { ready = false }
+                if (frame?.isMain == true) bridge.onLoadStart()
             }
 
             override fun onLoadEnd(browser: CefBrowser?, frame: CefFrame?, httpStatusCode: Int) {
@@ -148,10 +138,7 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
 
         // Registered last, so it is disposed first: stop talking to the browser before it goes away.
         Disposer.register(this) {
-            synchronized(lock) {
-                disposed = true
-                ready = false
-            }
+            bridge.dispose()
             listener = null
             scope.cancel()
         }
@@ -172,7 +159,7 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
         }
         val errors = JsonArray()
         themeSet.errors.forEach(errors::add)
-        call(SET_THEMES, JsonObject().apply {
+        call(MarpBridgeState.SET_THEMES, JsonObject().apply {
             add("themes", themes)
             add("errors", errors)
         })
@@ -180,7 +167,7 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
 
     /** Unchanged arguments are not sent again (typing bursts end with a render request for text that is already shown). */
     fun update(markdown: String, baseHref: String, html: String, math: String) {
-        call(UPDATE, skipUnchanged = true, argument = JsonObject().apply {
+        call(MarpBridgeState.UPDATE, skipUnchanged = true, argument = JsonObject().apply {
             addProperty("markdown", markdown)
             addProperty("baseHref", baseHref)
             add("options", JsonObject().apply {
@@ -191,18 +178,18 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
     }
 
     fun scrollToLine(line: Double) {
-        if (line.isFinite()) call(SCROLL_TO_LINE, line)
+        if (line.isFinite()) call(MarpBridgeState.SCROLL_TO_LINE, line)
     }
 
     fun setActiveLine(line: Int) {
-        call(SET_ACTIVE_LINE, line)
+        call(MarpBridgeState.SET_ACTIVE_LINE, line)
     }
 
     private fun sendIdeTheme() {
         val scheme = EditorColorsManager.getInstance().globalScheme
         val background = scheme.defaultBackground
         val foreground = scheme.defaultForeground
-        call(SET_IDE_THEME, JsonObject().apply {
+        call(MarpBridgeState.SET_IDE_THEME, JsonObject().apply {
             addProperty("dark", ColorUtil.isDark(background))
             addProperty("background", cssHex(background))
             addProperty("foreground", cssHex(foreground))
@@ -210,25 +197,11 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
     }
 
     private fun call(method: String, argument: Number) {
-        callJson(method, argument.toString())
+        bridge.call(method, argument.toString())
     }
 
     private fun call(method: String, argument: JsonElement, skipUnchanged: Boolean = false) {
-        callJson(method, argument.toString(), skipUnchanged)
-    }
-
-    private fun callJson(method: String, json: String, skipUnchanged: Boolean = false) {
-        synchronized(lock) {
-            if (disposed) return
-            if (skipUnchanged && state[method] == json) return
-            state[method] = json
-            if (ready) execute(method, json)
-        }
-    }
-
-    /** Call with [lock] held. */
-    private fun execute(method: String, json: String) {
-        browser.cefBrowser.executeJavaScript("window.marpBridge && window.marpBridge.$method($json);", MarpResourcePaths.APP_INDEX_URL, 0)
+        bridge.call(method, argument.toString(), skipUnchanged)
     }
 
     private fun injectHost() {
@@ -252,7 +225,7 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
             return
         }
         when (json.string("type")) {
-            "ready" -> onReady()
+            "ready" -> bridge.onReady()
             "revealLine" -> json.number("line")?.let { line ->
                 scope.launch(Dispatchers.EDT) { listener?.revealLine(line) }
             }
@@ -265,23 +238,8 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
         }
     }
 
-    private fun onReady() {
-        synchronized(lock) {
-            if (disposed) return
-            ready = true
-            crashReloads = 0
-            for ((method, json) in state) {
-                if (json != null) execute(method, json)
-            }
-        }
-    }
-
     private fun onRenderProcessGone() {
-        val reload = synchronized(lock) {
-            ready = false
-            !disposed && crashReloads++ < MAX_CRASH_RELOADS
-        }
-        if (reload) {
+        if (bridge.onRenderProcessGone()) {
             scope.launch(Dispatchers.UI) {
                 delay(CRASH_RELOAD_DELAY_MS)
                 browser.cefBrowser.reload()
@@ -311,13 +269,6 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
     }
 
     private companion object {
-        const val SET_IDE_THEME = "setIdeTheme"
-        const val SET_THEMES = "setThemes"
-        const val UPDATE = "update"
-        const val SCROLL_TO_LINE = "scrollToLine"
-        const val SET_ACTIVE_LINE = "setActiveLine"
-
-        const val MAX_CRASH_RELOADS = 3
         const val CRASH_RELOAD_DELAY_MS = 500L
 
         fun cssHex(color: Color): String = String.format("#%02x%02x%02x", color.red, color.green, color.blue)
