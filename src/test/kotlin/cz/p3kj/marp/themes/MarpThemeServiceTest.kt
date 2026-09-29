@@ -1,13 +1,11 @@
 package cz.p3kj.marp.themes
 
-import com.intellij.openapi.application.AccessToken
 import com.intellij.openapi.application.runWriteAction
-import com.intellij.testFramework.LoggedErrorProcessor
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtil
-import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import cz.p3kj.marp.MarpLightTestCase
 import cz.p3kj.marp.settings.MarpSettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -16,19 +14,12 @@ import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 
-class MarpThemeServiceTest : BasePlatformTestCase() {
+class MarpThemeServiceTest : MarpLightTestCase() {
     private lateinit var base: Path
     private lateinit var service: MarpThemeService
     private val fetched = mutableListOf<String>()
 
-    private var errorFilter: AccessToken? = null
-
     override fun setUp() {
-        // The IDEA distribution ships an Ultimate-only startup activity that cannot be created in plain tests.
-        errorFilter = LoggedErrorProcessor.executeWith(object : LoggedErrorProcessor() {
-            override fun processError(category: String, message: String, details: Array<String>, t: Throwable?): Set<Action> =
-                if (message.contains("com.intellij.modules.ultimate")) emptySet() else super.processError(category, message, details, t)
-        })
         super.setUp()
         base = Files.createTempDirectory("marp-themes").toRealPath()
         service = MarpThemeService.getInstance(project)
@@ -44,11 +35,7 @@ class MarpThemeServiceTest : BasePlatformTestCase() {
         try {
             base.toFile().deleteRecursively()
         } finally {
-            try {
-                super.tearDown()
-            } finally {
-                errorFilter?.finish()
-            }
+            super.tearDown()
         }
     }
 

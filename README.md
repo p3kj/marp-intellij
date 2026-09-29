@@ -36,7 +36,7 @@ Open Settings | Tools | Marp.
 | Setting | Description |
 | ------- | ----------- |
 | Themes | List of theme CSS files, folders or URLs available to your decks. Each theme declares its name with a `/* @theme name */` comment. |
-| Use `.marprc` themeSet | When enabled, the `themeSet` from the nearest `.marprc.yml` is loaded automatically. |
+| Use `.marprc` themeSet | When enabled, the `themeSet` from `.marprc.yml` (or `.yaml`, `.json`, `.marprc`) in the project root is loaded automatically. |
 | HTML | Inline HTML in slides: off, default (Marp's safe allow list) or all. |
 | Math | Math library: `mathjax`, `katex` or off. |
 | Scroll sync | Toggles synchronized scrolling between editor and preview. |
@@ -47,8 +47,8 @@ Marp themes are plain CSS files that start with a `/* @theme name */` comment, s
 
 Ways to add themes:
 
-- In Settings | Tools | Marp, add CSS files, folders (all `.css` files inside are loaded) or URLs to the themes list.
-- Put a `.marprc.yml` next to your deck (or in a parent folder) with a `themeSet`. It is picked up automatically:
+- In Settings | Tools | Marp, add CSS files, folders (all `.css` files inside, including subfolders, are loaded) or URLs to the themes list.
+- Put a `.marprc.yml` with a `themeSet` in the project root, the same file Marp CLI uses. It is picked up automatically:
 
   ```yaml
   themeSet: themes
@@ -60,7 +60,7 @@ Ways to add themes:
 
 If you used the Marp for VS Code extension:
 
-- Setting `markdown.marp.themes`: copy its entries (files, folders or URLs) into Settings | Tools | Marp.
+- Setting `markdown.marp.themes`: copy its entries (files, folders or URLs) into Settings | Tools | Marp. Relative paths like `./themes/sketch.css` work as they are.
 - A `.marprc.yml` with `themeSet` needs no migration. It is picked up automatically.
 
 ## Known limitations

@@ -102,8 +102,8 @@ string:
   `update { }` publishes `MarpSettingsListener.TOPIC`.
 - `MarpThemeService` (project service): `suspend fun loadThemes(): MarpThemeSet` (cached, never on EDT);
   publishes `MarpThemeListener.TOPIC` when watched theme files, folders or `.marprc` change, or theme settings change.
-- Theme sources: settings `themes` entries (file / folder = all `*.css` directly inside / `http(s)` URL; relative
-  to the project dir) plus, when enabled, `themeSet` from `.marprc.yml` / `.marprc.yaml` / `.marprc.json` in the
+- Theme sources: settings `themes` entries (file / folder = all `**/*.css` inside, recursive and skipping `node_modules`
+  like marp-cli / `http(s)` URL; relative to the project dir) plus, when enabled, `themeSet` from `.marprc.yml` / `.marprc.yaml` / `.marprc.json` in the
   project root (string or list; relative to the `.marprc` file). Remote URLs: `HttpRequests`, 5 s timeout, cached for
   the session until settings change.
 - Theme CSS is sent as text; marp-core's `themeSet.add(css)` picks it up by its `@theme` name. Relative `url()`
