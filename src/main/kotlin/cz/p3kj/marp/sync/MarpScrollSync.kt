@@ -108,7 +108,9 @@ class MarpScrollSync(
             revealing = false
         }
         lastRevealAt = now()
-        lastSentLine = line
+        // Where the editor actually is (whole pixels, clamped at the end), so a later visible-area event without a real
+        // scroll (typing that changes the line width) does not send a slightly different line back to the preview.
+        lastSentLine = topVisibleLine()
     }
 
     override fun didClick(line: Int) {
