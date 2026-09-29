@@ -52,7 +52,7 @@ private val LOG = logger<MarpPreviewFileEditor>()
 /**
  * The preview half of the Marp split editor: renders the document with marp-core in [MarpPreviewPanel].
  *
- * Document edits are debounced ([RENDER_DEBOUNCE_MS]) and rendered in a coroutine scope that is cancelled on dispose;
+ * Document edits are throttled ([RENDER_DELAY_MS]) and rendered in a coroutine scope that is cancelled on dispose;
  * settings, theme, trust and rename/move changes re-render immediately. When JCEF is not available the editor shows a
  * plain message instead of the browser.
  */
@@ -68,7 +68,7 @@ class MarpPreviewFileEditor(val project: Project, private val file: VirtualFile)
     private val component: JComponent = panel?.component
         ?: JBPanelWithEmptyText().withEmptyText(MarpBundle.message("preview.jcef.unsupported"))
 
-    /** Conflated, so requests sent before the collectors start are kept. `true` = render now, `false` = debounced (typing). */
+    /** Conflated, so requests sent before the collectors start are kept. `true` = render now, `false` = after [RENDER_DELAY_MS] (typing). */
     private val renderRequests = Channel<Boolean>(Channel.CONFLATED)
     private val themeRequests = Channel<Unit>(Channel.CONFLATED)
 
@@ -83,8 +83,10 @@ class MarpPreviewFileEditor(val project: Project, private val file: VirtualFile)
 
     private fun startRendering() {
         scope.launch {
-            renderRequests.receiveAsFlow().collectLatest { immediate ->
-                if (!immediate) delay(RENDER_DEBOUNCE_MS)
+            // Throttled, not debounced: edits made during the delay are conflated into one follow-up request, so the
+            // preview keeps refreshing while the user types instead of waiting for a pause.
+            for (immediate in renderRequests) {
+                if (!immediate) delay(RENDER_DELAY_MS)
                 logFailures("render") { render() }
             }
         }
@@ -214,7 +216,8 @@ class MarpPreviewFileEditor(val project: Project, private val file: VirtualFile)
     }
 
     companion object {
-        const val RENDER_DEBOUNCE_MS: Long = 150
+        /** Delay between a document edit and its render; also the render interval while the user keeps typing. */
+        const val RENDER_DELAY_MS: Long = 150
 
         /** Raw HTML `all` is only honoured in trusted projects; untrusted ones fall back to marp-core's allowlist. */
         fun effectiveHtmlMode(configured: MarpHtmlMode, trusted: Boolean): MarpHtmlMode =

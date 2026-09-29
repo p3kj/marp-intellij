@@ -34,6 +34,12 @@ let activeLine: number | undefined
 let entries: CodeLine[] | undefined
 let programmaticY: number | undefined
 let lastRevealed: number | undefined
+/**
+ * Source line the preview is aligned to: the last `scrollToLine` (`fromEditor`) or where the user scrolled the preview.
+ * Re-applied when the viewport is resized, and after a render when it came from the editor, because pixel offsets
+ * change with the layout while the source line keeps the preview in step with the editor.
+ */
+let anchor: { line: number; fromEditor: boolean } | undefined
 
 /** rAF, with a timer fallback in case the browser pauses animation frames (hidden tab, offscreen). */
 function nextFrame(fn: () => void): void {
@@ -86,11 +92,11 @@ function render(): void {
 
   entries = undefined
   if (activeLine !== undefined) markActiveSlide(root, activeLine)
-  if (pendingScrollLine !== undefined) {
-    const line = pendingScrollLine
-    pendingScrollLine = undefined
-    applyScroll(line)
-  }
+  // A `scrollToLine` that arrived before this render was measured against the old markup, and the new markup can move
+  // slides (one added above the viewport), so re-align with the editor instead of keeping the pixel offset.
+  const line = pendingScrollLine ?? (anchor?.fromEditor ? anchor.line : undefined)
+  pendingScrollLine = undefined
+  if (line !== undefined) applyScroll(line)
 }
 
 function inject(html: string, css: string): void {
@@ -141,6 +147,7 @@ const bridge: MarpBridge = {
   },
 
   scrollToLine(line) {
+    anchor = { line, fromEditor: true }
     if (renderPending || !lastUpdate) pendingScrollLine = line
     else applyScroll(line)
   },
@@ -175,13 +182,24 @@ window.addEventListener(
       }
       entries ??= collectCodeLines(document, document.body)
       const line = lineForViewportPosition(entries, 0)
-      if (line === null || line === lastRevealed) return
+      if (line === null) return
+      anchor = { line, fromEditor: false }
+      if (line === lastRevealed) return
       lastRevealed = line
       host.post({ type: 'revealLine', line })
     })
   },
   { passive: true },
 )
+
+// Resizing the preview (splitter, editor split, tool windows) rescales the slides: keep showing the same source line.
+// Without this, the pixel offset would point at other slides, and a scroll clamped by a shorter page would be reported
+// as a user scroll and move the editor. The resulting scroll events match `programmaticY` and are not reported.
+window.addEventListener('resize', () => {
+  if (!anchor) return
+  if (renderPending) pendingScrollLine ??= anchor.line
+  else applyScroll(anchor.line)
+})
 
 function onLinkClick(e: MouseEvent): void {
   const a = (e.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null

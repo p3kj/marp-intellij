@@ -165,5 +165,28 @@ intellijPlatformTesting {
                 }
             }
         }
+
+        // Sandbox IDE with the UI test Robot Server (http://127.0.0.1:8082) for driving the IDE and taking screenshots
+        // of the IDE frame in manual or scripted checks. Open another project: ./gradlew runIdeForUiTests -PuiTestsProject=/path
+        register("runIdeForUiTests") {
+            val uiTestsProject = providers.gradleProperty("uiTestsProject")
+                .orElse(layout.projectDirectory.dir("samples").asFile.absolutePath)
+            task {
+                jvmArgumentProviders += CommandLineArgumentProvider {
+                    listOf(
+                        "-Drobot-server.port=8082",
+                        "-Dide.browser.jcef.debug.port=9222",
+                        "-Didea.trust.all.projects=true",
+                        "-Dide.show.tips.on.startup.default.value=false",
+                        "-Djb.consents.confirmation.enabled=false",
+                        "-Djb.privacy.policy.text=<!--999.999-->",
+                    )
+                }
+                argumentProviders += CommandLineArgumentProvider { listOf(uiTestsProject.get()) }
+            }
+            plugins {
+                robotServerPlugin()
+            }
+        }
     }
 }

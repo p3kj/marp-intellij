@@ -102,3 +102,12 @@ describe('content-section plugin', () => {
     expect(range(s)).toEqual([0, 3])
   })
 })
+
+describe('container', () => {
+  it('does not share its id with a heading slug', () => {
+    const body = render('# Marp Preview\n\n## marp preview\n')
+    const ids = [...body.querySelectorAll('[id]')].map((el) => el.id)
+    expect(ids.filter((id) => id === ids[0])).toHaveLength(1)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+})

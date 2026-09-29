@@ -77,6 +77,7 @@ Requirements: JDK 25 (Gradle finds or provisions it through the daemon JVM crite
 ./gradlew buildPlugin        # build the plugin ZIP into build/distributions
 ./gradlew runIde             # run a sandbox IDE with samples/ opened
 ./gradlew runPhpStorm -PphpStormPath=/path/to/phpstorm   # run in a local PhpStorm
+./gradlew runIdeForUiTests   # sandbox IDE with the UI test Robot Server on http://127.0.0.1:8082
 ./gradlew test               # Kotlin tests
 ./gradlew check              # all tests, including the webview vitest suite
 ./gradlew verifyPlugin       # IntelliJ Plugin Verifier against recommended IDEs
@@ -95,7 +96,7 @@ Third-party licenses: `build.mjs` generates `THIRD-PARTY-NOTICES.txt` (all bundl
 
 `npm ci` may warn that `@xmldom/xmldom` has known issues. It is a dependency of speech-rule-engine (pulled in by mathjax-full), is tree-shaken out of the bundle and is not shipped.
 
-In `runIde` the JCEF DevTools are available on port 9222 (open `http://localhost:9222` in a Chromium browser). `runPhpStorm` uses port 9223.
+In `runIde` and `runIdeForUiTests` the JCEF DevTools are available on port 9222 (open `http://localhost:9222` in a Chromium browser). `runPhpStorm` uses port 9223. `runIdeForUiTests` opens `samples/` unless you pass `-PuiTestsProject=/path/to/project`; its Robot Server runs scripts inside the IDE and takes screenshots of IDE components (see [intellij-ui-test-robot](https://github.com/JetBrains/intellij-ui-test-robot)).
 
 IntelliJ run configurations for these tasks are in `.run/`. See `docs/ARCHITECTURE.md` for how the plugin is put together.
 

@@ -55,7 +55,7 @@ the page sent `ready`. Line numbers are 0-based editor lines; fractional values 
 interface MarpBridge {
   /** Replace custom themes. errors: Kotlin-side problems (missing file, download failed) shown in the preview. */
   setThemes(arg: { themes: { source: string; css: string }[]; errors: string[] }): void
-  /** Render. Called on load and on every (debounced) document change. */
+  /** Render. Called on load and on document changes (throttled, at most every 150 ms while typing). */
   update(arg: {
     markdown: string
     baseHref: string            // https://marp.localhost/doc/<dir>/
@@ -70,7 +70,7 @@ interface MarpBridge {
 }
 ```
 
-Rendering follows marp-vscode's preview options: `container: {tag:'div', id:'marp-preview'}`,
+Rendering follows marp-vscode's preview options: `container: {tag:'div', id:'__marp-preview'}`,
 `slideContainer: {tag:'div', 'data-marp-slide-wrapper': ''}`, `inlineSVG: {backdropSelector: false}`,
 `minifyCSS: false`, `script: false`, `html` (`off` -> `false`, `default` -> marp-core allowlist, `all` -> `true`),
 `math`. Front-matter `math:` wins over the setting, as in marp-core. After each render the page calls `browser()`
