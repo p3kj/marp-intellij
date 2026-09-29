@@ -153,6 +153,17 @@ class MarpSlideParserTest : MarpLightTestCase() {
         assertEquals(listOf("One", "-", "Two"), titles("$divider# One\n\n---\n# Two\n"))
     }
 
+    fun testStyleBlocksAreNotVisibleContent() {
+        val divider = "---\nmarp: true\nheadingDivider: 1\n---\n"
+        // Marpit hides a block-level <style> (marpit_style), so the first heading after it starts no slide of its own.
+        assertEquals(listOf("One", "Two"), titles("$divider<style>\nh1 { color: red }\n</style>\n\n# One\n\n# Two\n"))
+        assertEquals(listOf("One"), titles("$divider<style scoped>\nh1 { color: red }\n</style>\n# One\n"))
+        assertEquals(listOf("One"), titles("$divider<style>h1 { color: red }</style>\n\n# One\n"))
+        // Other HTML is visible.
+        assertEquals(listOf("-", "One"), titles("$divider<div>hi</div>\n\n# One\n"))
+        assertEquals(listOf("-", "One"), titles("$divider<styled>hi</styled>\n\n# One\n"))
+    }
+
     fun testHeadingsInBlockquotesDivideToo() {
         val divider = "---\nmarp: true\nheadingDivider: 2\n---\n"
         assertEquals(listOf("-", "Quoted"), titles("${divider}Text\n\n> ## Quoted\n"))
@@ -161,6 +172,31 @@ class MarpSlideParserTest : MarpLightTestCase() {
     fun testHeadingTextIsPlainText() {
         val deck = deck("$front#   Spaced    out  #\n\n## Second\n")
         assertEquals(listOf("Spaced out", "Second"), deck.slides[0].headings.map { it.text })
+    }
+
+    fun testTitlesLeaveOutInlineMarkup() {
+        val cases = mapOf(
+            "# <!-- fit --> Title" to "Title",
+            "# Title <!--fit-->" to "Title",
+            "# Ti<!-- x -->tle" to "Title",
+            "# **Bold** title" to "Bold title",
+            "# *Em* and __strong__ and ~~gone~~" to "Em and strong and gone",
+            "# _Em_ text" to "Em text",
+            "# Use `code` here" to "Use code here",
+            "# [Link](http://example.com) text" to "Link text",
+            "# [Link **bold**](x \"title\") text" to "Link bold text",
+            "# [Ref][r] text\n\n[r]: http://example.com" to "Ref text",
+            "# ![image](x.png) Text" to "Text",
+            "# Text <b>with</b> tags" to "Text with tags",
+            "# snake_case_name" to "snake_case_name",
+            "# 2 * 3 = 6" to "2 * 3 = 6",
+            "Setext **bold**\n---" to "Setext bold",
+        )
+        for ((source, title) in cases) {
+            assertEquals(source, listOf(title), titles("$front$source\n"))
+        }
+        assertEquals(listOf("-"), titles("$front# <!-- fit -->\n"))
+        assertEquals(listOf("-"), titles("$front# ![only](x.png)\n"))
     }
 
     fun testEmptyHeadingHasNoTitle() {

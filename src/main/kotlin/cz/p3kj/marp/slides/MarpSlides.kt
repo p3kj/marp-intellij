@@ -56,21 +56,24 @@ data class MarpDeck(val slides: List<MarpSlide>, val headingDivider: Set<Int>) {
      * Index of the slide that contains [offset]. An offset on a separator line belongs to the slide that separator
      * starts, like in the preview. Offsets outside the text clamp to the first or the last slide.
      */
-    fun slideIndexAt(offset: Int): Int {
-        var low = 0
-        var high = slides.size - 1
-        while (low < high) {
-            val middle = (low + high + 1) ushr 1
-            if (slides[middle].startOffset <= offset) low = middle else high = middle - 1
-        }
-        return low
+    fun slideIndexAt(offset: Int): Int = lastStartAtOrBefore(slides.size, offset) { slides[it].startOffset }
+}
+
+/** Index of the last of [count] ascending start offsets that is at or before [offset], 0 when there is none. */
+private inline fun lastStartAtOrBefore(count: Int, offset: Int, startOf: (Int) -> Int): Int {
+    var low = 0
+    var high = count - 1
+    while (low < high) {
+        val middle = (low + high + 1) ushr 1
+        if (startOf(middle) <= offset) low = middle else high = middle - 1
     }
+    return low
 }
 
 /**
  * Splits a document into slides like Marpit does. Port of the rules in Marpit (https://github.com/marp-team/marpit,
- * MIT License, Copyright (c) 2018- Marp team (marp-team@marp.app)): `src/markdown/slide.js` splits at every top-level `hr` and
- * `src/markdown/heading_divider.js` adds a hidden `hr` before headings of the `headingDivider` levels, but only when
+ * MIT License, Copyright (c) 2018- Marp team (marp-team@marp.app)): `src/markdown/slide.js` splits at every
+ * top-level `hr` and `src/markdown/heading_divider.js` adds a hidden `hr` before headings of the `headingDivider` levels, but only when
  * something visible precedes them. A separator directly followed by a divider heading therefore leaves an empty slide
  * in between, and a leading separator an empty first slide. The heading levels come from [MarpHeadingDivider].
  * Linear in the number of blocks.
@@ -112,7 +115,8 @@ object MarpSlideSplitter {
         val starts = IntArray(boundaries.size + 1) { if (it == 0) 0 else boundaries[it - 1].start.coerceIn(0, length) }
         for (block in blocks) {
             if (block !is MarpBlock.Heading) continue
-            headings[indexOfSlide(starts, block.start)] += MarpHeading(block.level, collapseWhitespace(block.text), block.start)
+            val index = lastStartAtOrBefore(starts.size, block.start) { starts[it] }
+            headings[index] += MarpHeading(block.level, collapseWhitespace(block.text), block.start)
         }
         for (index in starts.indices) {
             val start = starts[index]
@@ -125,16 +129,6 @@ object MarpSlideSplitter {
             slides += MarpSlide(index, start, end, body, contentOffset(text, start, body, end), headings[index])
         }
         return MarpDeck(slides, levels)
-    }
-
-    private fun indexOfSlide(starts: IntArray, offset: Int): Int {
-        var low = 0
-        var high = starts.size - 1
-        while (low < high) {
-            val middle = (low + high + 1) ushr 1
-            if (starts[middle] <= offset) low = middle else high = middle - 1
-        }
-        return low
     }
 
     /** The first non-blank line start of `[body, end)`; without one, [body] if it is inside the slide, else [start]. */
@@ -163,21 +157,9 @@ object MarpSlideSplitter {
         return if (i < text.length) i + 1 else text.length
     }
 
-    private fun collapseWhitespace(text: String): String {
-        val result = StringBuilder(text.length)
-        var pendingSpace = false
-        for (c in text) {
-            if (c.isWhitespace()) {
-                pendingSpace = result.isNotEmpty()
-            }
-            else {
-                if (pendingSpace) result.append(' ')
-                pendingSpace = false
-                result.append(c)
-            }
-        }
-        return result.toString()
-    }
+    private val WHITESPACE = Regex("\\s+")
+
+    private fun collapseWhitespace(text: String): String = text.trim().replace(WHITESPACE, " ")
 }
 
 /**

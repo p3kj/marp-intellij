@@ -62,6 +62,8 @@ object MarpSlideParser {
                     collectNested(child, start, out)
                 }
                 type == MarkdownElementTypes.HTML_BLOCK && isComment(child) -> out += MarpBlock.Comment(start, child.text)
+                // Marpit turns a block-level <style> into a hidden token, it is not visible content.
+                type == MarkdownElementTypes.HTML_BLOCK && isStyle(child) -> Unit
                 type in INVISIBLE_TYPES -> Unit
                 else -> {
                     out += MarpBlock.Content(start)
@@ -92,8 +94,55 @@ object MarpSlideParser {
 
     private fun heading(node: ASTNode, start: Int): MarpBlock.Heading {
         val header = node.psi as MarkdownHeader
-        return MarpBlock.Heading(start, header.level, header.name ?: "")
+        return MarpBlock.Heading(start, header.level, headingText(node))
     }
 
     private fun isComment(node: ASTNode): Boolean = node.text.trimStart().startsWith("<!--")
+
+    /** Marpit's `marpit_style_parse` opening: `<style` followed by white space, `>` or the end of the line. */
+    private val STYLE_OPENING = Regex("^<style(?=[\\s>]|$)", RegexOption.IGNORE_CASE)
+
+    private fun isStyle(node: ASTNode): Boolean = STYLE_OPENING.containsMatchIn(node.text.trimStart())
+
+    private val LINK_TYPES: Set<IElementType> = setOf(
+        MarkdownElementTypes.INLINE_LINK, MarkdownElementTypes.FULL_REFERENCE_LINK, MarkdownElementTypes.SHORT_REFERENCE_LINK,
+    )
+
+    /** Markup characters that are not part of the text: `*` / `_` of emphasis, backticks, `~~`. */
+    private val MARKUP_TOKENS: Set<IElementType> = setOf(
+        MarkdownTokenTypes.EMPH, MarkdownTokenTypes.BACKTICK, MarkdownTokenTypes.TILDE,
+    )
+
+    /**
+     * The text of a heading without inline markup, from the token types of its content: emphasis, code and
+     * strikethrough markers, inline HTML (including comments such as `# <!-- fit --> Title`) and images are left out and
+     * a link is reduced to its text. Text that only looks like markup, such as `snake_case`, is plain text for the parser and stays.
+     */
+    private fun headingText(header: ASTNode): String {
+        val content = header.getChildren(null).firstOrNull {
+            it.elementType == MarkdownTokenTypes.ATX_CONTENT || it.elementType == MarkdownTokenTypes.SETEXT_CONTENT
+        } ?: return ""
+        val text = StringBuilder()
+        for (child in content.getChildren(null)) appendInlineText(child, text)
+        return text.toString()
+    }
+
+    private fun appendInlineText(node: ASTNode, text: StringBuilder) {
+        val type = node.elementType
+        when {
+            type in MARKUP_TOKENS || type == MarkdownElementTypes.IMAGE || type == MarkdownTokenTypes.HTML_TAG -> Unit
+            type in LINK_TYPES -> {
+                for (part in node.getChildren(null)) {
+                    if (part.elementType != MarkdownElementTypes.LINK_TEXT) continue
+                    for (inner in part.getChildren(null)) {
+                        if (inner.elementType != MarkdownTokenTypes.LBRACKET && inner.elementType != MarkdownTokenTypes.RBRACKET) {
+                            appendInlineText(inner, text)
+                        }
+                    }
+                }
+            }
+            node.firstChildNode == null -> text.append(node.text)
+            else -> for (child in node.getChildren(null)) appendInlineText(child, text)
+        }
+    }
 }

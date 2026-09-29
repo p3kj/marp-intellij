@@ -225,8 +225,13 @@ today, slide navigation and folding later.
   fences and indented code, setext headings, `---` inside `<!-- -->` or `<style>`, blockquotes and lists are handled
   by the parser, like markdown-it does for Marpit. The front matter is located by `MarpDetector.findFrontMatter`
   (same rules as detection), not by the PSI front matter elements (`@ApiStatus.Experimental`); PSI nodes that start
-  inside it are skipped. Only `MarkdownFile`, `MarkdownHeader.level` / `name` and the element and token type
-  constants are used from the Markdown plugin.
+  inside it are skipped. That end follows marp-vscode's detection regular expression, which disagrees with
+  markdown-it-front-matter (what the preview uses) in exotic cases, for example an opening fence of `-----` closed by
+  `---`, or an indented closing fence. Block-level `<style>` elements are hidden in Marpit and so are not visible
+  content here. Heading titles are built from the token types of the heading content (emphasis, code and strikethrough
+  markers, inline HTML and comments, images left out, links reduced to their text), not from
+  `MarkdownHeader.buildVisibleText` (`@ApiStatus.Experimental`). Only `MarkdownFile`, `MarkdownHeader.level` and the
+  element and token type constants are used from the Markdown plugin.
 - `MarpSlideSplitter.split` (pure, unit-tested) mirrors Marpit's `markdown/slide.js` (split at every top-level `hr`)
   and `markdown/heading_divider.js` (a hidden `hr` before headings of the `headingDivider` levels, only when something
   visible precedes it, so a real `---` followed by a divider heading leaves an empty slide between them). This has to
