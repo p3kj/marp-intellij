@@ -23,8 +23,11 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <!-- Editor and preview -->
-        <fileEditorProvider implementation="cz.p3kj.marp.editor.MarpSplitEditorProvider"/>
+        <fileEditorProvider id="marp-preview-editor"
+                            implementation="cz.p3kj.marp.editor.MarpSplitEditorProvider"
+                            isDocumentRequired="true"/>
         <editorNotificationProvider implementation="cz.p3kj.marp.notifications.MarpEditorNotificationProvider"/>
+        <editorFactoryDocumentListener implementation="cz.p3kj.marp.notifications.MarpNotificationDocumentListener"/>
 
         <!-- Settings and themes -->
         <projectConfigurable
