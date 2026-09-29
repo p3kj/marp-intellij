@@ -168,18 +168,23 @@ tasks {
 intellijPlatformTesting {
     runIde {
         // Runs the plugin in a locally installed PhpStorm: ./gradlew runPhpStorm [-PphpStormPath=/path/to/phpstorm]
-        register("runPhpStorm") {
-            localPath = file(
-                providers.gradleProperty("phpStormPath")
-                    .orElse(System.getProperty("user.home") + "/.local/share/JetBrains/Toolbox/apps/phpstorm")
-                    .get()
-            )
-            task {
-                jvmArgumentProviders += CommandLineArgumentProvider {
-                    listOf("-Dide.browser.jcef.debug.port=9223", "-Didea.trust.all.projects=true")
-                }
-                argumentProviders += CommandLineArgumentProvider {
-                    listOf(layout.projectDirectory.dir("samples").asFile.absolutePath)
+        // Registered only when that PhpStorm exists: a build that resolves every configuration (the dependency graph
+        // submission on CI) fails on a missing local IDE.
+        val phpStormDir = file(
+            providers.gradleProperty("phpStormPath")
+                .orElse(System.getProperty("user.home") + "/.local/share/JetBrains/Toolbox/apps/phpstorm")
+                .get()
+        )
+        if (phpStormDir.isDirectory) {
+            register("runPhpStorm") {
+                localPath = phpStormDir
+                task {
+                    jvmArgumentProviders += CommandLineArgumentProvider {
+                        listOf("-Dide.browser.jcef.debug.port=9223", "-Didea.trust.all.projects=true")
+                    }
+                    argumentProviders += CommandLineArgumentProvider {
+                        listOf(layout.projectDirectory.dir("samples").asFile.absolutePath)
+                    }
                 }
             }
         }
