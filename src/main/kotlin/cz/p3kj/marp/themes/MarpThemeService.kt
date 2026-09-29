@@ -253,7 +253,7 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
         val file = MARPRC_NAMES.map { base.resolve(it) }.firstOrNull { it.isRegularFile() } ?: return emptyList()
         val text = readText(file)
         if (text == null) {
-            errors += MarpBundle.message("themes.error.marprc", file.name, "unreadable")
+            errors += MarpBundle.message("themes.error.marprcUnreadable", file.name)
             return emptyList()
         }
         return try {

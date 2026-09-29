@@ -1,10 +1,11 @@
 package cz.p3kj.marp.themes
 
+import com.google.gson.JsonParseException
+import com.google.gson.JsonParser
+
 /**
- * Minimal reader for the `themeSet` option of a Marp CLI configuration file.
- *
- * Only `themeSet` is needed, so this avoids depending on a bundled YAML / JSON library: the platform's SnakeYAML and
- * Gson live in separate library modules whose availability to plugins differs between IDE products.
+ * Minimal reader for the `themeSet` option of a Marp CLI configuration file: JSON through the platform's Gson, YAML
+ * through a small parser for the top-level `themeSet` key only (scalar, flow list or block list).
  */
 object MarprcParser {
     private val keyRegex = Regex("""^(?:themeSet|"themeSet"|'themeSet')\s*:(.*)$""")
@@ -19,114 +20,22 @@ object MarprcParser {
     // ---- JSON ----
 
     private fun parseJson(text: String): List<String> {
-        val root = JsonReader(text).readDocument()
-        val value = (root as? Map<*, *>)?.get("themeSet") ?: return emptyList()
-        return when (value) {
-            is String -> listOf(value)
-            is List<*> -> value.filterIsInstance<String>()
-            else -> emptyList()
-        }.filter { it.isNotBlank() }
-    }
-
-    private class JsonReader(private val s: String) {
-        private var i = 0
-
-        fun readDocument(): Any? {
-            val v = readValue()
-            skipWs()
-            require(i == s.length) { "Unexpected trailing content at $i" }
-            return v
+        val root = try {
+            JsonParser.parseString(text)
         }
-
-        private fun skipWs() {
-            while (i < s.length && s[i].isWhitespace()) i++
+        catch (e: JsonParseException) {
+            throw IllegalArgumentException(e.message ?: "Malformed JSON", e)
         }
-
-        private fun readValue(): Any? {
-            skipWs()
-            require(i < s.length) { "Unexpected end of JSON" }
-            return when (val c = s[i]) {
-                '{' -> readObject()
-                '[' -> readArray()
-                '"' -> readString()
-                else -> {
-                    val start = i
-                    while (i < s.length && (s[i].isLetterOrDigit() || s[i] in "+-.")) i++
-                    require(i > start) { "Unexpected character '$c' at $i" }
-                    // number / true / false / null are irrelevant here
-                    null
-                }
-            }
+        if (!root.isJsonObject) return emptyList()
+        val value = root.asJsonObject.get("themeSet") ?: return emptyList()
+        val items = when {
+            value.isJsonArray -> value.asJsonArray.toList()
+            else -> listOf(value)
         }
-
-        private fun readObject(): Map<String, Any?> {
-            val map = LinkedHashMap<String, Any?>()
-            i++
-            skipWs()
-            if (peek() == '}') { i++; return map }
-            while (true) {
-                skipWs()
-                require(peek() == '"') { "Expected a string key at $i" }
-                val key = readString()
-                skipWs()
-                require(peek() == ':') { "Expected ':' at $i" }
-                i++
-                map[key] = readValue()
-                skipWs()
-                when (peek()) {
-                    ',' -> i++
-                    '}' -> { i++; return map }
-                    else -> throw IllegalArgumentException("Expected ',' or '}' at $i")
-                }
-            }
-        }
-
-        private fun readArray(): List<Any?> {
-            val list = ArrayList<Any?>()
-            i++
-            skipWs()
-            if (peek() == ']') { i++; return list }
-            while (true) {
-                list.add(readValue())
-                skipWs()
-                when (peek()) {
-                    ',' -> i++
-                    ']' -> { i++; return list }
-                    else -> throw IllegalArgumentException("Expected ',' or ']' at $i")
-                }
-            }
-        }
-
-        private fun readString(): String {
-            i++ // opening quote
-            val sb = StringBuilder()
-            while (true) {
-                require(i < s.length) { "Unterminated string" }
-                val c = s[i++]
-                when (c) {
-                    '"' -> return sb.toString()
-                    '\\' -> {
-                        require(i < s.length) { "Unterminated escape" }
-                        when (val e = s[i++]) {
-                            'n' -> sb.append('\n')
-                            't' -> sb.append('\t')
-                            'r' -> sb.append('\r')
-                            'b' -> sb.append('\b')
-                            'f' -> sb.append('\u000C')
-                            'u' -> {
-                                require(i + 4 <= s.length) { "Bad unicode escape" }
-                                sb.append(s.substring(i, i + 4).toInt(16).toChar())
-                                i += 4
-                            }
-                            else -> sb.append(e)
-                        }
-                    }
-                    else -> sb.append(c)
-                }
-            }
-        }
-
-        private fun peek(): Char = if (i < s.length) s[i] else '\u0000'
+        return items
+            .filter { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+            .map { it.asString }
+            .filter { it.isNotBlank() }
     }
 
     // ---- YAML (top-level `themeSet` only) ----

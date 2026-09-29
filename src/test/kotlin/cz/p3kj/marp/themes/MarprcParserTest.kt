@@ -32,11 +32,20 @@ class MarprcParserTest : TestCase() {
         assertEquals(listOf("t"), MarprcParser.parseThemeSet(".marprc", """{"themeSet": "t"}"""))
     }
 
+    fun testJsonIgnoresNonStringEntries() {
+        assertEquals(listOf("a"), MarprcParser.parseThemeSet(".marprc.json", """{"themeSet": ["a", 1, null, {"b": "c"}, ""]}"""))
+        assertEquals(emptyList<String>(), MarprcParser.parseThemeSet(".marprc.json", """{"themeSet": 42}"""))
+        assertEquals(emptyList<String>(), MarprcParser.parseThemeSet(".marprc.json", """["themeSet"]"""))
+        assertEquals(listOf("\u00e4"), MarprcParser.parseThemeSet(".marprc.json", """{"themeSet": "\u00e4"}"""))
+    }
+
     fun testBrokenJson() {
-        try {
-            MarprcParser.parseThemeSet(".marprc.json", """{"themeSet": """)
-            fail("expected failure")
-        } catch (_: IllegalArgumentException) {
+        for (broken in listOf("""{"themeSet": """, """{"themeSet": "a"} trailing""", """{"themeSet": ["a",""")) {
+            try {
+                MarprcParser.parseThemeSet(".marprc.json", broken)
+                fail("expected failure for $broken")
+            } catch (_: IllegalArgumentException) {
+            }
         }
     }
 }
