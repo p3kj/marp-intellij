@@ -17,6 +17,7 @@ import com.intellij.ui.CollectionListModel
 import com.intellij.ui.ToolbarDecorator
 import com.intellij.ui.components.JBList
 import com.intellij.ui.dsl.builder.Align
+import com.intellij.ui.dsl.builder.MAX_LINE_LENGTH_WORD_WRAP
 import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindSelected
 import com.intellij.ui.dsl.builder.panel
@@ -42,37 +43,41 @@ class MarpConfigurable(private val project: Project) : BoundConfigurable(MarpBun
 
     override fun createPanel(): DialogPanel {
         loadFromSettings()
-        val list = JBList(listModel).apply { selectionMode = ListSelectionModel.SINGLE_SELECTION }
+        val list = JBList(listModel).apply {
+            selectionMode = ListSelectionModel.SINGLE_SELECTION
+            // Keeps the page within the default Settings dialog height; the row grows with the dialog.
+            visibleRowCount = LIST_VISIBLE_ROWS
+        }
         val decorator = ToolbarDecorator.createDecorator(list)
             .setAddAction { button -> showAddPopup(button) }
             .setAddActionName(MarpBundle.message("settings.themes.add.file"))
             .createPanel()
 
+        // Comments wrap at the width of the page instead of widening it (the default is a fixed line length).
         return panel {
             group(MarpBundle.message("settings.themes.group")) {
                 row {
                     cell(decorator).align(Align.FILL).resizableColumn()
                 }.resizableRow()
                 row {
-                    comment(MarpBundle.message("settings.themes.comment"))
+                    comment(MarpBundle.message("settings.themes.comment"), MAX_LINE_LENGTH_WORD_WRAP)
                 }
                 row {
                     checkBox(MarpBundle.message("settings.useMarprcThemeSet"))
                         .bindSelected(::useMarprcThemeSet)
-                        .comment(MarpBundle.message("settings.useMarprcThemeSet.comment"))
+                        .comment(MarpBundle.message("settings.useMarprcThemeSet.comment"), MAX_LINE_LENGTH_WORD_WRAP)
                 }
-            }
+            }.resizableRow()
             group(MarpBundle.message("settings.rendering.group")) {
+                // Row comments start under the label: under the combo box they would need the label width on top.
                 row(MarpBundle.message("settings.html")) {
                     comboBox(MarpHtmlMode.entries, textListCellRenderer { it?.let(::htmlLabel) })
                         .bindItem({ html }, { html = it ?: MarpHtmlMode.DEFAULT })
-                        .comment(MarpBundle.message("settings.html.comment"))
-                }
+                }.rowComment(MarpBundle.message("settings.html.comment"), MAX_LINE_LENGTH_WORD_WRAP)
                 row(MarpBundle.message("settings.math")) {
                     comboBox(MarpMathMode.entries, textListCellRenderer { it?.let(::mathLabel) })
                         .bindItem({ math }, { math = it ?: MarpMathMode.MATHJAX })
-                        .comment(MarpBundle.message("settings.math.comment"))
-                }
+                }.rowComment(MarpBundle.message("settings.math.comment"), MAX_LINE_LENGTH_WORD_WRAP)
                 row {
                     checkBox(MarpBundle.message("settings.scrollSync")).bindSelected(::scrollSync)
                 }
@@ -177,6 +182,8 @@ class MarpConfigurable(private val project: Project) : BoundConfigurable(MarpBun
     }
 
     companion object {
+        private const val LIST_VISIBLE_ROWS = 5
+
         internal fun isValidHttpUrl(text: String): Boolean = try {
             val uri = URI(text)
             (uri.scheme.equals("http", true) || uri.scheme.equals("https", true)) && !uri.host.isNullOrEmpty()
