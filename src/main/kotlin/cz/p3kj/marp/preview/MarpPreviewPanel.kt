@@ -10,7 +10,9 @@ import com.intellij.ide.ui.LafManagerListener
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.UI
+import com.intellij.openapi.application.asContextElement
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.editor.colors.EditorColorsListener
 import com.intellij.openapi.editor.colors.EditorColorsManager
@@ -20,15 +22,18 @@ import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.platform.util.coroutines.childScope
 import com.intellij.ui.ColorUtil
+import com.intellij.ui.components.JBPanelWithEmptyText
 import com.intellij.ui.jcef.JBCefBrowser
 import com.intellij.ui.jcef.JBCefBrowserBase
 import com.intellij.ui.jcef.JBCefJSQuery
 import cz.p3kj.marp.MarpBundle
 import cz.p3kj.marp.themes.MarpThemeSet
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.cef.browser.CefBrowser
@@ -37,6 +42,7 @@ import org.cef.handler.CefLifeSpanHandlerAdapter
 import org.cef.handler.CefLoadHandler
 import org.cef.handler.CefLoadHandlerAdapter
 import org.cef.network.CefRequest
+import java.awt.BorderLayout
 import java.awt.Color
 import java.nio.file.Path
 import javax.swing.JComponent
@@ -46,6 +52,10 @@ private val LOG = logger<MarpPreviewPanel>()
 /**
  * The JCEF browser showing the Marp preview page (`https://marp.localhost/app/index.html`) plus the JS bridge
  * described in `docs/ARCHITECTURE.md`.
+ *
+ * [component] is an empty placeholder at first. The browser is created right after on the EDT, once
+ * [MarpJcefStartup.prepare] has run (the first browser of the session starts JCEF), and then shown in the placeholder.
+ * Until it is ready the bridge only records calls.
  *
  * Bridge calls are state setters, so [MarpBridgeState] keeps the latest argument of every call and sends them all (in
  * contract order) whenever the page reports `ready`, including after a reload. All public methods are thread-safe.
@@ -67,13 +77,19 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
 
     private val scope = parentScope.childScope("Marp preview panel")
 
-    private val browser: JBCefBrowser = JBCefBrowser.createBuilder()
-        .setUrl(MarpResourcePaths.APP_INDEX_URL)
-        .setEnableOpenDevToolsMenuItem(false)
-        .build()
+    /** Holds the browser component once it exists; shows a message when the browser cannot be created. */
+    private val placeholder = JBPanelWithEmptyText(BorderLayout())
 
-    // Must be created before the native browser is, i.e. right after build().
-    private val query: JBCefJSQuery = JBCefJSQuery.create(browser as JBCefBrowserBase)
+    /** Parent of the browser. Registered before the shutdown hook in `init`, so it is disposed after it. */
+    private val browserDisposable = Disposer.newDisposable(this, "Marp preview browser")
+
+    private class Browser(val jbBrowser: JBCefBrowser, val query: JBCefJSQuery) {
+        val cefBrowser: CefBrowser get() = jbBrowser.cefBrowser
+    }
+
+    /** `null` until [createBrowser] ran. */
+    @Volatile
+    private var browser: Browser? = null
 
     @Volatile
     private var allowedRoots: Collection<Path> = emptyList()
@@ -84,27 +100,72 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
         onRenderProcessGone = { onPageGone("renderer process terminated") },
     )
 
+    // Only executes after the page reported ready, so the browser exists by then.
     private val bridge = MarpBridgeState { method, json ->
-        browser.cefBrowser.executeJavaScript("window.marpBridge && window.marpBridge.$method($json);", MarpResourcePaths.APP_INDEX_URL, 0)
+        browser?.cefBrowser?.executeJavaScript("window.marpBridge && window.marpBridge.$method($json);", MarpResourcePaths.APP_INDEX_URL, 0)
     }
 
-    val component: JComponent get() = browser.component
+    val component: JComponent get() = placeholder
+
+    /** The browser once it exists, the placeholder before. */
+    val preferredFocusedComponent: JComponent get() = browser?.jbBrowser?.component ?: placeholder
 
     init {
-        Disposer.register(this, browser)
-        Disposer.register(browser, query)
         Disposer.register(this, requestHandler)
 
-        browser.setProperty(JBCefBrowserBase.Properties.NO_CONTEXT_MENU, true)
+        val connection = ApplicationManager.getApplication().messageBus.connect(this)
+        connection.subscribe(LafManagerListener.TOPIC, LafManagerListener { sendIdeTheme() })
+        connection.subscribe(EditorColorsManager.TOPIC, EditorColorsListener { sendIdeTheme() })
+        sendStrings()
+        sendIdeTheme()
+
+        scope.launch {
+            MarpJcefStartup.prepare()
+            // Any modality: only creates UI, and a modal dialog open at startup must not keep the preview empty.
+            withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
+                ensureActive()
+                try {
+                    createBrowser()
+                }
+                catch (e: CancellationException) {
+                    throw e
+                }
+                catch (e: Exception) {
+                    LOG.warn("Cannot create the Marp preview browser", e)
+                    placeholder.withEmptyText(MarpBundle.message("preview.jcef.unsupported"))
+                }
+            }
+        }
+
+        // Registered last, so it is disposed first: stop talking to the browser before it goes away.
+        Disposer.register(this) {
+            bridge.dispose()
+            listener = null
+            scope.cancel()
+        }
+    }
+
+    /** EDT. Called at most once, before the panel is disposed (both happen on the EDT, disposal cancels [scope]). */
+    private fun createBrowser() {
+        val jbBrowser = JBCefBrowser.createBuilder()
+            .setUrl(MarpResourcePaths.APP_INDEX_URL)
+            .setEnableOpenDevToolsMenuItem(false)
+            .build()
+        Disposer.register(browserDisposable, jbBrowser)
+        // Must be created before the native browser is, i.e. right after build().
+        val query = JBCefJSQuery.create(jbBrowser as JBCefBrowserBase)
+        Disposer.register(jbBrowser, query)
+
+        jbBrowser.setProperty(JBCefBrowserBase.Properties.NO_CONTEXT_MENU, true)
         // No JCEF error page: it is loaded as a navigation away from the preview page, which is always cancelled.
-        browser.setErrorPage(null)
+        jbBrowser.setErrorPage(null)
         query.addHandler { message ->
             onMessage(message)
             null
         }
 
-        val client = browser.jbCefClient
-        val cefBrowser = browser.cefBrowser
+        val client = jbBrowser.jbCefClient
+        val cefBrowser = jbBrowser.cefBrowser
         client.addRequestHandler(requestHandler, cefBrowser)
         client.addLoadHandler(object : CefLoadHandlerAdapter() {
             override fun onLoadStart(browser: CefBrowser?, frame: CefFrame?, transitionType: CefRequest.TransitionType?) {
@@ -138,18 +199,10 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
             }
         }, cefBrowser)
 
-        val connection = ApplicationManager.getApplication().messageBus.connect(this)
-        connection.subscribe(LafManagerListener.TOPIC, LafManagerListener { sendIdeTheme() })
-        connection.subscribe(EditorColorsManager.TOPIC, EditorColorsListener { sendIdeTheme() })
-        sendStrings()
-        sendIdeTheme()
-
-        // Registered last, so it is disposed first: stop talking to the browser before it goes away.
-        Disposer.register(this) {
-            bridge.dispose()
-            listener = null
-            scope.cancel()
-        }
+        browser = Browser(jbBrowser, query)
+        placeholder.add(jbBrowser.component, BorderLayout.CENTER)
+        placeholder.revalidate()
+        placeholder.repaint()
     }
 
     /** Directories whose files may be served under `https://marp.localhost/doc/`. */
@@ -223,8 +276,9 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
     }
 
     private fun injectHost() {
+        val browser = browser ?: return
         val js = """
-            window.__marpHost = { post: function (msg) { ${query.inject("msg")} } };
+            window.__marpHost = { post: function (msg) { ${browser.query.inject("msg")} } };
             if (window.__marpHostReady) window.__marpHostReady();
         """.trimIndent()
         browser.cefBrowser.executeJavaScript(js, MarpResourcePaths.APP_INDEX_URL, 0)
@@ -262,7 +316,7 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
             LOG.info("Marp preview reloads: $reason")
             scope.launch(Dispatchers.UI) {
                 delay(RELOAD_DELAY_MS)
-                browser.cefBrowser.loadURL(MarpResourcePaths.APP_INDEX_URL)
+                browser?.cefBrowser?.loadURL(MarpResourcePaths.APP_INDEX_URL)
             }
         }
         else {
@@ -290,7 +344,7 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
     }
 
     override fun dispose() {
-        // Children (browser, JS query, request handler, bus connection, shutdown hook) are disposed by Disposer.
+        // Children (browser with its JS query, request handler, bus connection, shutdown hook) are disposed by Disposer.
     }
 
     private companion object {

@@ -209,7 +209,7 @@ class MarpPreviewFileEditor(val project: Project, private val file: VirtualFile)
 
     override fun getComponent(): JComponent = component
 
-    override fun getPreferredFocusedComponent(): JComponent = component
+    override fun getPreferredFocusedComponent(): JComponent = panel?.preferredFocusedComponent ?: component
 
     override fun getName(): String = MarpBundle.message("preview.editor.name")
 

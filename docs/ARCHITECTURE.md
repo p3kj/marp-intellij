@@ -8,7 +8,7 @@ renderer API).
 Markdown file with `marp: true`
   -> MarpSplitEditorProvider (HIDE_OTHER_EDITORS)
      -> TextEditorWithPreview(text editor, MarpPreviewFileEditor)
-        -> MarpPreviewPanel (JBCefBrowser)
+        -> MarpPreviewPanel (placeholder, then JBCefBrowser; see Threading and lifecycle rules)
            loads https://marp.localhost/app/index.html
            Kotlin -> JS: window.marpBridge.*(json)
            JS -> Kotlin: one JBCefJSQuery, JSON messages
@@ -166,6 +166,15 @@ string:
 - No blocking work on the EDT; document text read in read actions; file I/O and HTTP on `Dispatchers.IO`.
 - Services are light `@Service` classes with an injected `CoroutineScope`; editors and panels are `Disposable` and
   registered with `Disposer`; message bus connections are tied to a disposable or scope.
+- `MarpPreviewPanel` starts as an empty placeholder and creates its `JBCefBrowser` in a coroutine: first
+  `MarpJcefStartup.prepare()` reads `ProxySettings.getProxyConfiguration()` on `Dispatchers.IO` (once per IDE session),
+  then the browser is created on the EDT (any modality) and added to the placeholder. Bridge calls made before that are
+  only recorded and replayed on `ready`, as during a reload. Reason: the first browser of the session starts JCEF,
+  and `JBCefApp`'s class initializer reads the proxy settings. If the platform has not read them yet (it does so on its
+  first HTTP request, usually but not always before editors are restored at startup), creating the proxy settings
+  service requests `ProxyMigrationService` from inside that class initializer, and the platform reports a SEVERE
+  "`JBCefApp$Holder <clinit> requests ... ProxyMigrationService instance`" blaming the plugin that created the browser.
+  If the browser cannot be created, the placeholder shows the "JCEF not available" text.
 - Everything is `DumbAware`. No components, no `@Internal` / deprecated / experimental APIs, so the plugin stays
   dynamic and passes the Plugin Verifier clean.
 - All user-visible strings in `messages/MarpBundle.properties`.
