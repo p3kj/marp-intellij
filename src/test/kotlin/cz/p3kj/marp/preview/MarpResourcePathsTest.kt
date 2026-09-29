@@ -141,6 +141,49 @@ class MarpResourcePathsTest {
         }
     }
 
+    private val isWindows = System.getProperty("os.name").lowercase().startsWith("windows")
+
+    /** The raw `/doc/` part of a URL, as [MarpResourcePaths.parse] hands it to `docPath`. */
+    private fun rawDocPart(url: String): String = java.net.URI(url).rawPath.removePrefix("/doc/")
+
+    @Test
+    fun uncPathsKeepTheirDoubleSlash() {
+        val url = MarpResourcePaths.docUrl("//server/share/My Deck", directory = true)
+        assertEquals("https://marp.localhost/doc//server/share/My%20Deck/", url)
+        assertEquals(url, MarpResourcePaths.docUrl("\\\\server\\share\\My Deck", directory = true))
+        // A relative reference below that base (browsers keep the empty segment; java.net.URI.resolve would drop it).
+        val image = url + "img/a%20b.png"
+        assertEquals("//server/share/My Deck/img/a b.png", MarpResourcePaths.docPathString(rawDocPart(image)))
+    }
+
+    @Test
+    fun docPathStringsRoundTrip() {
+        for (path in listOf("/home/me/My Deck/a.png", "C:/Users/me/a.png", "//server/share/a.png", "/UNC/x/y.png", "/a#b/c?d/100%")) {
+            val url = MarpResourcePaths.docUrl(path, directory = false)
+            assertEquals(url, path, MarpResourcePaths.docPathString(rawDocPart(url)))
+        }
+    }
+
+    @Test
+    fun uncPathsNeedServerAndShareAndStaySafe() {
+        assertNull(MarpResourcePaths.docPathString("/server"))
+        assertNull(MarpResourcePaths.docPathString("/server/share/../x"))
+        assertNull(MarpResourcePaths.docPathString("/server/%2e%2e/x"))
+        assertEquals("//server/share", MarpResourcePaths.docPathString("/server/share"))
+    }
+
+    @Test
+    fun uncPathsAreParsedOnWindowsOnly() {
+        val target = MarpResourcePaths.parse("https://marp.localhost/doc//server/share/a.png")
+        if (isWindows) {
+            assertEquals(MarpResourcePaths.Target.Doc(Path.of("\\\\server\\share\\a.png")), target)
+        }
+        else {
+            // "//server/share/a.png" would silently become "/server/share/a.png" here.
+            assertNull(target)
+        }
+    }
+
     @Test
     fun appResources() {
         assertEquals(MarpResourcePaths.Target.App("/webview/index.html"), MarpResourcePaths.parse(MarpResourcePaths.APP_INDEX_URL))

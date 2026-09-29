@@ -41,7 +41,7 @@ the network as usual (remote images, Google Fonts `@import`, CDN fonts).
 | URL | Served from |
 |---|---|
 | `https://marp.localhost/app/<name>` | plugin classpath `/webview/<name>` |
-| `https://marp.localhost/doc/<absolute path>` | local file. Path uses `/` separators, each segment percent-encoded; Windows drive paths look like `/doc/C:/Users/...`. Only served when the canonical file is inside the project base dir, a project content root, or the directory of the Markdown file being previewed (recomputed on every render; a content root change re-renders); otherwise 404. |
+| `https://marp.localhost/doc/<absolute path>` | local file. Path uses `/` separators, each segment percent-encoded; Windows drive paths look like `/doc/C:/Users/...`, UNC paths keep an empty first segment: `\\server\share\x` is `/doc//server/share/x` (only valid on Windows). Only served when the canonical file is inside the project base dir, a project content root, or the directory of the Markdown file being previewed (recomputed on every render; a content root change re-renders); otherwise 404. |
 
 The document's base href is `https://marp.localhost/doc/<markdown file dir>/`, so relative images, `![bg](...)` and
 links resolve to local files.

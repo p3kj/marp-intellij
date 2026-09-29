@@ -58,14 +58,17 @@ object MarpResourcePaths {
     }
 
     /**
-     * `https://marp.localhost/doc/<path>` for a system-independent absolute path (`/home/me/deck` or `C:/Users/me/deck`),
-     * with a trailing slash when [directory] is `true`.
+     * `https://marp.localhost/doc/<path>` for a system-independent absolute path (`/home/me/deck`, `C:/Users/me/deck` or
+     * the UNC path `//server/share/deck`), with a trailing slash when [directory] is `true`. UNC paths keep their empty
+     * first segment (`/doc//server/share/deck`), so [docPath] can tell them apart from `/server/share/deck`.
      */
     fun docUrl(systemIndependentPath: String, directory: Boolean): String {
-        val segments = systemIndependentPath.replace('\\', '/').split('/').filter { it.isNotEmpty() }
+        val normalized = systemIndependentPath.replace('\\', '/')
+        val segments = normalized.split('/').filter { it.isNotEmpty() }
         if (segments.isEmpty()) return DOC_URL_PREFIX
+        val unc = isUncPath(normalized) && segments.size >= 2
         val joined = segments.joinToString("/") { encodeSegment(it) }
-        return DOC_URL_PREFIX + joined + if (directory) "/" else ""
+        return DOC_URL_PREFIX + (if (unc) "/" else "") + joined + if (directory) "/" else ""
     }
 
     /** Classpath resource for the part of an `/app/` URL path after the prefix, or `null` when it is not a safe name. */
@@ -77,20 +80,37 @@ object MarpResourcePaths {
 
     /**
      * Absolute path for the part of a `/doc/` URL path after the prefix. Rejects `.` / `..` segments, encoded separators
-     * and NUL; Windows drive paths look like `C:/Users/...`. Does not touch the file system.
+     * and NUL; Windows drive paths look like `C:/Users/...`, UNC paths like `/server/share/...` (the URL has `//`).
+     * A UNC path is only valid on Windows. Does not touch the file system.
      */
     fun docPath(rawRelativePath: String): Path? {
-        val segments = decodeSegments(rawRelativePath) ?: return null
-        if (segments.isEmpty()) return null
-        val first = segments.first()
-        val joined = if (isDriveSegment(first)) segments.joinToString("/") else "/" + segments.joinToString("/")
+        val joined = docPathString(rawRelativePath) ?: return null
         val path = try {
             Path.of(joined)
         }
         catch (_: InvalidPathException) {
             return null
         }
-        return path.takeIf { it.isAbsolute }
+        if (!path.isAbsolute) return null
+        // Elsewhere `//server/share` silently becomes `/server/share`, which is not what the URL meant.
+        if (isUncPath(joined) && !isUncPath(path.toString().replace('\\', '/'))) return null
+        return path
+    }
+
+    /**
+     * The OS-independent part of [docPath]: the decoded path as a `/` separated string, `/home/me/a.png`,
+     * `C:/Users/me/a.png` or `//server/share/a.png`; `null` when a segment is unsafe or a UNC path has no share.
+     */
+    internal fun docPathString(rawRelativePath: String): String? {
+        val unc = rawRelativePath.startsWith("/")
+        val segments = decodeSegments(rawRelativePath) ?: return null
+        if (segments.isEmpty()) return null
+        val joined = segments.joinToString("/")
+        return when {
+            unc -> if (segments.size >= 2) "//$joined" else null
+            isDriveSegment(segments.first()) -> joined
+            else -> "/$joined"
+        }
     }
 
     /**
@@ -158,6 +178,10 @@ object MarpResourcePaths {
         "mp3" to "audio/mpeg",
         "wav" to "audio/wav",
     )
+
+    /** `//server/share/...` (`/` separated), but not `///...`. */
+    private fun isUncPath(systemIndependentPath: String): Boolean =
+        systemIndependentPath.startsWith("//") && !systemIndependentPath.startsWith("///")
 
     private fun isDriveSegment(segment: String): Boolean =
         segment.length == 2 && segment[1] == ':' && segment[0].let { it in 'A'..'Z' || it in 'a'..'z' }
