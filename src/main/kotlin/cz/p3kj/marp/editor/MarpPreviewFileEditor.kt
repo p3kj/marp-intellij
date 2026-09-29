@@ -13,6 +13,8 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditor
 import com.intellij.openapi.fileEditor.FileEditorState
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.roots.ModuleRootEvent
+import com.intellij.openapi.roots.ModuleRootListener
 import com.intellij.openapi.roots.ProjectRootManager
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.UserDataHolderBase
@@ -53,8 +55,8 @@ private val LOG = logger<MarpPreviewFileEditor>()
  * The preview half of the Marp split editor: renders the document with marp-core in [MarpPreviewPanel].
  *
  * Document edits are throttled ([RENDER_DELAY_MS]) and rendered in a coroutine scope that is cancelled on dispose;
- * settings, theme, trust and rename/move changes re-render immediately. When JCEF is not available the editor shows a
- * plain message instead of the browser.
+ * settings, theme, trust, content root and rename/move changes re-render immediately. When JCEF is not available the
+ * editor shows a plain message instead of the browser.
  */
 class MarpPreviewFileEditor(val project: Project, private val file: VirtualFile) : UserDataHolderBase(), FileEditor {
 
@@ -116,6 +118,12 @@ class MarpPreviewFileEditor(val project: Project, private val file: VirtualFile)
             requestRender(immediate = true)
         })
         connection.subscribe(MarpThemeListener.TOPIC, MarpThemeListener { requestThemes() })
+        // Content roots decide which local files the preview may load.
+        connection.subscribe(ModuleRootListener.TOPIC, object : ModuleRootListener {
+            override fun rootsChanged(event: ModuleRootEvent) {
+                requestRender(immediate = true)
+            }
+        })
         connection.subscribe(VirtualFileManager.VFS_CHANGES, object : BulkFileListener {
             override fun after(events: List<VFileEvent>) {
                 // A renamed or moved file (or parent folder) changes the base href.
