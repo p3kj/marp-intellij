@@ -6,6 +6,7 @@
 
 ### Added
 
+- Third-party license notices for the bundled webview packages (THIRD-PARTY-NOTICES.txt inside the plugin)
 - Live Marp slide preview in JCEF next to the Markdown editor, refreshed while typing
 - Two-way scroll sync between the editor and the preview
 - Custom themes from files, folders and URLs, configured in Settings | Tools | Marp

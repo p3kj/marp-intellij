@@ -14,7 +14,7 @@ The plugin is not on the JetBrains Marketplace yet. Install a release build from
 
 1. Download the plugin ZIP from the GitHub Releases page (or build it yourself, see [Development](#development)).
 2. Open Settings | Plugins, click the gear icon and choose Install Plugin from Disk.
-3. Select the ZIP (do not unpack it) and restart the IDE.
+3. Select the ZIP (do not unpack it). The plugin loads without restarting the IDE.
 
 ## Features
 
@@ -88,7 +88,12 @@ The preview page lives in `webview/` (marp-core bundled with esbuild). Gradle ru
 cd webview
 npm ci
 npm test
+npm run typecheck
 ```
+
+Third-party licenses: `build.mjs` generates `THIRD-PARTY-NOTICES.txt` (all bundled npm packages with their full license and NOTICE texts, taken from the esbuild metafile) into the webview output, so it ships in the plugin jar under `/webview/`, next to esbuild's `marp-preview.js.LEGAL.txt` with the kept license banners. The package list in [NOTICE](NOTICE) between the `BEGIN GENERATED` and `END GENERATED` markers is generated too: after changing webview dependencies (for example a Dependabot bump) run `npm run notices` in `webview/` and commit the result. `./gradlew check` runs `npm run notices:check` and fails when NOTICE is stale.
+
+`npm ci` may warn that `@xmldom/xmldom` has known issues. It is a dependency of speech-rule-engine (pulled in by mathjax-full), is tree-shaken out of the bundle and is not shipped.
 
 In `runIde` the JCEF DevTools are available on port 9222 (open `http://localhost:9222` in a Chromium browser). `runPhpStorm` uses port 9223.
 

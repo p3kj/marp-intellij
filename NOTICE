@@ -12,14 +12,17 @@ Code ported from other projects
 marp-vscode (https://github.com/marp-team/marp-vscode)
 Copyright (c) 2019- Marp team
 License: MIT
-  Used for: the Marp markdown detection rules, theme handling and
-  configuration semantics ported to Kotlin/TypeScript.
+  Used for: the Marp deck detection rules (MarpDetector.kt, from
+  src/utils.ts), the slide content-line plugin (content-section.ts) and the
+  source line rendering rule (line-number.ts, itself based on VS Code's).
+  Setting names and values follow marp-vscode's configuration semantics.
 
 Visual Studio Code (https://github.com/microsoft/vscode)
 Copyright (c) Microsoft Corporation. All rights reserved.
 License: MIT
   Used for: the Markdown preview scroll synchronisation algorithm
-  (source line to element mapping and interpolation).
+  (scroll-sync.ts, from markdown-language-features/preview-src/scroll-sync.ts)
+  and the source line rendering rule that line-number.ts is based on.
 
 The MIT License text for both projects:
 
@@ -45,18 +48,53 @@ The MIT License text for both projects:
 Third-party packages bundled into the webview (webview/)
 =======================================================================
 
-The webview script is built with esbuild from @marp-team/marp-core and its
-runtime dependency tree. Package versions are taken from
-webview/package-lock.json. The list is the full runtime dependency closure;
-esbuild tree-shakes it, so not every package necessarily ends up in the
-final bundle. Each package is distributed under the license shown and
-carries its own copyright notice in its published package.
+The webview script (marp-preview.js) is built with esbuild from
+@marp-team/marp-core and the parts of its dependency tree that end up in the
+bundle. The list below is generated from the esbuild metafile by
+`npm run notices` in webview/ (`./gradlew check` fails when it is stale), so
+it names exactly the packages whose code is in the bundle, at the versions
+from webview/package-lock.json.
 
-Package                                   Version    License
+The plugin ZIP ships the complete license and NOTICE texts of these packages
+in webview/THIRD-PARTY-NOTICES.txt (inside the plugin jar), and the license
+banners kept by the bundler in webview/marp-preview.js.LEGAL.txt.
+
+Package                            Version  License
+<!-- BEGIN GENERATED -->
+@csstools/postcss-is-pseudo-class  5.0.3    MIT-0
+@csstools/selector-resolve-nested  3.1.0    MIT-0
+@csstools/selector-specificity     5.0.0    MIT-0
+@marp-team/marp-core               4.4.0    MIT
+@marp-team/marpit                  3.2.3    MIT
+cssesc                             3.0.0    MIT
+cssfilter                          0.0.10   MIT
+entities                           4.5.0    BSD-2-Clause
+highlight.js                       11.12.0  BSD-3-Clause
+js-yaml                            5.4.2    MIT
+katex                              0.17.0   MIT
+linkify-it                         5.0.2    MIT
+lodash.kebabcase                   4.1.1    MIT
+markdown-it                        14.3.2   MIT
+markdown-it-front-matter           0.2.4    MIT
+mathjax-full                       3.2.2    Apache-2.0
+mdurl                              2.1.0    MIT
+mhchemparser                       4.2.1    Apache-2.0
+nanoid                             3.3.19   MIT
+picocolors                         1.1.1    ISC
+postcss                            8.5.28   MIT
+postcss-nesting                    13.0.2   MIT-0
+postcss-selector-parser            7.1.6    MIT
+punycode.js                        2.3.1    MIT
+uc.micro                           2.1.0    MIT
+util-deprecate                     1.0.2    MIT
+xss                                1.0.15   MIT
+<!-- END GENERATED -->
 
 Notes:
-- Apache-2.0 packages (mathjax-full, mhchemparser, mj-context-menu,
-  speech-rule-engine): licensed under the Apache License, Version 2.0,
-  https://www.apache.org/licenses/LICENSE-2.0
+- The Twemoji code (Copyright Twitter Inc. and other contributors, MIT) is
+  part of @marp-team/marp-core; its notice is kept in marp-preview.js.LEGAL.txt.
+- Dependencies of marp-core that are tree-shaken out of the bundle and not
+  shipped (for example speech-rule-engine, mj-context-menu and @xmldom/xmldom)
+  are deliberately not listed.
 - KaTeX fonts and the Twemoji images are not bundled; they are loaded at
   runtime from a CDN (jsDelivr).
