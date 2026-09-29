@@ -1,0 +1,66 @@
+# Qodana static analysis. It only runs when the QODANA_TOKEN secret is configured
+# (Qodana Cloud project token, https://www.jetbrains.com/help/qodana/qodana-intellij-plugin-github.html).
+# Secrets are not readable in 'if:' expressions, so the token is exposed via a job-level env var.
+
+name: Qodana
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qodana:
+    name: Qodana
+    runs-on: ubuntu-latest
+    env:
+      QODANA_TOKEN: ${{ secrets.QODANA_TOKEN }}
+    permissions:
+      contents: write
+      pull-requests: write
+      checks: write
+    steps:
+
+      - name: Check for Qodana token
+        id: token
+        run: |
+          if [ -n "$QODANA_TOKEN" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "QODANA_TOKEN is not set, skipping Qodana."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fetch Sources
+        if: steps.token.outputs.available == 'true'
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Setup Java
+        if: steps.token.outputs.available == 'true'
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - name: Setup Node
+        if: steps.token.outputs.available == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: webview/package-lock.json
+
+      - name: Qodana Scan
+        if: steps.token.outputs.available == 'true'
+        uses: JetBrains/qodana-action@v2026.2.1
+        with:
+          pr-mode: false
+          cache-default-branch-only: true
+        env:
+          QODANA_TOKEN: ${{ secrets.QODANA_TOKEN }}

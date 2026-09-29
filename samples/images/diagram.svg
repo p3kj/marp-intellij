@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="300" viewBox="0 0 600 300">
+  <rect width="600" height="300" fill="#f4f7fb"/>
+  <g font-family="sans-serif" font-size="22" text-anchor="middle">
+    <rect x="30" y="110" width="140" height="80" rx="10" fill="#dbe7ff" stroke="#2f5fd0" stroke-width="3"/>
+    <text x="100" y="158" fill="#1c3a8a">Markdown</text>
+    <rect x="230" y="110" width="140" height="80" rx="10" fill="#ffe9c9" stroke="#d9822b" stroke-width="3"/>
+    <text x="300" y="158" fill="#8a4a0b">marp-core</text>
+    <rect x="430" y="110" width="140" height="80" rx="10" fill="#d8f3df" stroke="#2b9a55" stroke-width="3"/>
+    <text x="500" y="158" fill="#12643a">Slides</text>
+  </g>
+  <g stroke="#555" stroke-width="3" fill="#555">
+    <line x1="172" y1="150" x2="222" y2="150"/><polygon points="230,150 218,143 218,157" stroke="none"/>
+    <line x1="372" y1="150" x2="422" y2="150"/><polygon points="430,150 418,143 418,157" stroke="none"/>
+  </g>
+</svg>

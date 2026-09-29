@@ -1,0 +1,62 @@
+Marp Preview
+Copyright (c) 2026 p3kj
+Licensed under the MIT License (see LICENSE).
+
+This product includes code ported from, and bundles, the third-party
+software listed below.
+
+=======================================================================
+Code ported from other projects
+=======================================================================
+
+marp-vscode (https://github.com/marp-team/marp-vscode)
+Copyright (c) 2019- Marp team
+License: MIT
+  Used for: the Marp markdown detection rules, theme handling and
+  configuration semantics ported to Kotlin/TypeScript.
+
+Visual Studio Code (https://github.com/microsoft/vscode)
+Copyright (c) Microsoft Corporation. All rights reserved.
+License: MIT
+  Used for: the Markdown preview scroll synchronisation algorithm
+  (source line to element mapping and interpolation).
+
+The MIT License text for both projects:
+
+  Permission is hereby granted, free of charge, to any person obtaining a
+  copy of this software and associated documentation files (the "Software"),
+  to deal in the Software without restriction, including without limitation
+  the rights to use, copy, modify, merge, publish, distribute, sublicense,
+  and/or sell copies of the Software, and to permit persons to whom the
+  Software is furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in
+  all copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+  IN THE SOFTWARE.
+
+=======================================================================
+Third-party packages bundled into the webview (webview/)
+=======================================================================
+
+The webview script is built with esbuild from @marp-team/marp-core and its
+runtime dependency tree. Package versions are taken from
+webview/package-lock.json. The list is the full runtime dependency closure;
+esbuild tree-shakes it, so not every package necessarily ends up in the
+final bundle. Each package is distributed under the license shown and
+carries its own copyright notice in its published package.
+
+Package                                   Version    License
+
+Notes:
+- Apache-2.0 packages (mathjax-full, mhchemparser, mj-context-menu,
+  speech-rule-engine): licensed under the Apache License, Version 2.0,
+  https://www.apache.org/licenses/LICENSE-2.0
+- KaTeX fonts and the Twemoji images are not bundled; they are loaded at
+  runtime from a CDN (jsDelivr).

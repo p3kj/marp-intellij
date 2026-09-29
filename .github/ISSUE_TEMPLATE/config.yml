@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Marp syntax and themes
+    url: https://marpit.marp.app/
+    about: Questions about Marp Markdown, directives or theme CSS are answered in the Marpit documentation.

@@ -1,0 +1,29 @@
+# Dependabot configuration:
+# https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference
+
+version: 2
+updates:
+  - package-ecosystem: "gradle"
+    directory: "/"
+    target-branch: "main"
+    schedule:
+      interval: "weekly"
+    groups:
+      gradle-minor-patch:
+        update-types: [ "minor", "patch" ]
+  - package-ecosystem: "npm"
+    directory: "/webview"
+    target-branch: "main"
+    schedule:
+      interval: "weekly"
+    groups:
+      npm-minor-patch:
+        update-types: [ "minor", "patch" ]
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "main"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions-minor-patch:
+        update-types: [ "minor", "patch" ]

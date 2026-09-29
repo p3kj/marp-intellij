@@ -1,0 +1,68 @@
+name: Bug report
+description: Something in Marp Preview does not work as expected
+labels: ["bug"]
+body:
+
+  - type: textarea
+    id: issue
+    attributes:
+      label: What happened?
+      description: A clear and concise description of the bug, and what you expected instead.
+    validations:
+      required: true
+
+  - type: input
+    id: ide
+    attributes:
+      label: IDE name and version
+      description: Help | About, e.g. IntelliJ IDEA 2026.2.3 or PhpStorm 2026.2.1
+      placeholder: IntelliJ IDEA 2026.2.3
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - Linux
+        - macOS
+        - Windows
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Marp Preview plugin version
+      placeholder: 0.1.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: deck
+    attributes:
+      label: Minimal deck that reproduces the problem
+      description: |
+        The smallest Markdown deck (and theme CSS, if relevant) that shows the bug.
+        *This will be formatted as Markdown code, so there is no need for backticks.*
+      render: markdown
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include relevant settings from Settings | Tools | Marp (themes, HTML mode, math library).
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output or stack trace
+      description: |
+        Help | Show Log in Files, or the JCEF DevTools console output.
+        *This will be automatically formatted into code, so there is no need for backticks.*
+      render: shell

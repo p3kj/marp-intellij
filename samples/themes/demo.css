@@ -1,0 +1,80 @@
+/* @theme demo */
+@import 'default';
+
+:root {
+  --demo-accent: #d9480f;
+  --demo-ink: #1f2937;
+}
+
+section {
+  background: #fffaf5;
+  color: var(--demo-ink);
+  font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  font-size: 28px;
+}
+
+section h1 {
+  color: var(--demo-accent);
+  border-bottom: 3px solid var(--demo-accent);
+  padding-bottom: 0.1em;
+}
+
+section h2 {
+  color: #7c2d12;
+}
+
+section a {
+  color: #0b7285;
+}
+
+section::after {
+  color: var(--demo-accent);
+  font-weight: bold;
+}
+
+header,
+footer {
+  color: #9a6b4f;
+  font-size: 0.6em;
+}
+
+section.lead {
+  background: linear-gradient(135deg, #7c2d12, #d9480f);
+  color: #fff7ed;
+  text-align: center;
+  justify-content: center;
+}
+
+section.lead h1 {
+  color: #fff;
+  border-bottom-color: #ffd8a8;
+  font-size: 2.2em;
+}
+
+section.lead a,
+section.lead header,
+section.lead footer {
+  color: #ffd8a8;
+}
+
+.cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5em;
+}
+
+.cols > div {
+  background: #fff1e6;
+  border-left: 5px solid var(--demo-accent);
+  padding: 0.5em 1em;
+  border-radius: 6px;
+}
+
+table {
+  border-collapse: collapse;
+}
+
+th {
+  background: var(--demo-accent);
+  color: #fff;
+}
