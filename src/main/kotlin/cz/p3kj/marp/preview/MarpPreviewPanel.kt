@@ -178,8 +178,9 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
         })
     }
 
+    /** Unchanged arguments are not sent again (typing bursts end with a render request for text that is already shown). */
     fun update(markdown: String, baseHref: String, html: String, math: String) {
-        call(UPDATE, JsonObject().apply {
+        call(UPDATE, skipUnchanged = true, argument = JsonObject().apply {
             addProperty("markdown", markdown)
             addProperty("baseHref", baseHref)
             add("options", JsonObject().apply {
@@ -212,13 +213,14 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
         callJson(method, argument.toString())
     }
 
-    private fun call(method: String, argument: JsonElement) {
-        callJson(method, argument.toString())
+    private fun call(method: String, argument: JsonElement, skipUnchanged: Boolean = false) {
+        callJson(method, argument.toString(), skipUnchanged)
     }
 
-    private fun callJson(method: String, json: String) {
+    private fun callJson(method: String, json: String, skipUnchanged: Boolean = false) {
         synchronized(lock) {
             if (disposed) return
+            if (skipUnchanged && state[method] == json) return
             state[method] = json
             if (ready) execute(method, json)
         }

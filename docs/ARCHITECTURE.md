@@ -55,7 +55,7 @@ the page sent `ready`. Line numbers are 0-based editor lines; fractional values 
 interface MarpBridge {
   /** Replace custom themes. errors: Kotlin-side problems (missing file, download failed) shown in the preview. */
   setThemes(arg: { themes: { source: string; css: string }[]; errors: string[] }): void
-  /** Render. Called on load and on every (debounced) document change. */
+  /** Render. Called on load and on document changes (throttled, at most every 150 ms while typing). */
   update(arg: {
     markdown: string
     baseHref: string            // https://marp.localhost/doc/<dir>/
