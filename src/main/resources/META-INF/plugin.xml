@@ -58,6 +58,8 @@
         <!-- Directive comments -->
         <annotator language="Markdown" implementationClass="cz.p3kj.marp.directives.MarpDirectiveAnnotator"/>
         <colorSettingsPage implementation="cz.p3kj.marp.directives.MarpColorSettingsPage"/>
+        <completion.contributor language="any" order="first" implementationClass="cz.p3kj.marp.directives.MarpDirectiveCompletionContributor"/>
+        <completion.confidence language="any" order="first" implementationClass="cz.p3kj.marp.directives.MarpDirectiveCompletionConfidence"/>
     </extensions>
 
     <actions>

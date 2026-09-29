@@ -1,5 +1,6 @@
 package cz.p3kj.marp.directives
 
+import com.intellij.lang.ASTNode
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
@@ -210,14 +211,19 @@ object MarpDirectiveComments {
         return element.text.trimStart().startsWith(OPEN)
     }
 
-    /** The comment element that contains [offset] (the caret may sit right after the comment), or `null`. */
+    /**
+     * The comment element that contains [offset] (the caret may sit right after the comment), or `null`. Walks the
+     * syntax tree of the Markdown file itself: `PsiFile.findElementAt` would return the HTML leaf of the second tree
+     * that the IDE builds for the HTML in a Markdown file.
+     */
     fun commentElementAt(markdown: MarkdownFile, offset: Int): PsiElement? {
         for (candidate in intArrayOf(offset, offset - 1)) {
             if (candidate < 0) continue
-            var element: PsiElement? = markdown.findElementAt(candidate)
-            while (element != null && element !is PsiFile) {
+            var node: ASTNode? = markdown.node.findLeafElementAt(candidate)
+            while (node != null && node.psi !is PsiFile) {
+                val element = node.psi
                 if (isCommentElement(element)) return element
-                element = element.parent
+                node = node.treeParent
             }
         }
         return null
