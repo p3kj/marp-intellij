@@ -27,9 +27,10 @@ class MarpSplitEditorProvider : TextEditorWithPreviewProvider(MarpPreviewFileEdi
 
     override fun getPolicy(): FileEditorPolicy = FileEditorPolicy.HIDE_OTHER_EDITORS
 
+    /** [MarpPreviewFileEditorProvider] always creates a [MarpPreviewFileEditor]. */
     override fun createSplitEditor(firstEditor: TextEditor, secondEditor: FileEditor): FileEditor {
-        if (secondEditor is MarpPreviewFileEditor) return MarpSplitEditor(firstEditor, secondEditor)
-        return TextEditorWithPreview(firstEditor, secondEditor, MarpBundle.message("editor.name"), TextEditorWithPreview.Layout.SHOW_EDITOR_AND_PREVIEW)
+        check(secondEditor is MarpPreviewFileEditor) { "Unexpected preview editor: ${secondEditor.javaClass.name}" }
+        return MarpSplitEditor(firstEditor, secondEditor)
     }
 
     companion object {
