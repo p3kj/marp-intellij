@@ -104,8 +104,13 @@ string:
   publishes `MarpThemeListener.TOPIC` when watched theme files, folders or `.marprc` change, or theme settings change.
 - Theme sources: settings `themes` entries (file / folder = all `**/*.css` inside, recursive and skipping `node_modules`
   like marp-cli / `http(s)` URL; relative to the project dir) plus, when enabled, `themeSet` from `.marprc.yml` / `.marprc.yaml` / `.marprc.json` in the
-  project root (string or list; relative to the `.marprc` file). Remote URLs: `HttpRequests`, 5 s timeout, cached for
-  the session until settings change.
+  project root (string or list; relative to the `.marprc` file). Remote URLs: `HttpRequests`, 5 s connect + 5 s read
+  timeout, all URLs of one load downloaded in parallel (theme order stays the entry order); successful downloads are
+  cached until settings change, failed ones for 60 s (or until settings change).
+- Untrusted projects (`TrustedProjects.isProjectTrusted` is false), same as marp-vscode's restricted mode: `html` is
+  always `off`; only local file / folder entries from the settings are loaded, URL entries and the `.marprc` `themeSet`
+  are skipped and one line in `errors` says so. `MarpThemeService` invalidates and publishes `MarpThemeListener.TOPIC`
+  on `TrustedProjectsListener` trust changes; open previews re-request themes and re-render.
 - Theme CSS is sent as text; marp-core's `themeSet.add(css)` picks it up by its `@theme` name. Relative `url()`
   inside theme CSS resolve against the document base (same as marp-vscode).
 

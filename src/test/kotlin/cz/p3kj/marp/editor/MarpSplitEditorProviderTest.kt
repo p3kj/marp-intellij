@@ -67,9 +67,10 @@ class MarpSplitEditorProviderTest : MarpLightTestCase() {
         assertNull(runReadActionBlocking { provider.collectNotificationData(project, plain) })
     }
 
-    fun testUntrustedProjectsDowngradeRawHtml() {
-        assertEquals(MarpHtmlMode.DEFAULT, MarpPreviewFileEditor.effectiveHtmlMode(MarpHtmlMode.ALL, trusted = false))
-        assertEquals(MarpHtmlMode.ALL, MarpPreviewFileEditor.effectiveHtmlMode(MarpHtmlMode.ALL, trusted = true))
-        assertEquals(MarpHtmlMode.OFF, MarpPreviewFileEditor.effectiveHtmlMode(MarpHtmlMode.OFF, trusted = false))
+    fun testUntrustedProjectsRenderNoHtml() {
+        for (mode in MarpHtmlMode.entries) {
+            assertEquals(MarpHtmlMode.OFF, MarpPreviewFileEditor.effectiveHtmlMode(mode, trusted = false))
+            assertEquals(mode, MarpPreviewFileEditor.effectiveHtmlMode(mode, trusted = true))
+        }
     }
 }

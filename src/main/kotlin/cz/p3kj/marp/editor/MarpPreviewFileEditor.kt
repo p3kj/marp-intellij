@@ -124,10 +124,16 @@ class MarpPreviewFileEditor(val project: Project, private val file: VirtualFile)
         })
 
         ApplicationManager.getApplication().messageBus.connect(this).subscribe(TrustedProjectsListener.TOPIC, object : TrustedProjectsListener {
-            override fun onProjectTrusted(project: Project) {
-                if (project == this@MarpPreviewFileEditor.project) requestRender(immediate = true)
-            }
+            override fun onProjectTrusted(project: Project) = trustChanged(project)
+            override fun onProjectUntrusted(project: Project) = trustChanged(project)
         })
+    }
+
+    /** Trust decides the HTML mode and which themes load (see [effectiveHtmlMode], [MarpThemeService]). */
+    private fun trustChanged(changed: Project) {
+        if (changed != project) return
+        requestThemes()
+        requestRender(immediate = true)
     }
 
     private fun requestRender(immediate: Boolean) {
@@ -219,9 +225,9 @@ class MarpPreviewFileEditor(val project: Project, private val file: VirtualFile)
         /** Delay between a document edit and its render; also the render interval while the user keeps typing. */
         const val RENDER_DELAY_MS: Long = 150
 
-        /** Raw HTML `all` is only honoured in trusted projects; untrusted ones fall back to marp-core's allowlist. */
+        /** Like marp-vscode: raw HTML in slides only in trusted projects, untrusted ones render no HTML at all. */
         fun effectiveHtmlMode(configured: MarpHtmlMode, trusted: Boolean): MarpHtmlMode =
-            if (configured == MarpHtmlMode.ALL && !trusted) MarpHtmlMode.DEFAULT else configured
+            if (trusted) configured else MarpHtmlMode.OFF
 
         private fun VFileEvent.movesOrRenames(target: VirtualFile): Boolean {
             val changed = when (this) {

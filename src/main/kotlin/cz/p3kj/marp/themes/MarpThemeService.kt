@@ -1,6 +1,9 @@
 package cz.p3kj.marp.themes
 
+import com.intellij.ide.trustedProjects.TrustedProjects
+import com.intellij.ide.trustedProjects.TrustedProjectsListener
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.readAction
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -20,9 +23,13 @@ import com.intellij.util.io.HttpRequests
 import cz.p3kj.marp.MarpBundle
 import cz.p3kj.marp.settings.MarpSettings
 import cz.p3kj.marp.settings.MarpSettingsListener
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -51,19 +58,28 @@ data class MarpThemeSet(val themes: List<MarpThemeCss>, val errors: List<String>
  * Resolves, reads and watches custom Marp themes for a project.
  *
  * Sources are the `themes` of [MarpSettings] plus, optionally, the `themeSet` of a `.marprc*` file in the project
- * root. The resolved set is cached until a watched file, a theme document, the `.marprc` or the settings change; then
- * [MarpThemeListener.TOPIC] is published (coalesced) and subscribers call [loadThemes] again.
+ * root. In an untrusted project only local files from the settings are used. URLs are downloaded in parallel; failures
+ * are cached for [FAILED_DOWNLOAD_TTL_MS]. The resolved set is cached until a watched file, a theme document, the
+ * `.marprc`, the settings or the project trust change; then [MarpThemeListener.TOPIC] is published (coalesced) and
+ * subscribers call [loadThemes] again.
  */
 @Service(Service.Level.PROJECT)
 class MarpThemeService(private val project: Project, private val cs: CoroutineScope) : Disposable {
 
-    /** Downloads a URL as text. Replaced in tests. */
+    /** Downloads a URL as text (blocking, called on [Dispatchers.IO]). Replaced in tests. */
     internal var urlFetcher: (String) -> String = ::fetchHttp
 
     /** The project root directory (where `.marprc*` lives and relative entries resolve). Replaced in tests. */
     internal var projectDirProvider: () -> Path? = { project.basePath?.let { Path.of(it) } }
 
-    private val urlCache = ConcurrentHashMap<String, String>()
+    /** Untrusted projects get local theme files from the settings only, no URLs and no `.marprc`. Replaced in tests. */
+    internal var trustedProvider: () -> Boolean = { TrustedProjects.isProjectTrusted(project) }
+
+    /** Monotonic milliseconds, for the failed-download cache. Replaced in tests. */
+    internal var clock: () -> Long = { System.nanoTime() / 1_000_000 }
+
+    /** Downloads by URL: successes until the settings change, failures for [FAILED_DOWNLOAD_TTL_MS]. */
+    private val urlCache = ConcurrentHashMap<String, Download>()
     private val loadMutex = Mutex()
     private val generation = AtomicInteger()
 
@@ -96,6 +112,10 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
             invalidate()
             schedulePublish(0)
         })
+        ApplicationManager.getApplication().messageBus.connect(cs).subscribe(TrustedProjectsListener.TOPIC, object : TrustedProjectsListener {
+            override fun onProjectTrusted(project: Project) = trustChanged(project)
+            override fun onProjectUntrusted(project: Project) = trustChanged(project)
+        })
         EditorFactory.getInstance().eventMulticaster.addDocumentListener(object : DocumentListener {
             override fun documentChanged(event: DocumentEvent) {
                 val file = FileDocumentManager.getInstance().getFile(event.document) ?: return
@@ -125,6 +145,12 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
             if (startedAt == generation.get()) cached = result
             result
         }
+    }
+
+    private fun trustChanged(changed: Project) {
+        if (changed != project) return
+        invalidate()
+        schedulePublish(0)
     }
 
     private fun invalidate() {
@@ -168,7 +194,12 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
 
     // ---- resolution ----
 
-    private class Entry(val raw: String, val baseDir: Path?)
+    private class Entry(val raw: String, val baseDir: Path?, val fromMarprc: Boolean = false)
+
+    private sealed interface Download {
+        class Loaded(val css: String) : Download
+        class Failed(val message: String, val failedAt: Long) : Download
+    }
 
     private suspend fun resolve(): MarpThemeSet {
         val settings = MarpSettings.getInstance(project)
@@ -178,6 +209,14 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
         settings.themes.filter { it.isNotBlank() }.forEach { entries += Entry(it.trim(), base) }
         if (settings.useMarprcThemeSet && base != null) entries += readMarprcEntries(base, errors)
 
+        // Like marp-vscode in an untrusted workspace: only local theme files from the settings.
+        if (!trustedProvider()) {
+            val restricted = entries.removeAll { it.fromMarprc || MarpThemePaths.isHttpUrl(it.raw) }
+            if (restricted) errors += MarpBundle.message("themes.error.untrusted")
+        }
+
+        val downloads = download(entries.map { it.raw }.filter(MarpThemePaths::isHttpUrl).distinct())
+
         val themes = mutableListOf<MarpThemeCss>()
         val seen = HashSet<String>()
         val targets = HashSet<String>()
@@ -186,7 +225,12 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
         for (entry in entries) {
             val raw = entry.raw
             if (MarpThemePaths.isHttpUrl(raw)) {
-                if (seen.add(raw)) fetchUrl(raw, themes, errors)
+                if (seen.add(raw)) {
+                    when (val download = downloads.getValue(raw)) {
+                        is Download.Loaded -> themes += MarpThemeCss(raw, download.css)
+                        is Download.Failed -> errors += MarpBundle.message("themes.error.download", raw, download.message)
+                    }
+                }
                 continue
             }
             if (MarpThemePaths.hasScheme(raw)) {
@@ -257,7 +301,7 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
             return emptyList()
         }
         return try {
-            MarprcParser.parseThemeSet(file.name, text).map { Entry(it, file.parent) }
+            MarprcParser.parseThemeSet(file.name, text).map { Entry(it, file.parent, fromMarprc = true) }
         } catch (e: IllegalArgumentException) {
             errors += MarpBundle.message("themes.error.marprc", file.name, e.message ?: "")
             emptyList()
@@ -280,14 +324,30 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
         emptyList()
     }
 
-    private fun fetchUrl(url: String, themes: MutableList<MarpThemeCss>, errors: MutableList<String>) {
-        val css = urlCache[url] ?: try {
-            urlFetcher(url).also { urlCache[url] = it }
-        } catch (e: Exception) {
-            errors += MarpBundle.message("themes.error.download", url, e.message ?: e.javaClass.simpleName)
-            return
+    /** All [urls] at once, each from the cache or downloaded in parallel. */
+    private suspend fun download(urls: List<String>): Map<String, Download> {
+        if (urls.isEmpty()) return emptyMap()
+        return coroutineScope {
+            urls.map { url -> async(Dispatchers.IO) { url to cachedOrFetch(url) } }.awaitAll().toMap()
         }
-        themes += MarpThemeCss(url, css)
+    }
+
+    private fun cachedOrFetch(url: String): Download {
+        when (val cached = urlCache[url]) {
+            is Download.Loaded -> return cached
+            is Download.Failed -> if (clock() - cached.failedAt < FAILED_DOWNLOAD_TTL_MS) return cached
+            null -> {}
+        }
+        val result = try {
+            Download.Loaded(urlFetcher(url))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            LOG.info("Cannot download theme $url: $e")
+            Download.Failed(e.message ?: e.javaClass.simpleName, clock())
+        }
+        urlCache[url] = result
+        return result
     }
 
     companion object {
@@ -296,6 +356,9 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
         private const val VFS_DEBOUNCE_MS = 100L
         private const val DOCUMENT_DEBOUNCE_MS = 300L
         private const val HTTP_TIMEOUT_MS = 5000
+
+        /** A failed download is retried after this long (or when the settings change), not on every reload. */
+        internal const val FAILED_DOWNLOAD_TTL_MS = 60_000L
 
         fun getInstance(project: Project): MarpThemeService = project.service()
 
