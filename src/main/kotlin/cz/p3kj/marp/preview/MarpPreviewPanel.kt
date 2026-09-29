@@ -46,6 +46,7 @@ import java.awt.BorderLayout
 import java.awt.Color
 import java.nio.file.Path
 import javax.swing.JComponent
+import kotlin.coroutines.CoroutineContext
 
 private val LOG = logger<MarpPreviewPanel>()
 
@@ -56,6 +57,10 @@ private val LOG = logger<MarpPreviewPanel>()
  * [component] is an empty placeholder at first. The browser is created right after on the EDT, once
  * [MarpJcefStartup.prepare] has run (the first browser of the session starts JCEF), and then shown in the placeholder.
  * Until it is ready the bridge only records calls.
+ *
+ * Dispatchers: pure Swing / JCEF work (creating the browser, reloading the page) runs on [Dispatchers.UI], which does
+ * not hold the write-intent lock, so JCEF's native start-up never delays write actions. Only what touches the editor
+ * (the [Listener] calls) and [BrowserUtil] (which may show dialogs) run on [Dispatchers.EDT].
  *
  * Bridge calls are state setters, so [MarpBridgeState] keeps the latest argument of every call and sends them all (in
  * contract order) whenever the page reports `ready`, including after a reload. All public methods are thread-safe.
@@ -94,6 +99,14 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
     @Volatile
     private var allowedRoots: Collection<Path> = emptyList()
 
+    /**
+     * Set once the main frame started loading an `/app/` page. Before that CEF may report the `about:blank` of the
+     * freshly created browser (OSR / out-of-process JCEF), which is not the page going away and must not use up a
+     * reload.
+     */
+    @Volatile
+    private var appLoadStarted = false
+
     private val requestHandler = MarpResourceRequestHandler(
         allowedRoots = { allowedRoots },
         onNavigation = { url -> scope.launch { openLink(url) } },
@@ -121,8 +134,7 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
 
         scope.launch {
             MarpJcefStartup.prepare()
-            // Any modality: only creates UI, and a modal dialog open at startup must not keep the preview empty.
-            withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
+            withContext(UI_ANY_MODALITY) {
                 ensureActive()
                 try {
                     createBrowser()
@@ -145,7 +157,10 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
         }
     }
 
-    /** EDT. Called at most once, before the panel is disposed (both happen on the EDT, disposal cancels [scope]). */
+    /**
+     * EDT, without the write-intent lock ([Dispatchers.UI]). Called at most once, before the panel is disposed (both
+     * happen on the EDT, disposal cancels [scope]).
+     */
     private fun createBrowser() {
         val jbBrowser = JBCefBrowser.createBuilder()
             .setUrl(MarpResourcePaths.APP_INDEX_URL)
@@ -169,15 +184,24 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
         client.addRequestHandler(requestHandler, cefBrowser)
         client.addLoadHandler(object : CefLoadHandlerAdapter() {
             override fun onLoadStart(browser: CefBrowser?, frame: CefFrame?, transitionType: CefRequest.TransitionType?) {
-                if (frame?.isMain == true) bridge.onLoadStart()
+                if (frame?.isMain != true) return
+                if (isAppUrl(frame.url)) appLoadStarted = true
+                bridge.onLoadStart()
             }
 
             override fun onLoadEnd(browser: CefBrowser?, frame: CefFrame?, httpStatusCode: Int) {
                 if (frame?.isMain != true) return
                 val url = frame.url.orEmpty()
-                if (url.startsWith(MarpResourcePaths.APP_URL_PREFIX, ignoreCase = true)) injectHost()
-                // Safety net for navigations CEF never reports to onBeforeBrowse (about:blank): back to the preview.
-                else onPageGone("main frame left the preview for $url")
+                when {
+                    isAppUrl(url) -> {
+                        appLoadStarted = true
+                        injectHost()
+                    }
+                    // The blank page of the new browser, before the preview page started to load.
+                    !appLoadStarted && (url.isEmpty() || url == "about:blank") -> LOG.debug("Ignoring the initial blank page")
+                    // Safety net for navigations CEF never reports to onBeforeBrowse (about:blank): back to the preview.
+                    else -> onPageGone("main frame left the preview for $url")
+                }
             }
 
             override fun onLoadError(
@@ -227,13 +251,14 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
     }
 
     /** Unchanged arguments are not sent again (typing bursts end with a render request for text that is already shown). */
-    fun update(markdown: String, baseHref: String, html: String, math: String) {
+    fun update(markdown: String, baseHref: String, html: String, math: String, notes: Boolean) {
         call(MarpBridgeState.UPDATE, skipUnchanged = true, argument = JsonObject().apply {
             addProperty("markdown", markdown)
             addProperty("baseHref", baseHref)
             add("options", JsonObject().apply {
                 addProperty("html", html)
                 addProperty("math", math)
+                addProperty("notes", notes)
             })
         })
     }
@@ -253,6 +278,7 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
             addProperty("themeError", MarpBundle.message("preview.error.theme", "{0}", "{1}"))
             addProperty("renderError", MarpBundle.message("preview.error.render", "{0}"))
             addProperty("unknownTheme", MarpBundle.message("preview.error.unknownTheme", "{0}"))
+            addProperty("emptyDeck", MarpBundle.message("preview.empty"))
         })
     }
 
@@ -260,7 +286,8 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
         val scheme = EditorColorsManager.getInstance().globalScheme
         val background = scheme.defaultBackground
         val foreground = scheme.defaultForeground
-        call(MarpBridgeState.SET_IDE_THEME, JsonObject().apply {
+        // Both the look and feel and the editor scheme listener fire on one theme switch: send it once.
+        call(MarpBridgeState.SET_IDE_THEME, skipUnchanged = true, argument = JsonObject().apply {
             addProperty("dark", ColorUtil.isDark(background))
             addProperty("background", cssHex(background))
             addProperty("foreground", cssHex(foreground))
@@ -297,7 +324,10 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
             return
         }
         when (json.string("type")) {
-            "ready" -> bridge.onReady()
+            "ready" -> {
+                appLoadStarted = true
+                bridge.onReady()
+            }
             "revealLine" -> json.number("line")?.let { line ->
                 scope.launch(Dispatchers.EDT) { listener?.revealLine(line) }
             }
@@ -314,7 +344,7 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
     private fun onPageGone(reason: String) {
         if (bridge.onPageGone()) {
             LOG.info("Marp preview reloads: $reason")
-            scope.launch(Dispatchers.UI) {
+            scope.launch(UI_ANY_MODALITY) {
                 delay(RELOAD_DELAY_MS)
                 browser?.cefBrowser?.loadURL(MarpResourcePaths.APP_INDEX_URL)
             }
@@ -338,7 +368,10 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
                     if (!project.isDisposed && file.isValid && !file.isDirectory) OpenFileDescriptor(project, file).navigate(true)
                 }
             }
-            is MarpLinkPolicy.Action.Browse -> BrowserUtil.browse(action.url, project)
+            // BrowserUtil reports a browser that cannot be started with a dialog.
+            is MarpLinkPolicy.Action.Browse -> withContext(Dispatchers.EDT) {
+                if (!project.isDisposed) BrowserUtil.browse(action.url, project)
+            }
             MarpLinkPolicy.Action.Ignore -> LOG.debug("Ignoring preview link $href")
         }
     }
@@ -349,6 +382,14 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
 
     private companion object {
         const val RELOAD_DELAY_MS = 500L
+
+        /**
+         * Pure UI work: no write-intent lock, and any modality, so a modal dialog open at startup does not keep the
+         * preview empty (nothing here touches the IntelliJ model).
+         */
+        val UI_ANY_MODALITY: CoroutineContext get() = Dispatchers.UI + ModalityState.any().asContextElement()
+
+        fun isAppUrl(url: String?): Boolean = url != null && url.startsWith(MarpResourcePaths.APP_URL_PREFIX, ignoreCase = true)
 
         fun cssHex(color: Color): String = String.format("#%02x%02x%02x", color.red, color.green, color.blue)
 

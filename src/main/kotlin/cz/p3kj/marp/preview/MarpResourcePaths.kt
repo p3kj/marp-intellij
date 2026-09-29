@@ -27,6 +27,9 @@ object MarpResourcePaths {
     private const val CLASSPATH_ROOT = "/webview/"
     private const val HEX = "0123456789ABCDEF"
 
+    /** Characters that end the authority of a URL (Chromium also treats `\` as `/` in `http(s)` URLs). */
+    private val AUTHORITY_END = charArrayOf('/', '\\', '?', '#')
+
     /** What a request URL points at. */
     sealed interface Target {
         /** A plugin resource; [resourceName] is an absolute classpath name like `/webview/index.html`. */
@@ -36,8 +39,21 @@ object MarpResourcePaths {
         data class Doc(val path: Path) : Target
     }
 
-    /** `true` for any `https://marp.localhost/...` URL. */
-    fun isMarpUrl(url: String?): Boolean = url != null && url.startsWith("$ORIGIN/", ignoreCase = true)
+    /**
+     * `true` when the host of [url] is `marp.localhost`, whatever the scheme, user info or port, and also with a
+     * trailing dot (`marp.localhost.`). Chromium resolves every `*.localhost` name to the loopback interface, so such a
+     * request must be answered by the plugin, never sent to the network. Plain string work on the URL CEF hands over, so
+     * a URL that `java.net.URI` would reject is not misread as foreign.
+     */
+    fun hasMarpHost(url: String?): Boolean {
+        if (url == null) return false
+        val schemeEnd = url.indexOf("://")
+        if (schemeEnd <= 0) return false
+        val rest = url.substring(schemeEnd + 3)
+        val authorityEnd = rest.indexOfAny(AUTHORITY_END).let { if (it < 0) rest.length else it }
+        val host = rest.substring(0, authorityEnd).substringAfterLast('@').substringBefore(':').removeSuffix(".")
+        return host.equals(HOST, ignoreCase = true)
+    }
 
     /** Classifies [url]; `null` when it is not ours or is malformed (answered with 404). */
     fun parse(url: String): Target? {
@@ -114,36 +130,52 @@ object MarpResourcePaths {
     }
 
     /**
-     * The real path of [path] when it is an existing regular file inside one of [roots] (compared by real path, so
-     * symlinks cannot escape and `/project-evil` is not inside `/project`); otherwise `null`. Does file I/O.
+     * The real path of [path] when it is an existing regular file inside one of [roots]; otherwise `null`.
+     *
+     * Two gates, in this order:
+     * 1. [isLexicallyInside], without touching the file system. A deck controls [path], and on Windows merely looking
+     *    up `\\attacker.example\share\x.png` opens an SMB connection that sends the user's NTLM credentials, so a path
+     *    outside every root must be rejected before any I/O.
+     * 2. The real-path check: the canonical file must be inside a canonical root, so symlinks cannot escape and
+     *    `/project-evil` is not inside `/project`.
+     *
+     * Does file I/O once the first gate passed.
      */
-    fun resolveAllowedFile(path: Path, roots: Collection<Path>): Path? {
-        val real = try {
-            path.toRealPath()
-        }
-        catch (_: IOException) {
-            return null
-        }
-        catch (_: SecurityException) {
-            return null
-        }
+    fun resolveAllowedFile(path: Path, roots: Collection<Path>): Path? = resolveAllowedFile(path, roots) { it.toRealPath() }
+
+    /** [resolveAllowedFile] with the real-path lookup replaced, so tests can see which paths reach the file system. */
+    internal fun resolveAllowedFile(path: Path, roots: Collection<Path>, realPath: (Path) -> Path): Path? {
+        if (!isLexicallyInside(path, roots)) return null
+        val real = realPathOrNull(path.normalize(), realPath) ?: return null
         if (!Files.isRegularFile(real)) return null
-        return real.takeIf { isInside(it, roots) }
+        return real.takeIf { file -> roots.any { root -> realPathOrNull(root, realPath)?.let(file::startsWith) == true } }
     }
 
-    /** `true` when the (already real) [file] is inside one of [roots]. */
-    fun isInside(file: Path, roots: Collection<Path>): Boolean = roots.any { root ->
-        val realRoot = try {
-            root.toRealPath()
+    /**
+     * `true` when the absolute [path], normalized, starts with one of the normalized [roots]. A UNC path
+     * (`\\server\share\...`) only counts when that root is a UNC path too. Pure string work, no file-system access.
+     */
+    internal fun isLexicallyInside(path: Path, roots: Collection<Path>): Boolean {
+        if (!path.isAbsolute) return false
+        val normalized = path.normalize()
+        val unc = isUncRoot(normalized)
+        return roots.any { root ->
+            root.isAbsolute && (!unc || isUncRoot(root)) && normalized.startsWith(root.normalize())
         }
-        catch (_: IOException) {
-            return@any false
-        }
-        catch (_: SecurityException) {
-            return@any false
-        }
-        file.startsWith(realRoot)
     }
+
+    private fun realPathOrNull(path: Path, realPath: (Path) -> Path): Path? = try {
+        realPath(path)
+    }
+    catch (_: IOException) {
+        null
+    }
+    catch (_: SecurityException) {
+        null
+    }
+
+    /** Whether [path] has a UNC root such as `\\server\share\` (only possible on Windows). */
+    private fun isUncRoot(path: Path): Boolean = path.root?.toString()?.replace('\\', '/')?.let(::isUncPath) == true
 
     /** MIME type by file extension, `null` for types the preview does not serve. */
     fun mimeType(fileName: String): String? {

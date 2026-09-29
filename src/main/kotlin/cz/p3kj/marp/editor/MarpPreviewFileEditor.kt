@@ -33,6 +33,8 @@ import cz.p3kj.marp.preview.MarpPreviewPanel
 import cz.p3kj.marp.preview.MarpResourcePaths
 import cz.p3kj.marp.settings.MarpHtmlMode
 import cz.p3kj.marp.settings.MarpSettings
+import cz.p3kj.marp.settings.MarpAppSettings
+import cz.p3kj.marp.settings.MarpAppSettingsListener
 import cz.p3kj.marp.settings.MarpSettingsListener
 import cz.p3kj.marp.themes.MarpThemeListener
 import cz.p3kj.marp.themes.MarpThemeService
@@ -131,7 +133,10 @@ class MarpPreviewFileEditor(val project: Project, private val file: VirtualFile)
             }
         })
 
-        ApplicationManager.getApplication().messageBus.connect(this).subscribe(TrustedProjectsListener.TOPIC, object : TrustedProjectsListener {
+        val appConnection = ApplicationManager.getApplication().messageBus.connect(this)
+        // Presenter notes are an IDE-wide setting.
+        appConnection.subscribe(MarpAppSettingsListener.TOPIC, MarpAppSettingsListener { requestRender(immediate = true) })
+        appConnection.subscribe(TrustedProjectsListener.TOPIC, object : TrustedProjectsListener {
             override fun onProjectTrusted(project: Project) = trustChanged(project)
             override fun onProjectUntrusted(project: Project) = trustChanged(project)
         })
@@ -181,6 +186,7 @@ class MarpPreviewFileEditor(val project: Project, private val file: VirtualFile)
             baseHref = input.baseHref,
             html = effectiveHtmlMode(settings.html, TrustedProjects.isProjectTrusted(project)).jsValue,
             math = settings.math.jsValue,
+            notes = MarpAppSettings.getInstance().presenterNotes,
         )
     }
 

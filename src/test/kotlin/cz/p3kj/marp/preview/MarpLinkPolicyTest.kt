@@ -3,7 +3,9 @@ package cz.p3kj.marp.preview
 import cz.p3kj.marp.preview.MarpLinkPolicy.Action
 import cz.p3kj.marp.preview.MarpResourceRequestHandler.Companion.isPreviewInitiator
 import cz.p3kj.marp.preview.MarpResourceRequestHandler.Companion.navigation
+import cz.p3kj.marp.preview.MarpResourceRequestHandler.Companion.route
 import cz.p3kj.marp.preview.MarpResourceRequestHandler.Navigation
+import cz.p3kj.marp.preview.MarpResourceRequestHandler.Route
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -101,6 +103,34 @@ class MarpLinkPolicyTest {
         assertEquals(Navigation.CANCEL_AND_OPEN, navigation("https://marp.localhost/doc/tmp/a.md", mainFrame = true, userGesture = true))
         assertEquals(Navigation.CANCEL_AND_OPEN, navigation("mailto:a@example.com", mainFrame = true, userGesture = true))
         assertEquals(Navigation.ALLOW, navigation("https://example.com/", mainFrame = false, userGesture = false))
+    }
+
+    @Test
+    fun everyRequestToThePreviewHostIsAnsweredLocally() {
+        val doc = docUrl(project.resolve("other.md"))
+        val docPath = doc.removePrefix(MarpResourcePaths.ORIGIN)
+        assertEquals(Route.SERVE, route(MarpResourcePaths.APP_INDEX_URL, null))
+        assertEquals(Route.SERVE, route(doc, "https://marp.localhost"))
+        // The default port is the same origin: served (or refused) here, never sent to loopback:443.
+        assertEquals(Route.SERVE, route("https://marp.localhost:443$docPath", "https://marp.localhost"))
+        assertEquals(Route.SERVE, route("https://marp.localhost:443/app/index.html", null))
+        assertEquals(Route.NOT_FOUND, route("https://marp.localhost:443$docPath", "https://evil.example"))
+        assertEquals(Route.NOT_FOUND, route(doc, "https://evil.example"))
+        for (url in listOf(
+            "https://marp.localhost./app/index.html",
+            "https://marp.localhost.$docPath",
+            "https://MARP.LOCALHOST.:443$docPath",
+            "https://marp.localhost:8443/app/index.html",
+            "http://marp.localhost/app/index.html",
+            "https://marp.localhost/other/a.png",
+            "https://marp.localhost/doc/%2e%2e/etc/passwd",
+            "https://marp.localhost/",
+        )) {
+            assertEquals(url, Route.NOT_FOUND, route(url, null))
+        }
+        for (url in listOf("https://example.com/a.png", "https://marp.localhost.evil.com/app/index.html", "data:image/png;base64,AA==", null)) {
+            assertEquals("$url", Route.NETWORK, route(url, null))
+        }
     }
 
     @Test

@@ -9,7 +9,9 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase
  *
  * The unified IntelliJ IDEA 2026.2 distribution has two obfuscated classes named `Z.Z.Z.Z.Z` on the flattened test
  * classpath, so an Ultimate-only startup activity fails to instantiate when the test project opens and the test logger
- * turns that into a failure. Errors from `com.intellij.modules.ultimate` are unrelated to this plugin and are dropped.
+ * turns that into a failure. Only that exact error (`Cannot create extension (class=Z.Z.Z.Z.Z) [Plugin:
+ * com.intellij.modules.ultimate]`, logged by `ExtensionPointName`) is dropped, so a real error that merely mentions the
+ * Ultimate module still fails the test.
  */
 abstract class MarpLightTestCase : BasePlatformTestCase() {
 
@@ -17,10 +19,8 @@ abstract class MarpLightTestCase : BasePlatformTestCase() {
 
     override fun setUp() {
         ignoreUltimateErrors = LoggedErrorProcessor.executeWith(object : LoggedErrorProcessor() {
-            override fun processError(category: String, message: String, details: Array<out String>, t: Throwable?): Set<Action> {
-                val text = message + " " + t?.message.orEmpty()
-                return if (text.contains("com.intellij.modules.ultimate")) Action.NONE else super.processError(category, message, details, t)
-            }
+            override fun processError(category: String, message: String, details: Array<out String>, t: Throwable?): Set<Action> =
+                if (isUltimateStartupError(category, message)) Action.NONE else super.processError(category, message, details, t)
         })
         super.setUp()
     }
@@ -31,5 +31,12 @@ abstract class MarpLightTestCase : BasePlatformTestCase() {
         } finally {
             ignoreUltimateErrors?.close()
         }
+    }
+
+    private companion object {
+        fun isUltimateStartupError(category: String, message: String): Boolean =
+            category.endsWith("com.intellij.openapi.extensions.ExtensionPointName") &&
+                message.startsWith("Cannot create extension (class=Z.Z.Z.Z.Z)") &&
+                message.contains("[Plugin: com.intellij.modules.ultimate]")
     }
 }

@@ -1,4 +1,8 @@
+import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.intellij.platform.gradle.models.ProductRelease
+import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask
+import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
 
 plugins {
     id("org.jetbrains.kotlin.jvm")
@@ -9,6 +13,11 @@ plugins {
 
 kotlin {
     jvmToolchain(25)
+    compilerOptions {
+        // IntelliJ 2026.2 bundles Kotlin stdlib 2.4.0: a newer compiler must not emit calls to newer stdlib API.
+        apiVersion = KotlinVersion.KOTLIN_2_4
+        languageVersion = KotlinVersion.KOTLIN_2_4
+    }
 }
 
 dependencies {
@@ -41,8 +50,17 @@ intellijPlatform {
     }
 
     pluginVerification {
+        // Any finding fails the build, including deprecated, experimental and internal API use (docs/ARCHITECTURE.md).
+        failureLevel = VerifyPluginTask.FailureLevel.ALL
         ides {
             recommended()
+            // until-build is open, so the next EAP is checked too.
+            select {
+                types = listOf(IntelliJPlatformType.IntellijIdea)
+                channels = listOf(ProductRelease.Channel.EAP)
+                sinceBuild = "263"
+                untilBuild = "263.*"
+            }
         }
     }
 }

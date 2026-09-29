@@ -25,8 +25,8 @@ private val LOG = logger<MarpResourceRequestHandler>()
 
 /**
  * Serves `https://marp.localhost/app/...` from the plugin jar and `https://marp.localhost/doc/...` from disk (only inside
- * [allowedRoots], and only for requests made by the preview page itself) for one preview browser; every other request
- * goes to the network as usual.
+ * [allowedRoots], and only for requests made by the preview page itself) for one preview browser, answers any other
+ * `marp.localhost` URL with 404 ([route]); requests to other hosts go to the network as usual.
  *
  * The main frame never leaves the preview page: every main-frame navigation to anything but an `/app/` URL is cancelled
  * (`about:blank`, `data:`, `file:`, `<meta http-equiv=refresh>` targets would replace the page and its bridge), and
@@ -65,13 +65,14 @@ internal class MarpResourceRequestHandler(
         disableDefaultHandling: BoolRef?,
     ): CefResourceRequestHandler? {
         val url = request.url
-        if (!MarpResourcePaths.isMarpUrl(url)) return null
-        // Local files only for the preview page's own requests; never let such a request reach the network.
-        if (!isPreviewInitiator(requestInitiator) && MarpResourcePaths.parse(url) is MarpResourcePaths.Target.Doc) {
-            LOG.debug("Refusing $url requested by $requestInitiator")
-            return notFoundRequestHandler
+        return when (route(url, requestInitiator)) {
+            Route.NETWORK -> null
+            Route.SERVE -> resourceRequestHandler
+            Route.NOT_FOUND -> {
+                LOG.debug("Answering 404 for $url requested by $requestInitiator")
+                notFoundRequestHandler
+            }
         }
-        return resourceRequestHandler
     }
 
     override fun onBeforeBrowse(browser: CefBrowser?, frame: CefFrame?, request: CefRequest, userGesture: Boolean, isRedirect: Boolean): Boolean {
@@ -117,9 +118,15 @@ internal class MarpResourceRequestHandler(
             notFound()
         }
         catch (e: RuntimeException) {
-            // e.g. the preview was disposed while the request was in flight
+            // e.g. the preview was disposed while the request was in flight. A 404 rather than null: null would send
+            // this marp.localhost request to the network.
             LOG.debug("Cannot serve $url", e)
-            null
+            try {
+                notFound()
+            }
+            catch (_: RuntimeException) {
+                null // only while this handler is being disposed, together with its browser
+            }
         }
     }
 
@@ -165,8 +172,27 @@ internal class MarpResourceRequestHandler(
 
     enum class Navigation { ALLOW, CANCEL, CANCEL_AND_OPEN }
 
+    /** How [getResourceRequestHandler] answers a request, see [route]. */
+    enum class Route { NETWORK, SERVE, NOT_FOUND }
+
     companion object {
         private val NO_CACHE = mapOf("Cache-Control" to "no-cache")
+        private val NOT_FOUND_BODY = "Not Found".toByteArray(Charsets.UTF_8)
+
+        /**
+         * Requests [MarpResourcePaths.parse] accepts are served, except `/doc/` files requested by anything but the
+         * preview page itself. Every other URL on host `marp.localhost` (another port, a trailing dot, `http:`, an
+         * unknown path) gets 404: it must never fall through to the network, where Chromium resolves `*.localhost` to
+         * the loopback interface. Only foreign hosts go to the network.
+         */
+        fun route(url: String?, requestInitiator: String?): Route {
+            val target = url?.let(MarpResourcePaths::parse)
+            return when {
+                target == null -> if (MarpResourcePaths.hasMarpHost(url)) Route.NOT_FOUND else Route.NETWORK
+                target is MarpResourcePaths.Target.Doc && !isPreviewInitiator(requestInitiator) -> Route.NOT_FOUND
+                else -> Route.SERVE
+            }
+        }
 
         /**
          * The main frame only ever shows `/app/` pages (the preview page and its reloads). Everything else is cancelled;
@@ -179,7 +205,6 @@ internal class MarpResourceRequestHandler(
             userGesture && isExternalUrl(url) -> Navigation.CANCEL_AND_OPEN
             else -> Navigation.CANCEL
         }
-        private val NOT_FOUND_BODY = "Not Found".toByteArray(Charsets.UTF_8)
 
         /** Links the preview hands to the IDE: `http(s)` (including `https://marp.localhost/doc/...`) and `mailto`. */
         fun isExternalUrl(url: String): Boolean =

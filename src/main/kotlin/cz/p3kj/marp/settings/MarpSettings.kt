@@ -23,7 +23,8 @@ enum class MarpMathMode(val jsValue: String) {
 }
 
 /**
- * Project-level Marp settings, stored in `.idea/marp.xml` so they can be shared with the team.
+ * Project-level Marp settings, stored in `.idea/marp.xml` so they can be shared with the team: what the deck needs to
+ * look right (themes, HTML, math). Personal preferences live in [MarpAppSettings].
  */
 @Service(Service.Level.PROJECT)
 @State(name = "MarpSettings", storages = [Storage("marp.xml")])
@@ -38,14 +39,12 @@ class MarpSettings(private val project: Project) : SimplePersistentStateComponen
 
         var html by enum(MarpHtmlMode.DEFAULT)
         var math by enum(MarpMathMode.MATHJAX)
-        var scrollSync by property(true)
     }
 
     val themes: List<String> get() = state.themes.toList()
     val useMarprcThemeSet: Boolean get() = state.useMarprcThemeSet
     val html: MarpHtmlMode get() = state.html
     val math: MarpMathMode get() = state.math
-    val scrollSync: Boolean get() = state.scrollSync
 
     /** Changes the settings and, when anything actually changed, notifies [MarpSettingsListener.TOPIC] subscribers. */
     fun update(block: MarpState.() -> Unit) {

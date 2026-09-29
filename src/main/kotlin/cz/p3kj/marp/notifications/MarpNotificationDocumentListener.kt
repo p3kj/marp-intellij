@@ -24,8 +24,8 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class MarpNotificationDocumentListener : DocumentListener {
     override fun documentChanged(event: DocumentEvent) {
-        // Front matter lives at the start of the document; edits further down cannot turn a deck on or off.
-        if (event.offset > MarpDetector.HEAD_BYTES) return
+        // Detection only looks at the start of the document; edits further down cannot turn a deck on or off.
+        if (event.offset > MarpDetector.FRONT_MATTER_SCAN_CHARS) return
         val file = FileDocumentManager.getInstance().getFile(event.document) ?: return
         if (!MarpDetector.isMarkdown(file)) return
         service<MarpNotificationUpdater>().schedule(event.document)

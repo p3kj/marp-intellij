@@ -1,5 +1,6 @@
 package cz.p3kj.marp.notifications
 
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditor
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.TextEditor
@@ -22,8 +23,14 @@ import javax.swing.JComponent
  */
 class MarpEditorNotificationProvider : EditorNotificationProvider, DumbAware {
 
+    /**
+     * Called in a read action. Only the loaded document is checked, never the file on disk: banners are for files that
+     * are open in an editor, and those always have a document.
+     */
     override fun collectNotificationData(project: Project, file: VirtualFile): Function<in FileEditor, out JComponent?>? {
-        if (!MarpDetector.isMarpFile(file)) return null
+        if (!file.isValid || !MarpDetector.isMarkdown(file)) return null
+        val document = FileDocumentManager.getInstance().getCachedDocument(file) ?: return null
+        if (!MarpDetector.isMarp(document.immutableCharSequence)) return null
         return Function { fileEditor ->
             if (fileEditor is MarpSplitEditor || fileEditor !is TextEditor) return@Function null
             EditorNotificationPanel(fileEditor, EditorNotificationPanel.Status.Info).apply {

@@ -203,34 +203,108 @@ class MarpThemeServiceTest : MarpLightTestCase() {
         assertEquals(2, fetched.size)
     }
 
-    fun testUntrustedProjectUsesOnlyLocalThemesFromSettings() {
+    fun testUntrustedProjectLoadsNoCustomThemes() {
         write("a.css", "a")
         write("themes/b.css", "b")
         write(".marprc.yml", "themeSet: themes\n")
         trusted = false
 
-        settings(true, "a.css")
-        assertEquals(listOf("a.css"), load().themes.map { it.source })
-        val marprcSkipped = load().errors
-        assertEquals(1, marprcSkipped.size)
-        assertTrue(marprcSkipped[0], marprcSkipped[0].contains("trust"))
-
-        settings(false, "a.css", "https://example.com/t.css")
+        // The settings can come from the repository (.idea/marp.xml) as much as the .marprc: nothing is loaded.
+        settings(true, "a.css", "https://example.com/t.css")
         val set = load()
-        assertEquals(listOf("a.css"), set.themes.map { it.source })
+        assertEmpty(set.themes)
         assertEquals(1, set.errors.size)
+        assertTrue(set.errors[0], set.errors[0].contains("trust"))
         assertEmpty(fetched)
 
-        settings(false, "a.css")
+        // Themes named only by the .marprc: the same single line.
+        settings(true)
+        assertEquals(1, load().errors.size)
+
+        // Nothing configured: nothing to report.
+        settings(false)
+        assertEmpty(load().errors)
+
+        // Problems of an untrusted .marprc are not shown.
+        Files.delete(base.resolve(".marprc.yml"))
+        write(".marprc.json", "{\"themeSet\": [")
+        settings(true)
         assertEmpty(load().errors)
 
         // Trusting the project reloads everything.
+        Files.delete(base.resolve(".marprc.json"))
+        write(".marprc.yml", "themeSet: themes\n")
         settings(true, "a.css", "https://example.com/t.css")
         trusted = true
         awaitChange { ApplicationManager.getApplication().messageBus.syncPublisher(TrustedProjectsListener.TOPIC).onProjectTrusted(project) }
         val trustedSet = load()
         assertEmpty(trustedSet.errors)
         assertEquals(listOf("a.css", "https://example.com/t.css", "themes/b.css"), trustedSet.themes.map { it.source })
+    }
+
+    fun testMarprcThemesMustStayInsideTheProject() {
+        val outside = Files.createTempDirectory("marp-outside").toRealPath()
+        try {
+            val foreign = outside.resolve("x.css")
+            Files.writeString(foreign, "/* @theme x */")
+            write("themes/in.css", "in")
+            Files.createSymbolicLink(base.resolve("themes/link.css"), foreign)
+            write(".marprc.yml", "themeSet:\n  - ../${outside.fileName}/x.css\n  - $foreign\n  - themes\n")
+            settings(true)
+            val set = load()
+            assertEquals(listOf("themes/in.css"), set.themes.map { it.source })
+            assertEquals(3, set.errors.size)
+            for (error in set.errors) assertTrue(error, error.contains("outside the project") && error.contains(".marprc.yml"))
+            assertTrue(set.errors[2], set.errors[2].contains("themes/link.css"))
+
+            // Entries the user adds in the settings may point anywhere.
+            settings(false, foreign.toString())
+            val fromSettings = load()
+            assertEmpty(fromSettings.errors)
+            assertEquals(listOf("/* @theme x */"), fromSettings.themes.map { it.css })
+        } finally {
+            outside.toFile().deleteRecursively()
+        }
+    }
+
+    fun testRelativeEntriesNeedAProjectDirectory() {
+        val absolute = write("a.css", "a")
+        service.projectDirProvider = { null }
+        settings(true, "a.css", absolute.toString())
+        val set = load()
+        assertEquals(listOf(absolute.toString().replace('\\', '/')), set.themes.map { it.source })
+        assertEquals(1, set.errors.size)
+        assertTrue(set.errors[0], set.errors[0].contains("a.css"))
+    }
+
+    fun testRejectedDownloadShowsItsOwnMessage() {
+        service.urlFetcher = { url -> throw MarpThemeRejectedException("rejected $url") }
+        settings(false, "https://example.com/big.css")
+        assertEquals(listOf("rejected https://example.com/big.css"), load().errors)
+    }
+
+    fun testThemeResponsesAreCheckedForTypeAndSize() {
+        val url = "https://example.com/t.css"
+        fun read(contentType: String?, body: ByteArray, contentLength: Long = body.size.toLong()) =
+            MarpThemeService.readThemeResponse(url, contentType, contentLength) { body.inputStream() }
+
+        assertEquals("a{}", read("text/css; charset=utf-8", "a{}".toByteArray()))
+        assertEquals("a{}", read("TEXT/PLAIN", "a{}".toByteArray()))
+        assertEquals("a{}", read(null, "a{}".toByteArray()))
+        assertEquals("caf\u00e9", read("text/css; charset=\"ISO-8859-1\"", "caf\u00e9".toByteArray(Charsets.ISO_8859_1)))
+        assertEquals("unknown charset falls back to UTF-8", "caf\u00e9", read("text/css; charset=nope", "caf\u00e9".toByteArray()))
+
+        val html = org.junit.Assert.assertThrows(MarpThemeRejectedException::class.java) { read("text/html", "<html>".toByteArray()) }
+        assertTrue(html.userMessage, html.userMessage.contains("text/html") && html.userMessage.contains(url))
+
+        // A declared length over the limit is refused before the body is read.
+        org.junit.Assert.assertThrows(MarpThemeRejectedException::class.java) {
+            MarpThemeService.readThemeResponse(url, "text/css", MarpThemeService.MAX_DOWNLOAD_BYTES + 1L) { error("body read") }
+        }
+        // Without a declared length the body is read up to one byte over the limit.
+        val big = ByteArray(MarpThemeService.MAX_DOWNLOAD_BYTES + 1) { 'a'.code.toByte() }
+        org.junit.Assert.assertThrows(MarpThemeRejectedException::class.java) { read("text/css", big, contentLength = -1) }
+        assertEquals(MarpThemeService.MAX_DOWNLOAD_BYTES, read("text/css", big.copyOf(MarpThemeService.MAX_DOWNLOAD_BYTES), -1).length)
     }
 
     fun testSettingsChangeInvalidatesAndPublishes() {

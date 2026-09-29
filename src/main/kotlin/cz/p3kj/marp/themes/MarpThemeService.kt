@@ -16,6 +16,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.openapi.vfs.newvfs.BulkFileListener
+import com.intellij.openapi.vfs.newvfs.events.VFileCreateEvent
 import com.intellij.openapi.vfs.newvfs.events.VFileEvent
 import com.intellij.openapi.vfs.newvfs.events.VFileMoveEvent
 import com.intellij.openapi.vfs.newvfs.events.VFilePropertyChangeEvent
@@ -35,6 +36,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.io.IOException
+import java.io.InputStream
+import java.nio.charset.Charset
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
@@ -58,10 +62,12 @@ data class MarpThemeSet(val themes: List<MarpThemeCss>, val errors: List<String>
  * Resolves, reads and watches custom Marp themes for a project.
  *
  * Sources are the `themes` of [MarpSettings] plus, optionally, the `themeSet` of a `.marprc*` file in the project
- * root. In an untrusted project only local files from the settings are used. URLs are downloaded in parallel; failures
- * are cached for [FAILED_DOWNLOAD_TTL_MS]. The resolved set is cached until a watched file, a theme document, the
- * `.marprc`, the settings or the project trust change; then [MarpThemeListener.TOPIC] is published (coalesced) and
- * subscribers call [loadThemes] again.
+ * root. `.marprc` entries must stay inside the project directory (the same traversal check as marp-vscode 3.5.2), while
+ * settings entries are the user's own choice and may point anywhere. Like marp-vscode's restricted mode, an untrusted
+ * project loads no custom theme at all. Folders are searched by [MarpThemeFolder]. URLs are downloaded in parallel
+ * (CSS or plain text only, at most [MAX_DOWNLOAD_BYTES]); failures are cached for [FAILED_DOWNLOAD_TTL_MS]. The
+ * resolved set is cached until a watched file, a theme document, the `.marprc`, the settings or the project trust
+ * change; then [MarpThemeListener.TOPIC] is published (coalesced) and subscribers call [loadThemes] again.
  */
 @Service(Service.Level.PROJECT)
 class MarpThemeService(private val project: Project, private val cs: CoroutineScope) : Disposable {
@@ -72,7 +78,7 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
     /** The project root directory (where `.marprc*` lives and relative entries resolve). Replaced in tests. */
     internal var projectDirProvider: () -> Path? = { project.basePath?.let { Path.of(it) } }
 
-    /** Untrusted projects get local theme files from the settings only, no URLs and no `.marprc`. Replaced in tests. */
+    /** Untrusted projects get no custom themes. Replaced in tests. */
     internal var trustedProvider: () -> Boolean = { TrustedProjects.isProjectTrusted(project) }
 
     /** Monotonic milliseconds, for the failed-download cache. Replaced in tests. */
@@ -86,13 +92,9 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
     @Volatile
     private var cached: MarpThemeSet? = null
 
-    /** Entry paths (files or dirs, normalized, `/` separated) that trigger a reload when touched. */
+    /** What the last resolved set depends on; replaced as a whole by every [resolve]. */
     @Volatile
-    private var watchTargets: Set<String> = emptySet()
-
-    /** Resolved theme file paths (normalized, `/` separated), for cheap document-change lookups. */
-    @Volatile
-    private var watchedFiles: Set<String> = emptySet()
+    private var watch: MarpThemeWatch = MarpThemeWatch.NONE
 
     private var publishJob: Job? = null
     private val publishLock = Any()
@@ -101,7 +103,9 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
         val connection = project.messageBus.connect(cs)
         connection.subscribe(VirtualFileManager.VFS_CHANGES, object : BulkFileListener {
             override fun after(events: List<VFileEvent>) {
-                if (events.any(::touchesThemes)) {
+                val watch = watch
+                if (watch.isEmpty) return
+                if (events.any { touchesThemes(watch, it) }) {
                     invalidate()
                     schedulePublish(VFS_DEBOUNCE_MS)
                 }
@@ -118,9 +122,10 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
         })
         EditorFactory.getInstance().eventMulticaster.addDocumentListener(object : DocumentListener {
             override fun documentChanged(event: DocumentEvent) {
-                val file = FileDocumentManager.getInstance().getFile(event.document) ?: return
-                val isMarprc = file.name in MARPRC_NAMES && file.parent?.path == projectDir?.let(MarpThemePaths::normalizedKey)
-                if (isMarprc || file.path in watchedFiles) {
+                val watch = watch
+                if (watch.isEmpty) return
+                val path = FileDocumentManager.getInstance().getFile(event.document)?.path ?: return
+                if (watch.isMarprc(path) || path in watch.themeFiles) {
                     invalidate()
                     schedulePublish(DOCUMENT_DEBOUNCE_MS)
                 }
@@ -168,113 +173,135 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
         }
     }
 
-    private val projectDir: Path? get() = projectDirProvider()
-
-    private fun isMarprcPath(path: String): Boolean {
-        val base = projectDir ?: return false
-        val p = Path.of(path)
-        return p.parent?.let { MarpThemePaths.normalizedKey(it) } == MarpThemePaths.normalizedKey(base) &&
-            p.name in MARPRC_NAMES
-    }
-
-    private fun touchesThemes(event: VFileEvent): Boolean {
-        val paths = buildList {
-            add(event.path)
-            when (event) {
-                is VFileMoveEvent -> add(event.oldPath)
-                is VFilePropertyChangeEvent -> if (event.isRename) add(event.oldPath)
-                else -> {}
-            }
-        }
-        val targets = watchTargets
-        return paths.any { p ->
-            isMarprcPath(p) || targets.any { t -> p == t || p.startsWith("$t/") || t.startsWith("$p/") }
+    /** Called on the EDT for every VFS event: string comparisons only (see [MarpThemeWatch]). */
+    private fun touchesThemes(watch: MarpThemeWatch, event: VFileEvent): Boolean {
+        val directory = if (event is VFileCreateEvent) event.isDirectory else event.file?.isDirectory == true
+        if (watch.touches(event.path, directory)) return true
+        return when (event) {
+            is VFileMoveEvent -> watch.touches(event.oldPath, directory)
+            is VFilePropertyChangeEvent -> event.isRename && (watch.touches(event.oldPath, directory) || watch.touches(event.newPath, directory))
+            else -> false
         }
     }
 
     // ---- resolution ----
 
-    private class Entry(val raw: String, val baseDir: Path?, val fromMarprc: Boolean = false)
+    /** [marprcName] is the `.marprc*` file the entry comes from, `null` for a settings entry. */
+    private class Entry(val raw: String, val baseDir: Path?, val marprcName: String? = null)
 
     private sealed interface Download {
         class Loaded(val css: String) : Download
-        class Failed(val message: String, val failedAt: Long) : Download
+
+        /** [error] is the complete line shown in the preview. */
+        class Failed(val error: String, val failedAt: Long) : Download
+    }
+
+    /** Theme files found so far, shared by all entries of one [resolve]. */
+    private class Collected(val base: Path?) {
+        val themes = mutableListOf<MarpThemeCss>()
+        val errors = mutableListOf<String>()
+        val seen = HashSet<String>()
+        val fileTargets = HashSet<String>()
+        val folderTargets = HashSet<String>()
+        val themeFiles = HashSet<String>()
     }
 
     private suspend fun resolve(): MarpThemeSet {
         val settings = MarpSettings.getInstance(project)
         val base = projectDir
-        val errors = mutableListOf<String>()
+        val trusted = trustedProvider()
+        val collected = Collected(base)
         val entries = mutableListOf<Entry>()
         settings.themes.filter { it.isNotBlank() }.forEach { entries += Entry(it.trim(), base) }
-        if (settings.useMarprcThemeSet && base != null) entries += readMarprcEntries(base, errors)
+        val marprcDir = base.takeIf { settings.useMarprcThemeSet }
+        // An untrusted project's .marprc is only read to tell whether it names themes; its problems are not shown.
+        if (marprcDir != null) entries += readMarprcEntries(marprcDir, if (trusted) collected.errors else mutableListOf())
+        val marprcKey = marprcDir?.let(MarpThemePaths::normalizedKey)
 
-        // Like marp-vscode in an untrusted workspace: only local theme files from the settings.
-        if (!trustedProvider()) {
-            val restricted = entries.removeAll { it.fromMarprc || MarpThemePaths.isHttpUrl(it.raw) }
-            if (restricted) errors += MarpBundle.message("themes.error.untrusted")
+        // Like marp-vscode in an untrusted workspace: no custom themes at all, the settings may come from the repository.
+        if (!trusted) {
+            if (entries.isNotEmpty()) collected.errors += MarpBundle.message("themes.error.untrusted")
+            watch = MarpThemeWatch(emptySet(), emptySet(), emptySet(), marprcKey)
+            return MarpThemeSet(emptyList(), collected.errors)
         }
 
         val downloads = download(entries.map { it.raw }.filter(MarpThemePaths::isHttpUrl).distinct())
-
-        val themes = mutableListOf<MarpThemeCss>()
-        val seen = HashSet<String>()
-        val targets = HashSet<String>()
-        val files = HashSet<String>()
-
         for (entry in entries) {
             val raw = entry.raw
             if (MarpThemePaths.isHttpUrl(raw)) {
-                if (seen.add(raw)) {
+                if (collected.seen.add(raw)) {
                     when (val download = downloads.getValue(raw)) {
-                        is Download.Loaded -> themes += MarpThemeCss(raw, download.css)
-                        is Download.Failed -> errors += MarpBundle.message("themes.error.download", raw, download.message)
+                        is Download.Loaded -> collected.themes += MarpThemeCss(raw, download.css)
+                        is Download.Failed -> collected.errors += download.error
                     }
                 }
                 continue
             }
             if (MarpThemePaths.hasScheme(raw)) {
-                errors += MarpBundle.message("themes.error.unsupportedScheme", raw)
+                collected.errors += MarpBundle.message("themes.error.unsupportedScheme", raw)
                 continue
             }
-            val path = entry.baseDir?.let { MarpThemePaths.resolve(it, raw) } ?: MarpThemePaths.resolve(Path.of("").toAbsolutePath(), raw)
-            if (path == null) {
-                errors += MarpBundle.message("themes.error.invalidPath", raw)
-                continue
-            }
-            targets += MarpThemePaths.normalizedKey(path)
-            when {
-                path.isDirectory() -> for (css in findCssFiles(path)) {
-                    addFile(css, base, themes, errors, seen, files)
-                }
-                path.isRegularFile() -> addFile(path, base, themes, errors, seen, files)
-                !path.exists() -> errors += MarpBundle.message("themes.error.missing", raw)
-                else -> errors += MarpBundle.message("themes.error.unreadable", raw)
-            }
+            addPathEntry(entry, collected)
         }
-        watchTargets = targets
-        watchedFiles = files
-        return MarpThemeSet(themes, errors)
+        watch = MarpThemeWatch(collected.fileTargets, collected.folderTargets, collected.themeFiles, marprcKey)
+        return MarpThemeSet(collected.themes, collected.errors)
     }
 
-    private suspend fun addFile(
-        path: Path,
-        base: Path?,
-        themes: MutableList<MarpThemeCss>,
-        errors: MutableList<String>,
-        seen: MutableSet<String>,
-        files: MutableSet<String>,
-    ) {
-        if (!seen.add(MarpThemePaths.key(path))) return
-        val display = MarpThemePaths.display(path, base)
-        files += MarpThemePaths.normalizedKey(path)
-        val text = readText(path)
-        if (text == null) {
-            errors += MarpBundle.message("themes.error.unreadable", display)
-        } else {
-            themes += MarpThemeCss(display, text)
+    private suspend fun addPathEntry(entry: Entry, collected: Collected) {
+        val raw = entry.raw
+        val path = MarpThemePaths.resolve(entry.baseDir, raw)
+        if (path == null) {
+            collected.errors += MarpBundle.message("themes.error.invalidPath", raw)
+            return
+        }
+        // A .marprc comes with the repository: it must not name files elsewhere on the machine.
+        val confinedTo = if (entry.marprcName != null) entry.baseDir else null
+        if (confinedTo != null && !MarpThemePaths.isConfinedTo(path, confinedTo)) {
+            collected.errors += MarpBundle.message("themes.error.outsideProject", raw, entry.marprcName.orEmpty())
+            return
+        }
+        val key = MarpThemePaths.normalizedKey(path)
+        when {
+            path.isDirectory() -> {
+                collected.folderTargets += key
+                val found = findCssFiles(path)
+                if (found.truncated) collected.errors += MarpBundle.message("themes.error.tooManyFiles", raw, MarpThemeFolder.MAX_CSS_FILES)
+                for (css in found.files) addFile(css, collected, confinedTo, entry.marprcName)
+            }
+            path.isRegularFile() -> {
+                collected.fileTargets += key
+                addFile(path, collected, confinedTo, entry.marprcName)
+            }
+            !path.exists() -> {
+                // It may become a file or a folder.
+                collected.folderTargets += key
+                collected.errors += MarpBundle.message("themes.error.missing", raw)
+            }
+            else -> {
+                collected.fileTargets += key
+                collected.errors += MarpBundle.message("themes.error.unreadable", raw)
+            }
         }
     }
+
+    private suspend fun addFile(path: Path, collected: Collected, confinedTo: Path?, marprcName: String?) {
+        if (!collected.seen.add(MarpThemePaths.key(path))) return
+        val display = MarpThemePaths.toStored(path, collected.base)
+        // A symlink inside a .marprc theme folder must not lead out of the project either.
+        if (confinedTo != null && !MarpThemePaths.isConfinedTo(path, confinedTo)) {
+            collected.errors += MarpBundle.message("themes.error.outsideProject", display, marprcName.orEmpty())
+            return
+        }
+        collected.themeFiles += MarpThemePaths.normalizedKey(path)
+        val text = readText(path)
+        if (text == null) {
+            collected.errors += MarpBundle.message("themes.error.unreadable", display)
+        } else {
+            collected.themes += MarpThemeCss(display, text)
+        }
+    }
+
+    private val projectDir: Path? get() = projectDirProvider()
 
     /** Unsaved editor content wins over the disk content. Null when the file cannot be read. */
     private suspend fun readText(path: Path): String? {
@@ -294,34 +321,25 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
     }
 
     private suspend fun readMarprcEntries(base: Path, errors: MutableList<String>): List<Entry> {
-        val file = MARPRC_NAMES.map { base.resolve(it) }.firstOrNull { it.isRegularFile() } ?: return emptyList()
+        val file = MarpThemeWatch.MARPRC_NAMES.map { base.resolve(it) }.firstOrNull { it.isRegularFile() } ?: return emptyList()
         val text = readText(file)
         if (text == null) {
             errors += MarpBundle.message("themes.error.marprcUnreadable", file.name)
             return emptyList()
         }
         return try {
-            MarprcParser.parseThemeSet(file.name, text).map { Entry(it, file.parent, fromMarprc = true) }
+            MarprcParser.parseThemeSet(file.name, text).map { Entry(it, base, marprcName = file.name) }
         } catch (e: IllegalArgumentException) {
             errors += MarpBundle.message("themes.error.marprc", file.name, e.message ?: "")
             emptyList()
         }
     }
 
-    /** Same as Marp CLI for a directory `themeSet`: every `*.css` below it (recursively), skipping `node_modules`. */
-    private fun findCssFiles(dir: Path): List<Path> = try {
-        Files.walk(dir).use { stream ->
-            stream
-                .filter { p ->
-                    p.isRegularFile() && p.name.endsWith(".css", ignoreCase = true) &&
-                        dir.relativize(p).none { it.toString() == "node_modules" }
-                }
-                .sorted()
-                .toList()
-        }
+    private fun findCssFiles(dir: Path): MarpThemeFolder.CssFiles = try {
+        MarpThemeFolder.findCssFiles(dir)
     } catch (e: Exception) {
         LOG.info("Cannot list theme folder $dir", e)
-        emptyList()
+        MarpThemeFolder.CssFiles(emptyList(), truncated = false)
     }
 
     /** All [urls] at once, each from the cache or downloaded in parallel. */
@@ -342,9 +360,12 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
             Download.Loaded(urlFetcher(url))
         } catch (e: CancellationException) {
             throw e
+        } catch (e: MarpThemeRejectedException) {
+            LOG.info("Theme $url not loaded: ${e.message}")
+            Download.Failed(e.userMessage, clock())
         } catch (e: Exception) {
             LOG.info("Cannot download theme $url: $e")
-            Download.Failed(e.message ?: e.javaClass.simpleName, clock())
+            Download.Failed(MarpBundle.message("themes.error.download", url, e.message ?: e.javaClass.simpleName), clock())
         }
         urlCache[url] = result
         return result
@@ -352,7 +373,6 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
 
     companion object {
         private val LOG = logger<MarpThemeService>()
-        private val MARPRC_NAMES = listOf(".marprc.yml", ".marprc.yaml", ".marprc.json", ".marprc")
         private const val VFS_DEBOUNCE_MS = 100L
         private const val DOCUMENT_DEBOUNCE_MS = 300L
         private const val HTTP_TIMEOUT_MS = 5000
@@ -360,12 +380,54 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
         /** A failed download is retried after this long (or when the settings change), not on every reload. */
         internal const val FAILED_DOWNLOAD_TTL_MS = 60_000L
 
+        /** Remote theme size limit: the whole CSS text goes to the preview through `executeJavaScript` on every reload. */
+        internal const val MAX_DOWNLOAD_BYTES: Int = 5 * 1024 * 1024
+
+        /** Media types accepted for a remote theme; a response without Content-Type is accepted too. */
+        private val THEME_MEDIA_TYPES = setOf("text/css", "text/plain")
+
+        private val CHARSET_PARAMETER = Regex("charset\\s*=\\s*([^;]+)", RegexOption.IGNORE_CASE)
+
         fun getInstance(project: Project): MarpThemeService = project.service()
 
         private fun fetchHttp(url: String): String =
             HttpRequests.request(url)
                 .connectTimeout(HTTP_TIMEOUT_MS)
                 .readTimeout(HTTP_TIMEOUT_MS)
-                .readString()
+                .connect { request ->
+                    val connection = request.connection
+                    readThemeResponse(url, connection.contentType, connection.contentLengthLong) { request.inputStream }
+                }
+
+        /**
+         * The text of a downloaded theme. Throws [MarpThemeRejectedException] when the response is neither CSS nor plain
+         * text (by Content-Type; a missing one is accepted) or larger than [MAX_DOWNLOAD_BYTES], checked by the declared
+         * length first and by reading at most one byte more than the limit, so an oversized body is never fully read.
+         */
+        internal fun readThemeResponse(url: String, contentType: String?, contentLength: Long, body: () -> InputStream): String {
+            val mediaType = contentType?.substringBefore(';')?.trim()?.lowercase().orEmpty()
+            if (mediaType.isNotEmpty() && mediaType !in THEME_MEDIA_TYPES) {
+                throw MarpThemeRejectedException(MarpBundle.message("themes.error.notCss", url, mediaType))
+            }
+            val tooLarge = { MarpThemeRejectedException(MarpBundle.message("themes.error.tooLarge", url, MAX_DOWNLOAD_BYTES / (1024 * 1024))) }
+            if (contentLength > MAX_DOWNLOAD_BYTES) throw tooLarge()
+            val bytes = body().use { it.readNBytes(MAX_DOWNLOAD_BYTES + 1) }
+            if (bytes.size > MAX_DOWNLOAD_BYTES) throw tooLarge()
+            return String(bytes, charsetOf(contentType))
+        }
+
+        /** The `charset` parameter of [contentType], UTF-8 when there is none or it is unknown. */
+        private fun charsetOf(contentType: String?): Charset {
+            val name = contentType?.let { CHARSET_PARAMETER.find(it)?.groupValues?.get(1) }?.trim()?.trim('"', '\'')
+                ?: return Charsets.UTF_8
+            return try {
+                Charset.forName(name)
+            } catch (_: IllegalArgumentException) {
+                Charsets.UTF_8
+            }
+        }
     }
 }
+
+/** A remote theme that was downloaded but is not used; [userMessage] is the complete line shown in the preview. */
+internal class MarpThemeRejectedException(val userMessage: String) : IOException(userMessage)

@@ -63,8 +63,11 @@ class MarpSplitEditorProviderTest : MarpLightTestCase() {
         val provider = MarpEditorNotificationProvider()
         val marp = myFixture.addFileToProject("n-deck.md", deck).virtualFile
         val plain = myFixture.addFileToProject("n-plain.md", "# Plain\n").virtualFile
+        // The provider only looks at loaded documents (files open in an editor); keep them loaded for the checks.
+        val documents = listOf(marp, plain).map { runReadActionBlocking { FileDocumentManager.getInstance().getDocument(it) } }
         assertNotNull(runReadActionBlocking { provider.collectNotificationData(project, marp) })
         assertNull(runReadActionBlocking { provider.collectNotificationData(project, plain) })
+        assertTrue(documents.all { it != null })
     }
 
     fun testUntrustedProjectsRenderNoHtml() {

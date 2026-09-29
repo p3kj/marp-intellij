@@ -15,14 +15,15 @@ import com.intellij.openapi.util.Condition
 import com.intellij.openapi.wm.IdeFocusManager
 import cz.p3kj.marp.editor.MarpPreviewFileEditor
 import cz.p3kj.marp.preview.MarpPreviewPanel
-import cz.p3kj.marp.settings.MarpSettings
+import cz.p3kj.marp.settings.MarpAppSettings
+import cz.p3kj.marp.settings.MarpAppSettingsListener
 import java.awt.Point
 import kotlin.math.floor
 import kotlin.math.roundToInt
 
 /**
  * Keeps the text editor and the Marp preview in step (EDT only):
- * - editor scrolled -> `scrollToLine(top visible line + fraction)`, when [MarpSettings.scrollSync] is on;
+ * - editor scrolled -> `scrollToLine(top visible line + fraction)`, when [MarpAppSettings.scrollSync] is on;
  * - preview scrolled (`revealLine`) -> scroll the editor so that fractional line is at the top, caret untouched;
  * - caret moved -> `setActiveLine`;
  * - double-click in a slide (`didClick`) -> caret to that line, scroll it into view, focus the editor.
@@ -40,6 +41,9 @@ class MarpScrollSync(
     private val echoGuard = MarpScrollEchoGuard()
     private var lastActiveLine = -1
 
+    /** [didClick] is showing the editor: it scrolls to the caret itself, [layoutChanged] must not sync first. */
+    private var showingEditorForClick = false
+
     init {
         editor.scrollingModel.addVisibleAreaListener(object : VisibleAreaListener {
             override fun visibleAreaChanged(e: VisibleAreaEvent) {
@@ -52,16 +56,25 @@ class MarpScrollSync(
             }
         }, this)
         preview.panel?.listener = this
+        // Turning scroll sync on aligns the preview right away instead of on the next scroll.
+        ApplicationManager.getApplication().messageBus.connect(this).subscribe(MarpAppSettingsListener.TOPIC, MarpAppSettingsListener {
+            if (!editor.isDisposed && scrollSyncEnabled() && isSplitLayout()) sendTopLine(force = true)
+        })
         sendActiveLine()
         if (scrollSyncEnabled()) sendTopLine(force = true)
     }
 
     /** The split layout changed: when the preview becomes visible, align it with the editor. */
     fun layoutChanged(layout: TextEditorWithPreview.Layout?) {
+        if (showingEditorForClick) return
         if (layout == TextEditorWithPreview.Layout.SHOW_EDITOR_AND_PREVIEW && scrollSyncEnabled()) sendTopLine(force = true)
     }
 
-    private fun scrollSyncEnabled(): Boolean = !project.isDisposed && MarpSettings.getInstance(project).scrollSync
+    private fun scrollSyncEnabled(): Boolean = !project.isDisposed && MarpAppSettings.getInstance().scrollSync
+
+    /** Both halves visible (always `true` without a split editor, as in tests). */
+    private fun isSplitLayout(): Boolean =
+        splitEditor == null || splitEditor.getLayout() == TextEditorWithPreview.Layout.SHOW_EDITOR_AND_PREVIEW
 
     private fun onEditorScrolled() {
         if (!echoGuard.acceptEditorScroll() || editor.isDisposed || !scrollSyncEnabled()) return
@@ -108,14 +121,22 @@ class MarpScrollSync(
         if (editor.isDisposed) return
         val lineCount = editor.document.lineCount
         val target = line.coerceIn(0, maxOf(0, lineCount - 1))
-        val showEditor = splitEditor != null && splitEditor.getLayout() == TextEditorWithPreview.Layout.SHOW_PREVIEW
-        if (showEditor) splitEditor.setLayout(TextEditorWithPreview.Layout.SHOW_EDITOR_AND_PREVIEW)
-
+        // Caret first, then the layout: the editor then scrolls once, to the caret, and the preview follows that scroll
+        // (instead of first jumping to the editor's old position when the layout changes).
         val caretModel = editor.caretModel
         caretModel.removeSecondaryCarets()
         caretModel.moveToLogicalPosition(LogicalPosition(target, 0))
         editor.selectionModel.removeSelection()
+
+        val showEditor = splitEditor != null && splitEditor.getLayout() == TextEditorWithPreview.Layout.SHOW_PREVIEW
         if (showEditor) {
+            showingEditorForClick = true
+            try {
+                splitEditor.setLayout(TextEditorWithPreview.Layout.SHOW_EDITOR_AND_PREVIEW)
+            }
+            finally {
+                showingEditorForClick = false
+            }
             // The editor has no size until the new layout is applied.
             val expired = Condition<Any?> { editor.isDisposed }
             ApplicationManager.getApplication().invokeLater({ editor.scrollingModel.scrollToCaret(ScrollType.CENTER) }, expired)

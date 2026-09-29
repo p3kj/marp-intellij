@@ -12,10 +12,16 @@ import java.util.regex.Pattern
  * Detects Marp decks: Markdown whose front matter, starting at the very first character, contains `marp: true`.
  *
  * The rules are a port of marp-vscode's `detectMarpFromMarkdown` (`src/utils.ts`,
- * https://github.com/marp-team/marp-vscode, MIT License, Copyright (c) 2019- Marp team (marp-team@marp.app)).
- * The JavaScript regular expressions are translated so that Java's regex engine matches exactly the same strings:
- * JavaScript `\s` is spelled out, and the multiline `^` / `$` anchors become look-arounds over JavaScript's line
- * terminators (Java would otherwise refuse to match between `\r` and `\n`).
+ * https://github.com/marp-team/marp-vscode, MIT License, Copyright (c) 2019- Marp team (marp-team@marp.app)):
+ * the front matter is `/^(-{3,}\s*$\n)([\s\S]*?)^(\s*[-.]{3})/m` and the directive `/^(marp\s*: +)(.*)\s*$/m`, with
+ * JavaScript's `\s`, line terminators and multiline `^` / `$`. The front matter pattern is matched by a hand-written
+ * scanner ([detectFrontMatter]) that finds exactly what the regular expression finds, in linear time: run by a
+ * backtracking engine, that expression needs seconds for a file starting with `---` and a thousand blank lines, and
+ * detection runs inside read actions. The directive is a regular expression again, translated so that Java's engine
+ * matches the same strings (JavaScript `\s` spelled out, `^` / `$` as look-arounds over JavaScript's line terminators).
+ *
+ * Only the first [FRONT_MATTER_SCAN_CHARS] characters are looked at: the front matter has to end within them, which
+ * keeps every keystroke cheap however large the document is.
  *
  * Consequences of following marp-vscode exactly: the value must be the literal `true` up to the end of the line, so
  * `marp: true # comment`, `marp: "true"` and trailing whitespace after `true` are not detected.
@@ -23,10 +29,13 @@ import java.util.regex.Pattern
  */
 object MarpDetector {
 
-    /** How much of a file that is not loaded into a document is read from disk. */
-    const val HEAD_BYTES: Int = 8 * 1024
+    /**
+     * How much of a document is searched for the front matter, in characters (after a byte order mark). Files that are
+     * not loaded into a document are read from disk up to this many bytes, which never decode to more characters.
+     */
+    const val FRONT_MATTER_SCAN_CHARS: Int = 64 * 1024
 
-    private const val BOM = '﻿'
+    private const val BOM = '\uFEFF'
 
     /** JavaScript `\s`: WhiteSpace and LineTerminator code points. */
     private const val JS_WS = "[\\t\\n\\u000B\\f\\r \\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF]"
@@ -40,18 +49,44 @@ object MarpDetector {
     /** JavaScript multiline `$`. */
     private const val LINE_END = "(?![^$JS_LT])"
 
-    /** marp-vscode: `/^(-{3,}\s*$\n)([\s\S]*?)^(\s*[-.]{3})/m` */
-    private val FRONT_MATTER: Pattern =
-        Pattern.compile("$LINE_START(-{3,}$JS_WS*$LINE_END\\n)([\\s\\S]*?)$LINE_START($JS_WS*[-.]{3})")
-
     /** marp-vscode: `/^(marp\s*: +)(.*)\s*$/m` */
     private val MARP_DIRECTIVE: Pattern =
         Pattern.compile("$LINE_START(marp$JS_WS*: +)([^$JS_LT]*)$JS_WS*$LINE_END")
 
-    /** The front matter body if [markdown] starts with front matter, otherwise `null`. */
+    /**
+     * The front matter body (group 2 of marp-vscode's `/^(-{3,}\s*$\n)([\s\S]*?)^(\s*[-.]{3})/m`) if [markdown] starts
+     * with front matter that ends within [FRONT_MATTER_SCAN_CHARS] characters, otherwise `null`. Linear time.
+     */
     fun detectFrontMatter(markdown: CharSequence): String? {
-        val matcher = FRONT_MATTER.matcher(withoutBom(markdown))
-        return if (matcher.lookingAt()) matcher.group(2) else null
+        val text = head(markdown)
+        val length = text.length
+        // Opening fence: `-{3,}\s*$\n`. The greedy `\s*` ends at the last `\n` of the whitespace after the dashes. A
+        // shorter choice (backtracking) cannot find a closing fence the longest one misses: all it adds are line starts
+        // inside that same whitespace run, whose `\s*` reaches the same first non-space character.
+        var dashes = 0
+        while (dashes < length && text[dashes] == '-') dashes++
+        if (dashes < 3) return null
+        val afterOpening = skipWhitespace(text, dashes)
+        var lastLineFeed = -1
+        for (i in dashes until afterOpening) {
+            if (text[i] == '\n') lastLineFeed = i
+        }
+        if (lastLineFeed < 0) return null
+        val bodyStart = lastLineFeed + 1
+
+        // Lazy body, then `^\s*[-.]{3}` at the first line start where it matches. Every line start up to the first
+        // non-space character after it gives the same answer, so a failed try skips to the line start after that.
+        var lineStart = bodyStart
+        while (true) {
+            val fence = skipWhitespace(text, lineStart)
+            if (fence + 3 <= length && isFenceChar(text[fence]) && isFenceChar(text[fence + 1]) && isFenceChar(text[fence + 2])) {
+                return text.subSequence(bodyStart, lineStart).toString()
+            }
+            var terminator = fence
+            while (terminator < length && !isLineTerminator(text[terminator])) terminator++
+            if (terminator >= length) return null
+            lineStart = terminator + 1
+        }
     }
 
     /** `true` when [markdown] is a Marp deck. */
@@ -64,7 +99,7 @@ object MarpDetector {
 
     /**
      * `true` when [file] is a Marp deck. Uses the loaded document when there is one (so unsaved edits count),
-     * otherwise reads only the first [HEAD_BYTES] of the file. Call in a read action.
+     * otherwise reads only the first [FRONT_MATTER_SCAN_CHARS] bytes of the file. Call in a read action.
      */
     fun isMarp(file: VirtualFile): Boolean {
         if (!file.isValid || file.isDirectory) return false
@@ -84,15 +119,18 @@ object MarpDetector {
     /** A Markdown file that is a Marp deck. Call in a read action. */
     fun isMarpFile(file: VirtualFile): Boolean = isMarkdown(file) && isMarp(file)
 
-    /** Decodes the first [HEAD_BYTES] of [bytes] like the file would be decoded. */
+    /**
+     * Decodes the first [FRONT_MATTER_SCAN_CHARS] bytes of [bytes] like the file would be decoded. A multi-byte
+     * character cut at the end becomes U+FFFD, which only matters if the closing fence sits exactly there.
+     */
     internal fun decodeHead(bytes: ByteArray, charset: Charset): String {
-        val length = minOf(bytes.size, HEAD_BYTES)
+        val length = minOf(bytes.size, FRONT_MATTER_SCAN_CHARS)
         return String(bytes, 0, length, charset)
     }
 
     private fun readHead(file: VirtualFile): String? {
         return try {
-            val bytes = file.inputStream.use { it.readNBytes(HEAD_BYTES) }
+            val bytes = file.inputStream.use { it.readNBytes(FRONT_MATTER_SCAN_CHARS) }
             decodeHead(bytes, file.charset)
         }
         catch (_: IOException) {
@@ -100,6 +138,28 @@ object MarpDetector {
         }
     }
 
-    private fun withoutBom(text: CharSequence): CharSequence =
-        if (text.isNotEmpty() && text[0] == BOM) text.subSequence(1, text.length) else text
+    /** [text] without a leading byte order mark, cut to [FRONT_MATTER_SCAN_CHARS]. */
+    private fun head(text: CharSequence): CharSequence {
+        val start = if (text.isNotEmpty() && text[0] == BOM) 1 else 0
+        val end = minOf(text.length, start + FRONT_MATTER_SCAN_CHARS)
+        return if (start == 0 && end == text.length) text else text.subSequence(start, end)
+    }
+
+    /** Index of the first character at or after [from] that is not JavaScript `\s`. */
+    private fun skipWhitespace(text: CharSequence, from: Int): Int {
+        var i = from
+        while (i < text.length && isJsWhitespace(text[i])) i++
+        return i
+    }
+
+    private fun isFenceChar(c: Char): Boolean = c == '-' || c == '.'
+
+    /** JavaScript LineTerminator. */
+    private fun isLineTerminator(c: Char): Boolean = c == '\n' || c == '\r' || c == '\u2028' || c == '\u2029'
+
+    /** JavaScript `\s`, the same set as [JS_WS]. */
+    private fun isJsWhitespace(c: Char): Boolean = when (c) {
+        '\t', '\n', '\u000B', '\u000C', '\r', ' ', '\u00A0', '\u1680', '\u2028', '\u2029', '\u202F', '\u205F', '\u3000', '\uFEFF' -> true
+        else -> c in '\u2000'..'\u200A'
+    }
 }

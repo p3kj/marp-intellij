@@ -2,6 +2,7 @@ package cz.p3kj.marp.preview
 
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -203,10 +204,102 @@ class MarpResourcePathsTest {
     }
 
     @Test
-    fun marpUrls() {
-        assertTrue(MarpResourcePaths.isMarpUrl("https://marp.localhost/app/index.html"))
-        assertTrue(!MarpResourcePaths.isMarpUrl("https://marp.localhost.evil.com/app/index.html"))
-        assertTrue(!MarpResourcePaths.isMarpUrl(null))
+    fun marpHosts() {
+        for (url in listOf(
+            "https://marp.localhost/app/index.html",
+            "https://MARP.LOCALHOST/doc/x",
+            "https://marp.localhost:443/doc/x",
+            "https://marp.localhost:8443/doc/x",
+            "https://marp.localhost./doc/x",
+            "http://marp.localhost/doc/x",
+            "https://user:pw@marp.localhost/doc/x",
+            "https://marp.localhost",
+            "https://marp.localhost?x",
+            "https://marp.localhost\\doc\\x",
+        )) {
+            assertTrue(url, MarpResourcePaths.hasMarpHost(url))
+        }
+        for (url in listOf(
+            "https://marp.localhost.evil.com/app/index.html",
+            "https://evil.com/marp.localhost/",
+            "https://evil.com/?h=https://marp.localhost/",
+            "https://marp.localhost@evil.com/",
+            "https://localhost/",
+            "about:blank",
+            "marp.localhost",
+            "",
+            null,
+        )) {
+            assertFalse("$url", MarpResourcePaths.hasMarpHost(url))
+        }
+    }
+
+    /** Records every path that reaches the file system through the real-path lookup. */
+    private class RecordingRealPath {
+        val calls = mutableListOf<Path>()
+        val lookup: (Path) -> Path = { path -> calls.add(path); path.toRealPath() }
+    }
+
+    @Test
+    fun uncDocPathWithNonUncRootsIsRejectedWithoutFileSystemAccess() {
+        // On Windows this is \\host\share\x.png; elsewhere it is /host/share/x.png. Either way it is outside the roots.
+        val recording = RecordingRealPath()
+        assertNull(MarpResourcePaths.resolveAllowedFile(Path.of("//host/share/x.png"), listOf(tmp), recording.lookup))
+        assertEquals(emptyList<Path>(), recording.calls)
+        assertFalse(MarpResourcePaths.isLexicallyInside(Path.of("//host/share/x.png"), listOf(tmp)))
+    }
+
+    @Test
+    fun uncPathsNeedAUncRoot() {
+        assumeTrue("UNC paths exist on Windows only", isWindows)
+        val share = Path.of("\\\\host\\share\\")
+        assertFalse(MarpResourcePaths.isLexicallyInside(Path.of("\\\\host\\share\\x.png"), listOf(Path.of("C:\\project"))))
+        assertTrue(MarpResourcePaths.isLexicallyInside(Path.of("\\\\host\\share\\deck\\x.png"), listOf(share)))
+        assertFalse(MarpResourcePaths.isLexicallyInside(Path.of("\\\\other\\share\\x.png"), listOf(share)))
+    }
+
+    @Test
+    fun pathsOutsideEveryRootNeverReachTheFileSystem() {
+        val recording = RecordingRealPath()
+        val missingSibling = tmp.resolve("missing-sibling/secret.png")
+        for (path in listOf(outside.resolve("secret.png"), evil.resolve("secret.png"), missingSibling, Path.of("/etc/passwd"))) {
+            assertNull("$path", MarpResourcePaths.resolveAllowedFile(path, roots, recording.lookup))
+        }
+        // Lexically inside, but `..` leaves the root: normalized before the check.
+        assertNull(MarpResourcePaths.resolveAllowedFile(project.resolve("img/../../outside/secret.png"), roots, recording.lookup))
+        assertNull(MarpResourcePaths.resolveAllowedFile(Path.of("relative/logo.png"), listOf(Path.of("relative")), recording.lookup))
+        assertEquals(emptyList<Path>(), recording.calls)
+    }
+
+    @Test
+    fun rootsThatDoNotExistServeNothing() {
+        val recording = RecordingRealPath()
+        val missingRoot = tmp.resolve("no-such-root")
+        assertNull(MarpResourcePaths.resolveAllowedFile(missingRoot.resolve("x.png"), listOf(missingRoot), recording.lookup))
+        assertEquals("only the requested path was looked up", listOf(missingRoot.resolve("x.png")), recording.calls)
+    }
+
+    @Test
+    fun inRootFilesAreStillServedAfterTheLexicalGate() {
+        val recording = RecordingRealPath()
+        val logo = project.resolve("img/logo.png")
+        assertEquals(logo, MarpResourcePaths.resolveAllowedFile(logo, roots, recording.lookup))
+        assertEquals(listOf(logo, project), recording.calls)
+        assertEquals(logo, MarpResourcePaths.resolveAllowedFile(project.resolve("img/./logo.png"), roots))
+    }
+
+    @Test
+    fun symlinkInsideTheRootToOutsideIsStillRejected() {
+        val link = project.resolve("img/escape.png")
+        try {
+            Files.createSymbolicLink(link, outside.resolve("secret.png"))
+        }
+        catch (e: Exception) {
+            assumeTrue("symlinks not supported: $e", false)
+        }
+        // Passes the lexical gate (the link is inside), fails the real-path check.
+        assertTrue(MarpResourcePaths.isLexicallyInside(link, roots))
+        assertNull(MarpResourcePaths.resolveAllowedFile(link, roots))
     }
 
     @Test
