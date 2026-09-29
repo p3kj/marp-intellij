@@ -152,6 +152,19 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
         }
     }
 
+    /**
+     * The names of the custom themes of the cached set, for completion: never suspends and never blocks. While nothing is
+     * cached it starts loading in the background and returns an empty list, so the names show up on a later call.
+     */
+    fun cachedThemeNames(): List<String> {
+        val set = cached
+        if (set == null) {
+            cs.launch { loadThemes() }
+            return emptyList()
+        }
+        return set.themes.mapNotNull { MarpThemeNames.nameOf(it.css) }.distinct()
+    }
+
     private fun trustChanged(changed: Project) {
         if (changed != project) return
         invalidate()

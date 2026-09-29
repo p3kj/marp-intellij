@@ -257,7 +257,7 @@ object MarpHeadingDivider {
     }
 
     /** YAML ends a plain scalar at ` #`; a quoted scalar is left alone, [unquote] handles what follows the quote. */
-    private fun withoutYamlComment(value: String): String {
+    internal fun withoutYamlComment(value: String): String {
         if (value.startsWith("\"") || value.startsWith("'")) return value
         if (value.startsWith("#")) return ""
         for (i in 1 until value.length) {
@@ -267,7 +267,7 @@ object MarpHeadingDivider {
     }
 
     /** The text inside a pair of matching quotes at the start of [value], else [value]. */
-    private fun unquote(value: String): String {
+    internal fun unquote(value: String): String {
         if (value.isEmpty()) return value
         val quote = value[0]
         if (quote != '"' && quote != '\'') return value

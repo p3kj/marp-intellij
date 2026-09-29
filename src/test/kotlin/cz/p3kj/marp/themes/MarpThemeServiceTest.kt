@@ -87,6 +87,18 @@ class MarpThemeServiceTest : MarpLightTestCase() {
         assertEquals(3, set.themes.size)
     }
 
+    fun testCachedThemeNamesForCompletion() {
+        write("a.css", "/* @theme alpha */")
+        write("b.css", "/* @theme beta */")
+        write("c.css", "/* @theme alpha */")
+        write("d.css", "section {}")
+        settings(false, "a.css", "b.css", "c.css", "d.css")
+        // Nothing is cached yet: the call does not wait for the themes, it only starts loading them.
+        assertEmpty(service.cachedThemeNames())
+        load()
+        assertEquals(listOf("alpha", "beta"), service.cachedThemeNames())
+    }
+
     fun testFolderExpansionIsRecursiveAndSorted() {
         write("t/b.css", "b")
         write("t/a.css", "a")
