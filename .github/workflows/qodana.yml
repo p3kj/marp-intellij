@@ -48,14 +48,6 @@ jobs:
           distribution: temurin
           java-version: 25
 
-      - name: Setup Node
-        if: steps.token.outputs.available == 'true'
-        uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: webview/package-lock.json
-
       - name: Qodana Scan
         if: steps.token.outputs.available == 'true'
         uses: JetBrains/qodana-action@v2026.2.1

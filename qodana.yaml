@@ -1,7 +1,8 @@
 # Qodana configuration: https://www.jetbrains.com/help/qodana/qodana-yaml.html
 version: "1.0"
 linter: jetbrains/qodana-jvm-community:2026.2
-projectJDK: "25"
+# No projectJDK: the JVM linters ship JBR 25 by default (https://www.jetbrains.com/help/qodana/jvm.html), which matches
+# the JDK 25 the build needs. Explicit values are only auto-downloaded for 8-21, so "25" would not be resolved that way.
 profile:
   name: qodana.recommended
 exclude:
