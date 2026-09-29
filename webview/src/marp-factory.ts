@@ -3,9 +3,15 @@ import contentSection from './content-section'
 import lineNumber from './line-number'
 import type { RenderOptions, ThemeInput } from './types'
 
+/** A custom theme marp-core rejected; formatted for the banner with the current strings. */
+export interface ThemeError {
+  source: string
+  message: string
+}
+
 export interface MarpBuild {
   marp: Marp
-  errors: string[]
+  errors: ThemeError[]
 }
 
 /** Same options as marp-vscode's preview, see docs/ARCHITECTURE.md. */
@@ -23,12 +29,12 @@ export function createMarp(options: RenderOptions, themes: ThemeInput[]): MarpBu
   })
   marp.use(lineNumber).use(contentSection)
 
-  const errors: string[] = []
+  const errors: ThemeError[] = []
   for (const theme of themes) {
     try {
       marp.themeSet.add(theme.css)
     } catch (e) {
-      errors.push(`Theme ${theme.source}: ${e instanceof Error ? e.message : String(e)}`)
+      errors.push({ source: theme.source, message: e instanceof Error ? e.message : String(e) })
     }
   }
   return { marp, errors }

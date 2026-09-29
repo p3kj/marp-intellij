@@ -73,6 +73,7 @@ internal class MarpBridgeState(
     }
 
     companion object {
+        const val SET_STRINGS: String = "setStrings"
         const val SET_IDE_THEME: String = "setIdeTheme"
         const val SET_THEMES: String = "setThemes"
         const val UPDATE: String = "update"
@@ -80,7 +81,7 @@ internal class MarpBridgeState(
         const val SET_ACTIVE_LINE: String = "setActiveLine"
 
         /** Replay order on `ready`, as documented in `docs/ARCHITECTURE.md`. */
-        val REPLAY_ORDER: List<String> = listOf(SET_IDE_THEME, SET_THEMES, UPDATE, SCROLL_TO_LINE, SET_ACTIVE_LINE)
+        val REPLAY_ORDER: List<String> = listOf(SET_STRINGS, SET_IDE_THEME, SET_THEMES, UPDATE, SCROLL_TO_LINE, SET_ACTIVE_LINE)
 
         const val MAX_CRASH_RELOADS: Int = 3
         const val STABLE_MS: Long = 10_000

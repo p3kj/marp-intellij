@@ -87,6 +87,15 @@ stayed up for 10 s starts a new row).
 
 ```ts
 interface MarpBridge {
+  /**
+   * The page's user-visible texts from MarpBundle (sent first on every `ready`; English defaults until then).
+   * `{0}`, `{1}` are placeholders the page fills in.
+   */
+  setStrings(arg: {
+    dismiss: string      // error banner close button: tooltip and aria-label
+    themeError: string   // {0} theme source, {1} marp-core's error
+    renderError: string  // {0} error message
+  }): void
   /** Replace custom themes. errors: Kotlin-side problems (missing file, download failed) shown in the preview. */
   setThemes(arg: { themes: { source: string; css: string }[]; errors: string[] }): void
   /** Render. Called on load and on document changes (throttled, at most every 150 ms while typing). */
@@ -124,7 +133,7 @@ string:
 
 | Message | Meaning |
 |---|---|
-| `{"type":"ready"}` | bridge is installed; Kotlin sends `setIdeTheme`, `setThemes`, `update`, `scrollToLine`, `setActiveLine` |
+| `{"type":"ready"}` | bridge is installed; Kotlin sends `setStrings`, `setIdeTheme`, `setThemes`, `update`, `scrollToLine`, `setActiveLine` |
 | `{"type":"revealLine","line":n}` | the user scrolled the preview; scroll the editor so fractional line `n` is at the top |
 | `{"type":"didClick","line":n}` | double-click in a slide; move the caret to line `n` and focus the editor |
 | `{"type":"openLink","href":"..."}` | a link was clicked (the page always prevents navigation). `https://marp.localhost/doc/...` inside the allowed roots -> open that file in the IDE; `http(s)`/`mailto` -> `BrowserUtil.browse`; anything else ignored (see Page security) |
@@ -133,7 +142,7 @@ string:
 ## Kotlin contracts
 
 - `MarpSettings` (project service, `.idea/marp.xml`): `themes`, `useMarprcThemeSet`, `html`, `math`, `scrollSync`;
-  `update { }` publishes `MarpSettingsListener.TOPIC`.
+  `update { }` publishes `MarpSettingsListener.TOPIC` when the block changed anything.
 - `MarpThemeService` (project service): `suspend fun loadThemes(): MarpThemeSet` (cached, never on EDT);
   publishes `MarpThemeListener.TOPIC` when watched theme files, folders or `.marprc` change, or theme settings change.
 - Theme sources: settings `themes` entries (file / folder = all `**/*.css` inside, recursive and skipping `node_modules`

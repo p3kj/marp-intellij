@@ -5,12 +5,15 @@ import { createHostChannel } from './host'
 import { createMarp, marpKey, type MarpBuild } from './marp-factory'
 import { parseFragment, patchSlides } from './patch'
 import { collectCodeLines, lineForViewportPosition, offsetForLine, type CodeLine } from './scroll-sync'
-import type { MarpBridge, RenderOptions, ThemeInput } from './types'
+import { defaultStrings, formatMessage, mergeStrings } from './strings'
+import type { MarpBridge, PreviewStrings, RenderOptions, ThemeInput } from './types'
 
 type UpdateArg = Parameters<MarpBridge['update']>[0]
 
+let strings: PreviewStrings = defaultStrings
+
 const host = createHostChannel(window)
-const banner = createErrorBanner(document)
+const banner = createErrorBanner(document, strings.dismiss)
 const marpBrowser = browser()
 
 const root = document.getElementById('marp-root') as HTMLElement
@@ -21,6 +24,7 @@ document.body.prepend(banner.element)
 
 let themes: ThemeInput[] = []
 let kotlinErrors: string[] = []
+/** Message of the last render exception, formatted with `strings.renderError` when shown. */
 let renderError: string | undefined
 let build: (MarpBuild & { key: string }) | undefined
 let lastUpdate: UpdateArg | undefined
@@ -54,7 +58,11 @@ function nextFrame(fn: () => void): void {
 }
 
 function showErrors(): void {
-  const all = [...kotlinErrors, ...(build?.errors ?? []), ...(renderError ? [renderError] : [])]
+  const all = [
+    ...kotlinErrors,
+    ...(build?.errors ?? []).map((e) => formatMessage(strings.themeError, e.source, e.message)),
+    ...(renderError !== undefined ? [formatMessage(strings.renderError, renderError)] : []),
+  ]
   for (const message of all) {
     if (!shownErrors.has(message)) host.post({ type: 'error', message })
   }
@@ -86,7 +94,7 @@ function render(): void {
     inject(html, css)
     renderError = undefined
   } catch (e) {
-    renderError = `Render failed: ${e instanceof Error ? e.message : String(e)}`
+    renderError = e instanceof Error ? e.message : String(e)
   }
   showErrors()
 
@@ -134,6 +142,12 @@ function applyScroll(line: number): void {
 }
 
 const bridge: MarpBridge = {
+  setStrings(next) {
+    strings = mergeStrings(next)
+    banner.setDismissLabel(strings.dismiss)
+    showErrors()
+  },
+
   setThemes({ themes: next, errors }) {
     themes = next
     kotlinErrors = errors

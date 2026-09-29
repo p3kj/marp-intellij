@@ -23,6 +23,7 @@ import com.intellij.ui.ColorUtil
 import com.intellij.ui.jcef.JBCefBrowser
 import com.intellij.ui.jcef.JBCefBrowserBase
 import com.intellij.ui.jcef.JBCefJSQuery
+import cz.p3kj.marp.MarpBundle
 import cz.p3kj.marp.themes.MarpThemeSet
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -136,6 +137,7 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
         val connection = ApplicationManager.getApplication().messageBus.connect(this)
         connection.subscribe(LafManagerListener.TOPIC, LafManagerListener { sendIdeTheme() })
         connection.subscribe(EditorColorsManager.TOPIC, EditorColorsListener { sendIdeTheme() })
+        sendStrings()
         sendIdeTheme()
 
         // Registered last, so it is disposed first: stop talking to the browser before it goes away.
@@ -185,6 +187,15 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
 
     fun setActiveLine(line: Int) {
         call(MarpBridgeState.SET_ACTIVE_LINE, line)
+    }
+
+    /** The page's own texts; `{0}`, `{1}` stay placeholders that the page fills in. */
+    private fun sendStrings() {
+        call(MarpBridgeState.SET_STRINGS, JsonObject().apply {
+            addProperty("dismiss", MarpBundle.message("preview.banner.dismiss"))
+            addProperty("themeError", MarpBundle.message("preview.error.theme", "{0}", "{1}"))
+            addProperty("renderError", MarpBundle.message("preview.error.render", "{0}"))
+        })
     }
 
     private fun sendIdeTheme() {

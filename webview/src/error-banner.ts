@@ -1,5 +1,5 @@
 /** Small dismissible banner at the top of the preview. Re-appears when the messages change. */
-export function createErrorBanner(doc: Document) {
+export function createErrorBanner(doc: Document, dismissLabel: string) {
   const el = doc.createElement('div')
   el.id = 'marp-error-banner'
   el.setAttribute('role', 'alert')
@@ -9,9 +9,12 @@ export function createErrorBanner(doc: Document) {
   const close = doc.createElement('button')
   close.type = 'button'
   close.className = 'marp-error-close'
-  close.title = 'Dismiss'
-  close.setAttribute('aria-label', 'Dismiss')
   close.textContent = '×'
+  const setDismissLabel = (label: string) => {
+    close.title = label
+    close.setAttribute('aria-label', label)
+  }
+  setDismissLabel(dismissLabel)
   el.append(list, close)
 
   let signature = ''
@@ -24,6 +27,7 @@ export function createErrorBanner(doc: Document) {
 
   return {
     element: el,
+    setDismissLabel,
     set(messages: readonly string[]) {
       signature = messages.join('\n')
       list.replaceChildren(

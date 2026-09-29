@@ -5,6 +5,7 @@ import cz.p3kj.marp.preview.MarpBridgeState.Companion.REPLAY_ORDER
 import cz.p3kj.marp.preview.MarpBridgeState.Companion.SCROLL_TO_LINE
 import cz.p3kj.marp.preview.MarpBridgeState.Companion.SET_ACTIVE_LINE
 import cz.p3kj.marp.preview.MarpBridgeState.Companion.SET_IDE_THEME
+import cz.p3kj.marp.preview.MarpBridgeState.Companion.SET_STRINGS
 import cz.p3kj.marp.preview.MarpBridgeState.Companion.SET_THEMES
 import cz.p3kj.marp.preview.MarpBridgeState.Companion.STABLE_MS
 import cz.p3kj.marp.preview.MarpBridgeState.Companion.UPDATE
@@ -35,7 +36,7 @@ class MarpBridgeStateTest {
         for (method in REPLAY_ORDER.reversed()) bridge.call(method, "\"$method\"")
         bridge.onReady()
         assertEquals(REPLAY_ORDER, executed.map { it.first })
-        assertEquals(listOf(SET_IDE_THEME, SET_THEMES, UPDATE, SCROLL_TO_LINE, SET_ACTIVE_LINE), REPLAY_ORDER.take(5))
+        assertEquals(listOf(SET_STRINGS, SET_IDE_THEME, SET_THEMES, UPDATE, SCROLL_TO_LINE, SET_ACTIVE_LINE), REPLAY_ORDER)
     }
 
     @Test
@@ -62,6 +63,7 @@ class MarpBridgeStateTest {
     fun reloadResetsReadyAndReplaysTheLatestStateAgain() {
         bridge.call(SET_THEMES, "t1")
         bridge.call(UPDATE, "u1")
+        bridge.call(SET_STRINGS, "s")
         bridge.onReady()
         executed.clear()
 
@@ -71,7 +73,7 @@ class MarpBridgeStateTest {
         assertEquals("nothing reaches a page that is loading", emptyList<Pair<String, String>>(), executed)
 
         bridge.onReady()
-        assertEquals(listOf(SET_THEMES to "t1", UPDATE to "u2"), executed)
+        assertEquals("strings first on every ready", listOf(SET_STRINGS to "s", SET_THEMES to "t1", UPDATE to "u2"), executed)
     }
 
     @Test
