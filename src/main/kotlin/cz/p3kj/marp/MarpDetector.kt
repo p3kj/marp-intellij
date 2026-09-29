@@ -15,7 +15,7 @@ import java.util.regex.Pattern
  * https://github.com/marp-team/marp-vscode, MIT License, Copyright (c) 2019- Marp team (marp-team@marp.app)):
  * the front matter is `/^(-{3,}\s*$\n)([\s\S]*?)^(\s*[-.]{3})/m` and the directive `/^(marp\s*: +)(.*)\s*$/m`, with
  * JavaScript's `\s`, line terminators and multiline `^` / `$`. The front matter pattern is matched by a hand-written
- * scanner ([detectFrontMatter]) that finds exactly what the regular expression finds, in linear time: run by a
+ * scanner ([findFrontMatter]) that finds exactly what the regular expression finds, in linear time: run by a
  * backtracking engine, that expression needs seconds for a file starting with `---` and a thousand blank lines, and
  * detection runs inside read actions. The directive is a regular expression again, translated so that Java's engine
  * matches the same strings (JavaScript `\s` spelled out, `^` / `$` as look-arounds over JavaScript's line terminators).
@@ -54,12 +54,24 @@ object MarpDetector {
         Pattern.compile("$LINE_START(marp$JS_WS*: +)([^$JS_LT]*)$JS_WS*$LINE_END")
 
     /**
-     * The front matter body (group 2 of marp-vscode's `/^(-{3,}\s*$\n)([\s\S]*?)^(\s*[-.]{3})/m`) if [markdown] starts
-     * with front matter that ends within [FRONT_MATTER_SCAN_CHARS] characters, otherwise `null`. Linear time.
+     * The front matter of a document: [body] is group 2 of marp-vscode's front matter expression, [endOffset] the offset
+     * in the original text just past the line of the closing fence (after its line break, or the text length at the end).
      */
-    fun detectFrontMatter(markdown: CharSequence): String? {
+    data class FrontMatter(val body: String, val endOffset: Int)
+
+    /** The front matter body, see [findFrontMatter]. */
+    fun detectFrontMatter(markdown: CharSequence): String? = findFrontMatter(markdown)?.body
+
+    /**
+     * The front matter (group 2 of marp-vscode's `/^(-{3,}\s*$\n)([\s\S]*?)^(\s*[-.]{3})/m`, and where it ends) if
+     * [markdown] starts with front matter that ends within [FRONT_MATTER_SCAN_CHARS] characters, otherwise `null`.
+     * Linear time.
+     */
+    fun findFrontMatter(markdown: CharSequence): FrontMatter? {
         val text = head(markdown)
         val length = text.length
+        // A byte order mark skipped by head(): offsets in `text` are one less than in `markdown`.
+        val shift = if (markdown.isNotEmpty() && markdown[0] == BOM) 1 else 0
         // Opening fence: `-{3,}\s*$\n`. The greedy `\s*` ends at the last `\n` of the whitespace after the dashes. A
         // shorter choice (backtracking) cannot find a closing fence the longest one misses: all it adds are line starts
         // inside that same whitespace run, whose `\s*` reaches the same first non-space character.
@@ -80,7 +92,7 @@ object MarpDetector {
         while (true) {
             val fence = skipWhitespace(text, lineStart)
             if (fence + 3 <= length && isFenceChar(text[fence]) && isFenceChar(text[fence + 1]) && isFenceChar(text[fence + 2])) {
-                return text.subSequence(bodyStart, lineStart).toString()
+                return FrontMatter(text.subSequence(bodyStart, lineStart).toString(), endOfLine(markdown, fence + shift))
             }
             var terminator = fence
             while (terminator < length && !isLineTerminator(text[terminator])) terminator++
@@ -143,6 +155,18 @@ object MarpDetector {
         val start = if (text.isNotEmpty() && text[0] == BOM) 1 else 0
         val end = minOf(text.length, start + FRONT_MATTER_SCAN_CHARS)
         return if (start == 0 && end == text.length) text else text.subSequence(start, end)
+    }
+
+    /**
+     * Offset just past the line that contains [from]: after its line terminator (`\r\n` counts as one), or the text
+     * length. Looks at the whole [text], not only the scanned head, so a fence line that crosses the head limit is
+     * measured completely.
+     */
+    private fun endOfLine(text: CharSequence, from: Int): Int {
+        var i = from
+        while (i < text.length && !isLineTerminator(text[i])) i++
+        if (i >= text.length) return text.length
+        return if (text[i] == '\r' && i + 1 < text.length && text[i + 1] == '\n') i + 2 else i + 1
     }
 
     /** Index of the first character at or after [from] that is not JavaScript `\s`. */

@@ -148,6 +148,75 @@ class MarpDetectorTest {
         assertEquals("marp: true\n", MarpDetector.detectFrontMatter("---\nmarp: true\n" + "\n".repeat(1_000) + "---\n"))
     }
 
+    private fun frontMatterEnd(markdown: String): Int? = MarpDetector.findFrontMatter(markdown)?.endOffset
+
+    @Test
+    fun frontMatterEndsAfterTheClosingFenceLine() {
+        val dashes = "---\nmarp: true\n---\n# Hi"
+        assertEquals(dashes.indexOf("# Hi"), frontMatterEnd(dashes))
+        assertEquals("marp: true\n", MarpDetector.findFrontMatter(dashes)?.body)
+
+        val dots = "---\nmarp: true\n...\n# Hi"
+        assertEquals(dots.indexOf("# Hi"), frontMatterEnd(dots))
+
+        val longFence = "----\nmarp: true\n----\n# Hi"
+        assertEquals(longFence.indexOf("# Hi"), frontMatterEnd(longFence))
+
+        // Blank lines before the closing fence are part of the fence match.
+        val blanks = "---\nmarp: true\n\n\n---\n# Hi"
+        assertEquals(blanks.indexOf("# Hi"), frontMatterEnd(blanks))
+    }
+
+    @Test
+    fun frontMatterEndCoversTheRestOfTheClosingFenceLine() {
+        val trailing = "---\nmarp: true\n--- trailing text\n# Hi"
+        assertEquals(trailing.indexOf("# Hi"), frontMatterEnd(trailing))
+        val indented = "---\nmarp: true\n  ---  \n# Hi"
+        assertEquals(indented.indexOf("# Hi"), frontMatterEnd(indented))
+    }
+
+    @Test
+    fun frontMatterEndWithCrlf() {
+        val crlf = "---\r\nmarp: true\r\n---\r\n# Hi"
+        assertEquals(crlf.indexOf("# Hi"), frontMatterEnd(crlf))
+    }
+
+    @Test
+    fun frontMatterEndAtTheEndOfTheText() {
+        val noNewline = "---\nmarp: true\n---"
+        assertEquals(noNewline.length, frontMatterEnd(noNewline))
+        val newline = "---\nmarp: true\n---\n"
+        assertEquals(newline.length, frontMatterEnd(newline))
+    }
+
+    @Test
+    fun frontMatterEndCountsTheByteOrderMark() {
+        val text = "\uFEFF---\nmarp: true\n---\n# Hi"
+        assertEquals(text.indexOf("# Hi"), frontMatterEnd(text))
+        assertEquals("marp: true\n", MarpDetector.findFrontMatter(text)?.body)
+        val noNewline = "\uFEFF---\nmarp: true\n---"
+        assertEquals(noNewline.length, frontMatterEnd(noNewline))
+    }
+
+    @Test
+    fun frontMatterEndOfAFenceLineThatCrossesTheScanLimit() {
+        val limit = MarpDetector.FRONT_MATTER_SCAN_CHARS
+        val filler = "a: b\n"
+        val prefix = "---\nmarp: true\n"
+        val lines = (limit - prefix.length - 3) / filler.length
+        val fence = prefix + filler.repeat(lines) + "---"
+        assertTrue(fence.length <= limit)
+        val text = "$fence${"x".repeat(1_000)}\n# Hi"
+        assertEquals(text.indexOf("# Hi"), frontMatterEnd(text))
+    }
+
+    @Test
+    fun noFrontMatterHasNoEnd() {
+        assertNull(frontMatterEnd(""))
+        assertNull(frontMatterEnd("# Title\n---\nmarp: true\n---\n"))
+        assertNull(frontMatterEnd("---\nmarp: true\n"))
+    }
+
     /** marp-vscode's front matter regular expression, translated to Java: the reference for the linear scanner. */
     private val referencePattern: Pattern = run {
         val ws = "[\\t\\n\\u000B\\f\\r \\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF]"
