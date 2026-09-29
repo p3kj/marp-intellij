@@ -1,0 +1,21 @@
+{
+  "name": "marp-intellij-webview",
+  "private": true,
+  "description": "Marp preview page rendered inside JCEF by the Marp Preview IntelliJ plugin.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@marp-team/marp-core": "4.4.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "jsdom": "30.1.1",
+    "typescript": "7.0.2",
+    "vitest": "5.0.2"
+  }
+}

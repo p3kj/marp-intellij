@@ -1,0 +1,37 @@
+<!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
+<idea-plugin>
+    <id>cz.p3kj.marp</id>
+    <name>Marp Preview</name>
+    <vendor url="https://github.com/p3kj">p3kj</vendor>
+    <description><![CDATA[
+        <p>Live preview for <a href="https://marp.app">Marp</a> slide decks, right next to the Markdown editor.</p>
+        <ul>
+            <li>Markdown files with <code>marp: true</code> in the front matter open with an Editor / Split / Preview toggle.</li>
+            <li>The preview refreshes while you type, no save needed.</li>
+            <li>Editor and preview scroll together, the slide under the caret is highlighted.</li>
+            <li>Custom themes from CSS files, folders or URLs (like <code>markdown.marp.themes</code> in VS Code).</li>
+            <li>Local images and <code>![bg](...)</code> backgrounds, math (MathJax / KaTeX), fitting headers.</li>
+        </ul>
+        <p>Rendering uses <a href="https://github.com/marp-team/marp-core">marp-core</a> inside the IDE's built-in browser (JCEF), so no Node.js is needed.</p>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.jcef</depends>
+    <depends>org.intellij.plugins.markdown</depends>
+
+    <resource-bundle>messages.MarpBundle</resource-bundle>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- Editor and preview -->
+        <fileEditorProvider implementation="cz.p3kj.marp.editor.MarpSplitEditorProvider"/>
+        <editorNotificationProvider implementation="cz.p3kj.marp.notifications.MarpEditorNotificationProvider"/>
+
+        <!-- Settings and themes -->
+        <projectConfigurable
+                parentId="tools"
+                id="cz.p3kj.marp.settings"
+                instance="cz.p3kj.marp.settings.MarpConfigurable"
+                key="settings.displayName"
+                bundle="messages.MarpBundle"/>
+    </extensions>
+</idea-plugin>
