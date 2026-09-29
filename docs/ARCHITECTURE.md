@@ -98,6 +98,7 @@ interface MarpBridge {
     dismiss: string      // error banner close button: tooltip and aria-label
     themeError: string   // {0} theme source, {1} marp-core's error
     renderError: string  // {0} error message
+    unknownTheme: string // {0} theme name from a `theme:` directive that no built-in/registered theme has
   }): void
   /** Replace custom themes. errors: Kotlin-side problems (missing file, download failed) shown in the preview. */
   setThemes(arg: { themes: { source: string; css: string }[]; errors: string[] }): void

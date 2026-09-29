@@ -62,6 +62,7 @@ function showErrors(): void {
   const all = [
     ...kotlinErrors,
     ...(build?.errors ?? []).map((e) => formatMessage(strings.themeError, e.source, e.message)),
+    ...(renderError === undefined ? (build?.unknownThemes() ?? []).map((name) => formatMessage(strings.unknownTheme, name)) : []),
     ...(renderError !== undefined ? [formatMessage(strings.renderError, renderError)] : []),
   ]
   for (const message of all) {

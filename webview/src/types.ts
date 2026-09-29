@@ -19,6 +19,8 @@ export interface PreviewStrings {
   themeError: string
   /** marp-core threw while rendering: `{0}` error message. */
   renderError: string
+  /** A `theme:` directive names a theme that is neither built in nor registered: `{0}` the name. */
+  unknownTheme: string
 }
 
 export interface MarpBridge {

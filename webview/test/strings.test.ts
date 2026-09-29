@@ -53,3 +53,45 @@ describe('theme errors', () => {
     expect(errors[0].message).not.toBe('')
   })
 })
+
+describe('unknown theme', () => {
+  const unknown = (markdown: string, themes: { source: string; css: string }[] = []) => {
+    const build = createMarp({ html: 'default', math: 'off' }, themes)
+    build.marp.render(markdown)
+    return build.unknownThemes()
+  }
+  const custom = { source: 'demo.css', css: '/* @theme demo */\nsection { color: red }' }
+
+  it('reports a theme that is not registered, front matter and comment, quotes stripped', () => {
+    expect(unknown('---\ntheme: nonexistent\n---\n# a')).toEqual(['nonexistent'])
+    expect(unknown('---\ntheme: "demo"\n---\n# a')).toEqual(['demo'])
+    expect(unknown("<!-- theme: 'demo' -->\n# a")).toEqual(['demo'])
+  })
+
+  it('is case sensitive like Marpit', () => {
+    expect(unknown('---\ntheme: Gaia\n---\n# a')).toEqual(['Gaia'])
+  })
+
+  it('reports nothing for built-in themes, custom themes or no directive', () => {
+    for (const name of ['default', 'gaia', 'uncover']) expect(unknown(`---\ntheme: ${name}\n---\n# a`)).toEqual([])
+    expect(unknown('---\ntheme: demo\n---\n# a', [custom])).toEqual([])
+    expect(unknown('# a')).toEqual([])
+  })
+
+  it('does not count @import of an unregistered theme', () => {
+    const importing = { source: 'i.css', css: '/* @theme importing */\n@import "missing";\nsection { color: red }' }
+    expect(unknown('---\ntheme: importing\n---\n# a', [importing])).toEqual([])
+  })
+
+  it('starts over on every render', () => {
+    const build = createMarp({ html: 'default', math: 'off' }, [])
+    build.marp.render('---\ntheme: nope\n---\n# a')
+    build.marp.render('# a')
+    expect(build.unknownThemes()).toEqual([])
+  })
+
+  it('has a default text with a placeholder and merges a localized one', () => {
+    expect(formatMessage(defaultStrings.unknownTheme, 'demo')).toContain('"demo"')
+    expect(mergeStrings({ unknownTheme: 'Motiv {0}' }).unknownTheme).toBe('Motiv {0}')
+  })
+})

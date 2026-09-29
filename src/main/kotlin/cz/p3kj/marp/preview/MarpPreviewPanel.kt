@@ -199,6 +199,7 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
             addProperty("dismiss", MarpBundle.message("preview.banner.dismiss"))
             addProperty("themeError", MarpBundle.message("preview.error.theme", "{0}", "{1}"))
             addProperty("renderError", MarpBundle.message("preview.error.render", "{0}"))
+            addProperty("unknownTheme", MarpBundle.message("preview.error.unknownTheme", "{0}"))
         })
     }
 

@@ -5,6 +5,8 @@ export const defaultStrings: PreviewStrings = {
   dismiss: 'Dismiss',
   themeError: 'Theme {0}: {1}',
   renderError: 'Render failed: {0}',
+  unknownTheme:
+    'Theme "{0}" is not recognized. Add it in Settings | Tools | Marp or to themeSet in .marprc.yml.',
 }
 
 /** Replaces `{0}`, `{1}`... with `args` (placeholders without an argument stay as they are). */
