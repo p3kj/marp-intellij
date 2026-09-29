@@ -47,10 +47,13 @@ class MarpSettings(private val project: Project) : SimplePersistentStateComponen
     val math: MarpMathMode get() = state.math
     val scrollSync: Boolean get() = state.scrollSync
 
-    /** Changes the settings and notifies [MarpSettingsListener.TOPIC] subscribers. */
+    /** Changes the settings and, when anything actually changed, notifies [MarpSettingsListener.TOPIC] subscribers. */
     fun update(block: MarpState.() -> Unit) {
+        val before = state.modificationCount
         state.block()
-        project.messageBus.syncPublisher(MarpSettingsListener.TOPIC).settingsChanged()
+        if (state.modificationCount != before) {
+            project.messageBus.syncPublisher(MarpSettingsListener.TOPIC).settingsChanged()
+        }
     }
 
     companion object {
