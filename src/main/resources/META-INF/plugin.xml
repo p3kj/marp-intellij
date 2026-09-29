@@ -54,6 +54,10 @@
         <liveTemplateContext contextId="MARP_DECK"
                              baseContextId="MARKDOWN"
                              implementation="cz.p3kj.marp.templates.MarpTemplateContextType"/>
+
+        <!-- Directive comments -->
+        <annotator language="Markdown" implementationClass="cz.p3kj.marp.directives.MarpDirectiveAnnotator"/>
+        <colorSettingsPage implementation="cz.p3kj.marp.directives.MarpColorSettingsPage"/>
     </extensions>
 
     <actions>
