@@ -16,7 +16,7 @@ internal class MarpBridgeState(
     private val latest = HashMap<String, String>()
     private var ready = false
     private var disposed = false
-    private var crashReloads = 0
+    private var reloads = 0
     private var readyAt = NEVER
 
     val isReady: Boolean get() = synchronized(lock) { ready }
@@ -51,17 +51,17 @@ internal class MarpBridgeState(
     }
 
     /**
-     * The renderer process died. Returns `true` when the page should be reloaded: at most [MAX_CRASH_RELOADS] times in a
-     * row, where a page that stayed up for [STABLE_MS] starts a new row (a deck that crashes the renderer right away
-     * must not reload forever).
+     * The preview page is gone: the renderer process died, or the main frame ended up on another page. Returns `true`
+     * when the page should be loaded again: at most [MAX_RELOADS] times in a row, where a page that stayed up for
+     * [STABLE_MS] starts a new row (a deck that crashes the renderer right away must not reload forever).
      */
-    fun onRenderProcessGone(): Boolean = synchronized(lock) {
+    fun onPageGone(): Boolean = synchronized(lock) {
         ready = false
         if (disposed) return false
         val wasStable = readyAt != NEVER && now() - readyAt >= STABLE_MS
         readyAt = NEVER
-        if (wasStable) crashReloads = 0
-        crashReloads++ < MAX_CRASH_RELOADS
+        if (wasStable) reloads = 0
+        reloads++ < MAX_RELOADS
     }
 
     fun dispose() {
@@ -83,7 +83,7 @@ internal class MarpBridgeState(
         /** Replay order on `ready`, as documented in `docs/ARCHITECTURE.md`. */
         val REPLAY_ORDER: List<String> = listOf(SET_STRINGS, SET_IDE_THEME, SET_THEMES, UPDATE, SCROLL_TO_LINE, SET_ACTIVE_LINE)
 
-        const val MAX_CRASH_RELOADS: Int = 3
+        const val MAX_RELOADS: Int = 3
         const val STABLE_MS: Long = 10_000
 
         private const val NEVER = Long.MIN_VALUE

@@ -2,6 +2,7 @@ import { browser } from '@marp-team/marp-core/browser'
 import { markActiveSlide } from './active-slide'
 import { createErrorBanner } from './error-banner'
 import { createHostChannel } from './host'
+import { findLink } from './links'
 import { createMarp, marpKey, type MarpBuild } from './marp-factory'
 import { parseFragment, patchSlides } from './patch'
 import { collectCodeLines, lineForViewportPosition, offsetForLine, type CodeLine } from './scroll-sync'
@@ -216,19 +217,18 @@ window.addEventListener('resize', () => {
 })
 
 function onLinkClick(e: MouseEvent): void {
-  const a = (e.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null
-  if (!a) return
+  const link = findLink(e.target, document.baseURI)
+  if (!link) return
   e.preventDefault()
   if (e.type === 'auxclick') return
 
-  const raw = a.getAttribute('href') ?? ''
-  if (raw.startsWith('#')) {
-    const id = decodeURIComponent(raw.slice(1))
+  if (link.raw.startsWith('#')) {
+    const id = decodeURIComponent(link.raw.slice(1))
     const target = document.getElementById(id) ?? document.getElementsByName(id)[0]
     target?.scrollIntoView()
     return
   }
-  host.post({ type: 'openLink', href: a.href })
+  host.post({ type: 'openLink', href: link.href })
 }
 document.addEventListener('click', onLinkClick)
 document.addEventListener('auxclick', onLinkClick)

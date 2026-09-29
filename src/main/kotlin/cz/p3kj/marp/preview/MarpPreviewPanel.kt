@@ -81,7 +81,7 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
     private val requestHandler = MarpResourceRequestHandler(
         allowedRoots = { allowedRoots },
         onNavigation = { url -> scope.launch { openLink(url) } },
-        onRenderProcessGone = ::onRenderProcessGone,
+        onRenderProcessGone = { onPageGone("renderer process terminated") },
     )
 
     private val bridge = MarpBridgeState { method, json ->
@@ -112,7 +112,11 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
             }
 
             override fun onLoadEnd(browser: CefBrowser?, frame: CefFrame?, httpStatusCode: Int) {
-                if (frame?.isMain == true && frame.url.orEmpty().startsWith(MarpResourcePaths.APP_URL_PREFIX)) injectHost()
+                if (frame?.isMain != true) return
+                val url = frame.url.orEmpty()
+                if (url.startsWith(MarpResourcePaths.APP_URL_PREFIX, ignoreCase = true)) injectHost()
+                // Safety net for navigations CEF never reports to onBeforeBrowse (about:blank): back to the preview.
+                else onPageGone("main frame left the preview for $url")
             }
 
             override fun onLoadError(
@@ -251,12 +255,17 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
         }
     }
 
-    private fun onRenderProcessGone() {
-        if (bridge.onRenderProcessGone()) {
+    /** The renderer died or the main frame left the preview page: load the preview page again (capped). */
+    private fun onPageGone(reason: String) {
+        if (bridge.onPageGone()) {
+            LOG.info("Marp preview reloads: $reason")
             scope.launch(Dispatchers.UI) {
-                delay(CRASH_RELOAD_DELAY_MS)
-                browser.cefBrowser.reload()
+                delay(RELOAD_DELAY_MS)
+                browser.cefBrowser.loadURL(MarpResourcePaths.APP_INDEX_URL)
             }
+        }
+        else {
+            LOG.warn("Marp preview gave up reloading: $reason")
         }
     }
 
@@ -284,7 +293,7 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
     }
 
     private companion object {
-        const val CRASH_RELOAD_DELAY_MS = 500L
+        const val RELOAD_DELAY_MS = 500L
 
         fun cssHex(color: Color): String = String.format("#%02x%02x%02x", color.red, color.green, color.blue)
 

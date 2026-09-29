@@ -17,8 +17,13 @@ export function patchSlides(live: Element, next: Element, previous: readonly str
   return nextHtml
 }
 
+/**
+ * Parses rendered deck HTML. `<meta http-equiv>` is dropped: with `html: all` a `<meta http-equiv="refresh">` would
+ * navigate the preview page away, which the CSP cannot prevent (and CEF does not report about:blank navigations).
+ */
 export function parseFragment(doc: Document, html: string): Element | null {
   const template = doc.createElement('template')
   template.innerHTML = html
+  for (const meta of template.content.querySelectorAll('meta[http-equiv]')) meta.remove()
   return template.content.firstElementChild
 }

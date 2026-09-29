@@ -1,6 +1,6 @@
 package cz.p3kj.marp.preview
 
-import cz.p3kj.marp.preview.MarpBridgeState.Companion.MAX_CRASH_RELOADS
+import cz.p3kj.marp.preview.MarpBridgeState.Companion.MAX_RELOADS
 import cz.p3kj.marp.preview.MarpBridgeState.Companion.REPLAY_ORDER
 import cz.p3kj.marp.preview.MarpBridgeState.Companion.SCROLL_TO_LINE
 import cz.p3kj.marp.preview.MarpBridgeState.Companion.SET_ACTIVE_LINE
@@ -86,7 +86,7 @@ class MarpBridgeStateTest {
         bridge.call(UPDATE, "u2")
         bridge.onReady()
         assertFalse(bridge.isReady)
-        assertFalse(bridge.onRenderProcessGone())
+        assertFalse(bridge.onPageGone())
         assertEquals(emptyList<Pair<String, String>>(), executed)
     }
 
@@ -98,32 +98,32 @@ class MarpBridgeStateTest {
     @Test
     fun crashReloadsAreCapped() {
         bridge.onReady()
-        repeat(MAX_CRASH_RELOADS) {
-            assertTrue("reload #${it + 1}", bridge.onRenderProcessGone())
+        repeat(MAX_RELOADS) {
+            assertTrue("reload #${it + 1}", bridge.onPageGone())
             assertFalse(bridge.isReady)
             // The reloaded page comes up and crashes again right away.
             bridge.onReady()
         }
-        assertFalse(bridge.onRenderProcessGone())
+        assertFalse(bridge.onPageGone())
     }
 
     @Test
     fun crashesDuringLoadCountTowardsTheCap() {
         bridge.onReady()
         now += STABLE_MS
-        repeat(MAX_CRASH_RELOADS) { assertTrue(bridge.onRenderProcessGone()) }
+        repeat(MAX_RELOADS) { assertTrue(bridge.onPageGone()) }
         now += STABLE_MS
-        assertFalse("never ready again, so the old ready does not count as stable", bridge.onRenderProcessGone())
+        assertFalse("never ready again, so the old ready does not count as stable", bridge.onPageGone())
     }
 
     @Test
     fun aPageThatStayedUpStartsANewRowOfReloads() {
         bridge.onReady()
-        repeat(MAX_CRASH_RELOADS) {
-            assertTrue(bridge.onRenderProcessGone())
+        repeat(MAX_RELOADS) {
+            assertTrue(bridge.onPageGone())
             bridge.onReady()
         }
         now += STABLE_MS
-        assertTrue(bridge.onRenderProcessGone())
+        assertTrue(bridge.onPageGone())
     }
 }

@@ -67,7 +67,10 @@ same-origin with the project files under `/doc/`, and could otherwise navigate t
 - The main frame only ever shows `https://marp.localhost/app/...` (initial load and reloads). `onBeforeBrowse` cancels
   every other main-frame navigation (`about:blank`, `data:`, `file:`, `<meta http-equiv=refresh>` targets, links that
   escape the page's click handler); user-initiated ones to `http(s)` / `mailto` URLs go to the `openLink` rules below.
-  JCEF's error page is disabled (it would be such a navigation).
+  JCEF's error page is disabled (it would be such a navigation). CEF never calls `onBeforeBrowse` for `about:blank`, so
+  the page also drops `<meta http-equiv>` from deck HTML and intercepts clicks on HTML `<a>` / `<area>` and SVG `<a>`
+  (`href` or `xlink:href`); should the main frame still end up on another page, Kotlin loads the preview page again
+  (same cap as crash reloads).
 - `/doc/` files are only served for requests whose CEF request initiator is the preview page (`https://marp.localhost`,
   or empty / `null` for browser-initiated requests); other initiators get 404 and the request never reaches the network.
 - `openLink` (click messages, popups, cancelled navigations): `https://marp.localhost/doc/...` opens the file in the IDE
@@ -82,8 +85,8 @@ the page sent `ready`. Line numbers are 0-based editor lines; fractional values 
 
 Every method is a state setter. `MarpBridgeState` keeps the latest argument per method; calls made while the page is
 loading are only recorded, and on every `ready` (also after a reload) the latest arguments are replayed in the order
-listed under `ready` below. When the renderer process dies the page is reloaded, at most 3 times in a row (a page that
-stayed up for 10 s starts a new row).
+listed under `ready` below. When the renderer process dies, or the main frame shows anything but an `/app/` page, the
+preview page is loaded again, at most 3 times in a row (a page that stayed up for 10 s starts a new row).
 
 ```ts
 interface MarpBridge {
