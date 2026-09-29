@@ -1,0 +1,5 @@
+<idea-plugin>
+    <extensions defaultExtensionNs="com.intellij">
+        <spellchecker.bundledDictionaryProvider implementation="cz.p3kj.marp.spellchecker.MarpBundledDictionaryProvider"/>
+    </extensions>
+</idea-plugin>

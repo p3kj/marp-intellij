@@ -26,6 +26,8 @@
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.jcef</depends>
     <depends>org.intellij.plugins.markdown</depends>
+    <!-- Optional: without the spellchecker module the plugin just skips its Marp dictionary. -->
+    <depends optional="true" config-file="marp-spellchecker.xml">com.intellij.modules.spellchecker</depends>
 
     <resource-bundle>messages.MarpBundle</resource-bundle>
 

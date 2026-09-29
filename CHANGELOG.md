@@ -20,6 +20,7 @@
 - Local image support, including `![bg](...)` backgrounds
 - Math rendering with MathJax (works offline) or KaTeX
 - Setting for inline HTML in slides: off, default or all
+- Spellchecker dictionary with Marp words (marp, Marpit, Twemoji, marprc), so `marp: true` in the front matter is no longer flagged as a typo
 - Preview background follows the IDE light or dark theme
 - Locked-down preview page: Content Security Policy, no navigation away from the preview. Links open in the IDE (local files inside the project) or in the system browser
 - Untrusted projects render without HTML and without custom themes until trusted

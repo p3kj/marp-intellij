@@ -29,6 +29,8 @@ dependencies {
         intellijIdea("2026.2.3")
         bundledPlugin("org.intellij.plugins.markdown")
         bundledPlugin("com.intellij.modules.jcef")
+        // Content module of the platform that holds the spellchecker API (BundledDictionaryProvider).
+        bundledModule("intellij.spellchecker")
         testFramework(TestFrameworkType.Platform)
     }
 }

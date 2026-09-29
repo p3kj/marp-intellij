@@ -69,6 +69,7 @@ For a bigger example open the `samples/` folder of this repository as a project.
 - Local images with relative paths, including `![bg](...)` backgrounds
 - Math with MathJax (works offline) or KaTeX
 - Emoji support through Twemoji
+- The IDE spellchecker knows Marp words such as `marp`, Marpit and Twemoji, so `marp: true` is not flagged as a typo
 - Inline HTML in slides: off, Marp's allow list or all
 - The preview follows the IDE light or dark theme
 - Locked-down preview page (Content Security Policy, no navigation away) and a restricted mode for untrusted projects
