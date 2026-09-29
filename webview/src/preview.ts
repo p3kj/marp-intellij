@@ -1,10 +1,13 @@
 import { browser } from '@marp-team/marp-core/browser'
 import { markActiveSlide } from './active-slide'
+import { isEmptyDeck } from './empty-deck'
 import { createErrorBanner } from './error-banner'
 import { createHostChannel } from './host'
 import { findLink } from './links'
 import { createMarp, marpKey, type MarpBuild } from './marp-factory'
+import { insertNotes } from './notes'
 import { parseFragment, patchSlides } from './patch'
+import { createScrollReporter } from './scroll-reporter'
 import { collectCodeLines, lineForViewportPosition, offsetForLine, type CodeLine } from './scroll-sync'
 import { defaultStrings, formatMessage, mergeStrings } from './strings'
 import type { MarpBridge, PreviewStrings, RenderOptions, ThemeInput } from './types'
@@ -22,6 +25,11 @@ const baseEl = (document.querySelector('base') ?? document.head.appendChild(docu
 const styleEl = document.head.appendChild(document.createElement('style'))
 styleEl.id = 'marp-theme-style'
 document.body.prepend(banner.element)
+const emptyHint = document.createElement('p')
+emptyHint.id = 'marp-empty-hint'
+emptyHint.hidden = true
+emptyHint.textContent = strings.emptyDeck
+root.after(emptyHint)
 
 let themes: ThemeInput[] = []
 let kotlinErrors: string[] = []
@@ -37,14 +45,7 @@ let renderPending = false
 let pendingScrollLine: number | undefined
 let activeLine: number | undefined
 let entries: CodeLine[] | undefined
-let programmaticY: number | undefined
-let lastRevealed: number | undefined
-/**
- * Source line the preview is aligned to: the last `scrollToLine` (`fromEditor`) or where the user scrolled the preview.
- * Re-applied when the viewport is resized, and after a render when it came from the editor, because pixel offsets
- * change with the layout while the source line keeps the preview in step with the editor.
- */
-let anchor: { line: number; fromEditor: boolean } | undefined
+const scroll = createScrollReporter((line) => host.post({ type: 'revealLine', line }))
 
 /** rAF, with a timer fallback in case the browser pauses animation frames (hidden tab, offscreen). */
 function nextFrame(fn: () => void): void {
@@ -92,8 +93,8 @@ function render(): void {
   if (baseEl.getAttribute('href') !== arg.baseHref) baseEl.setAttribute('href', arg.baseHref)
 
   try {
-    const { html, css } = ensureMarp(arg.options).marp.render(arg.markdown)
-    inject(html, css)
+    const { html, css, comments } = ensureMarp(arg.options).marp.render(arg.markdown)
+    inject(html, css, arg.options.notes === true ? comments : undefined)
     renderError = undefined
   } catch (e) {
     renderError = e instanceof Error ? e.message : String(e)
@@ -104,12 +105,14 @@ function render(): void {
   if (activeLine !== undefined) markActiveSlide(root, activeLine)
   // A `scrollToLine` that arrived before this render was measured against the old markup, and the new markup can move
   // slides (one added above the viewport), so re-align with the editor instead of keeping the pixel offset.
+  const anchor = scroll.anchor
   const line = pendingScrollLine ?? (anchor?.fromEditor ? anchor.line : undefined)
   pendingScrollLine = undefined
   if (line !== undefined) applyScroll(line)
 }
 
-function inject(html: string, css: string): void {
+/** `notes`: the render's comments per slide when presenter notes are on. */
+function inject(html: string, css: string, notes: readonly (readonly string[])[] | undefined): void {
   if (css !== lastCss) {
     styleEl.textContent = css
     lastCss = css
@@ -118,12 +121,15 @@ function inject(html: string, css: string): void {
   const scrollX = window.scrollX
   const scrollY = window.scrollY
   const next = parseFragment(document, html)
+  emptyHint.hidden = !isEmptyDeck(next)
+  if (next && notes) insertNotes(next, notes)
   const live = root.firstElementChild
   if (next && live && live.tagName === next.tagName && live.id === next.id) {
     slideHtml = patchSlides(live, next, slideHtml)
   } else {
+    // Read before inserting, like patchSlides: once in the document, custom elements may rewrite their markup.
+    slideHtml = next ? Array.from(next.children, (c) => c.outerHTML) : []
     root.replaceChildren(...(next ? [next] : []))
-    slideHtml = next ? Array.from(next.children).map((c) => c.outerHTML) : []
   }
 
   // Custom elements upgrade on insert; update() also covers fitting headers and auto-scaling.
@@ -131,7 +137,7 @@ function inject(html: string, css: string): void {
 
   if (window.scrollY !== scrollY) {
     window.scrollTo(scrollX, scrollY)
-    programmaticY = window.scrollY
+    scroll.scrolledProgrammatically(window.scrollY)
   }
 }
 
@@ -140,13 +146,14 @@ function applyScroll(line: number): void {
   const y = offsetForLine(entries, line, { scrollY: window.scrollY })
   if (y === undefined) return
   window.scrollTo(window.scrollX, y)
-  programmaticY = window.scrollY
+  scroll.scrolledProgrammatically(window.scrollY)
 }
 
 const bridge: MarpBridge = {
   setStrings(next) {
     strings = mergeStrings(next)
     banner.setDismissLabel(strings.dismiss)
+    emptyHint.textContent = strings.emptyDeck
     showErrors()
   },
 
@@ -163,7 +170,7 @@ const bridge: MarpBridge = {
   },
 
   scrollToLine(line) {
-    anchor = { line, fromEditor: true }
+    scroll.editorScrolled(line)
     if (renderPending || !lastUpdate) pendingScrollLine = line
     else applyScroll(line)
   },
@@ -183,7 +190,7 @@ const bridge: MarpBridge = {
 }
 window.marpBridge = bridge
 
-// User scroll -> revealLine (throttled to one per frame, programmatic scrolls are ignored).
+// User scroll -> revealLine (throttled to one per frame; scroll-reporter.ts drops the page's own scrolls).
 let scrollQueued = false
 window.addEventListener(
   'scroll',
@@ -192,17 +199,10 @@ window.addEventListener(
     scrollQueued = true
     nextFrame(() => {
       scrollQueued = false
-      if (programmaticY !== undefined) {
-        if (Math.abs(window.scrollY - programmaticY) < 1.5) return
-        programmaticY = undefined
-      }
-      entries ??= collectCodeLines(document, document.body)
-      const line = lineForViewportPosition(entries, 0)
-      if (line === null) return
-      anchor = { line, fromEditor: false }
-      if (line === lastRevealed) return
-      lastRevealed = line
-      host.post({ type: 'revealLine', line })
+      scroll.scrolled(window.scrollY, () => {
+        entries ??= collectCodeLines(document, document.body)
+        return lineForViewportPosition(entries, 0)
+      })
     })
   },
   { passive: true },
@@ -210,8 +210,9 @@ window.addEventListener(
 
 // Resizing the preview (splitter, editor split, tool windows) rescales the slides: keep showing the same source line.
 // Without this, the pixel offset would point at other slides, and a scroll clamped by a shorter page would be reported
-// as a user scroll and move the editor. The resulting scroll events match `programmaticY` and are not reported.
+// as a user scroll and move the editor. applyScroll marks the resulting scroll events as programmatic.
 window.addEventListener('resize', () => {
+  const anchor = scroll.anchor
   if (!anchor) return
   if (renderPending) pendingScrollLine ??= anchor.line
   else applyScroll(anchor.line)
@@ -233,6 +234,10 @@ function onLinkClick(e: MouseEvent): void {
 }
 document.addEventListener('click', onLinkClick)
 document.addEventListener('auxclick', onLinkClick)
+
+// A file or link dropped on the preview would navigate the page to it. Kotlin cancels that navigation, but for an
+// http(s) link dropped by the user it opens the system browser instead; the preview is no drop target at all.
+for (const type of ['dragover', 'drop']) document.addEventListener(type, (e) => e.preventDefault())
 
 document.addEventListener('dblclick', (e) => {
   const target = e.target as Element | null

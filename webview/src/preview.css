@@ -3,7 +3,9 @@
 :root {
   --ide-bg: #ffffff;
   --ide-fg: #1e1e1e;
-  --marp-accent: #1a73e8;
+  /* Full strength on light backgrounds: about 6:1 against white (WCAG 1.4.11 asks for 3:1). */
+  --marp-accent: #0b5cd5;
+  --marp-active-opacity: 1;
   --marp-shadow: rgb(0 0 0 / 25%);
   --marp-error-bg: #fdecea;
   --marp-error-fg: #5f1a14;
@@ -20,6 +22,7 @@
 
 html.ide-dark {
   --marp-accent: #5aa2ff;
+  --marp-active-opacity: 0.55;
   --marp-shadow: rgb(0 0 0 / 60%);
   --marp-error-bg: #4a2523;
   --marp-error-fg: #ffdad6;
@@ -30,6 +33,7 @@ html.ide-dark {
 @media (prefers-color-scheme: dark) {
   :root:not(.ide-light) {
     --marp-accent: #5aa2ff;
+    --marp-active-opacity: 0.55;
     --marp-shadow: rgb(0 0 0 / 60%);
     --marp-error-bg: #4a2523;
     --marp-error-fg: #ffdad6;
@@ -76,8 +80,47 @@ body {
   inset: -7px;
   border: 3px solid var(--marp-accent);
   border-radius: 2px;
-  opacity: 0.55;
+  opacity: var(--marp-active-opacity);
   pointer-events: none;
+}
+
+/* Presenter notes under a slide (notes.ts). Colors derive from the IDE theme, so light and dark need no extra rules. */
+#marp-root .marp-notes {
+  box-sizing: border-box;
+  width: calc(100% - 40px);
+  max-width: 1600px;
+  /* Collapses with the wrapper's 20px bottom margin: 12px under the slide, clear of the active-slide outline. */
+  margin: -8px auto 20px;
+  padding: 6px 10px;
+  border-left: 3px solid color-mix(in srgb, var(--ide-fg) 25%, var(--ide-bg));
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ide-fg) 5%, var(--ide-bg));
+  color: color-mix(in srgb, var(--ide-fg) 80%, var(--ide-bg));
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+#marp-root .marp-notes[hidden] {
+  display: none;
+}
+
+#marp-root .marp-notes p {
+  margin: 0;
+}
+
+#marp-root .marp-notes p + p {
+  margin-top: 6px;
+}
+
+#marp-empty-hint {
+  margin: 24px 20px;
+  text-align: center;
+  color: color-mix(in srgb, var(--ide-fg) 70%, var(--ide-bg));
+}
+
+#marp-empty-hint[hidden] {
+  display: none;
 }
 
 #marp-error-banner {

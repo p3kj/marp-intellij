@@ -13,6 +13,9 @@ export function createOptions(outdir) {
     format: "iife",
     platform: "browser",
     target: "chrome120",
+    // Non-ASCII (highlight.js and MathJax tables) as UTF-8 instead of \uXXXX escapes: smaller, same behavior. The
+    // script is decoded as UTF-8 because index.html declares it and /app/ serves text/javascript without a charset.
+    charset: "utf8",
     // Keeps /*! ... */ license banners: written to marp-preview.js.LEGAL.txt, linked from the bundle.
     legalComments: "linked",
     metafile: true,

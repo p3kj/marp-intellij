@@ -8,6 +8,8 @@ paginate: true
 
 Intro slide with **bold**, `code` and a [link](https://example.com).
 
+<!-- A presenter note, shown under the slide with ?notes=1 -->
+
 ---
 
 ## Second slide

@@ -58,7 +58,7 @@ describe('line-number plugin', () => {
     expect(line('h2')).toBe(11)
     expect(line('li')).toBe(13)
     expect(line('pre code')).toBe(16)
-    expect(body.querySelectorAll('li')[1].getAttribute('data-line')).toBe('14')
+    expect(body.querySelectorAll('li')[1]?.getAttribute('data-line')).toBe('14')
   })
 
   it('does not annotate inline content', () => {
@@ -69,7 +69,10 @@ describe('line-number plugin', () => {
 
 describe('content-section plugin', () => {
   const sections = [...render(deck).querySelectorAll('section')]
-  const range = (s: Element) => [Number(s.getAttribute(dataStartLine)), Number(s.getAttribute(dataEndLine))]
+  const range = (s: Element | undefined): [number, number] => [
+    Number(s?.getAttribute(dataStartLine)),
+    Number(s?.getAttribute(dataEndLine)),
+  ]
 
   it('emits start and end line for every slide', () => {
     expect(sections).toHaveLength(3)
@@ -80,14 +83,15 @@ describe('content-section plugin', () => {
   })
 
   it('slides are contiguous and ordered', () => {
-    const r = sections.map(range)
-    expect(r[0][0]).toBe(0)
-    expect(r[0][1]).toBeGreaterThanOrEqual(6)
-    expect(r[1][0]).toBeLessThanOrEqual(11)
-    expect(r[1][0]).toBeGreaterThan(r[0][1] - 1)
-    expect(r[1][1]).toBeGreaterThanOrEqual(19)
-    expect(r[2][0]).toBeGreaterThan(r[1][1])
-    expect(r[2][1]).toBeGreaterThanOrEqual(23)
+    const [first, second, third] = sections.map(range)
+    if (!first || !second || !third) throw new Error('expected three slides')
+    expect(first[0]).toBe(0)
+    expect(first[1]).toBeGreaterThanOrEqual(6)
+    expect(second[0]).toBeLessThanOrEqual(11)
+    expect(second[0]).toBeGreaterThan(first[1] - 1)
+    expect(second[1]).toBeGreaterThanOrEqual(19)
+    expect(third[0]).toBeGreaterThan(second[1])
+    expect(third[1]).toBeGreaterThanOrEqual(23)
   })
 
   it('directive comments belong to their slide', () => {

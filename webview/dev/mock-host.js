@@ -24,7 +24,8 @@ async function start() {
     ? { dark: true, background: '#1e1f22', foreground: '#dfe1e5' }
     : { dark: false, background: '#ffffff', foreground: '#1e1e1e' })
   bridge.setThemes({ themes, errors: params.get('kerr') ? [params.get('kerr')] : [] })
-  bridge.update({ markdown, baseHref, options: { html: params.get('html') ?? 'default', math: params.get('math') ?? 'mathjax' } })
+  const options = { html: params.get('html') ?? 'default', math: params.get('math') ?? 'mathjax', notes: params.get('notes') === '1' }
+  bridge.update({ markdown, baseHref, options })
   window.__mock = { markdown, baseHref, themes }
 }
 

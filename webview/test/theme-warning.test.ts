@@ -16,6 +16,8 @@ beforeAll(async () => {
   document.body.innerHTML = '<div id="marp-root"></div>'
   ;(window as any).__marpHost = { post: (m: string) => posted.push(JSON.parse(m)) }
   ;(window as any).matchMedia ??= () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
+  // jsdom has no canvas; marp-core's browser() probes one (jsdom reports Apple as navigator.vendor). Quiets its warning.
+  ;(HTMLCanvasElement.prototype as any).getContext = () => null
   await import('../src/preview')
   bridge = window.marpBridge
 })
@@ -23,14 +25,14 @@ beforeAll(async () => {
 describe('unknown theme warning', () => {
   it('shows and posts once for an unknown theme, not again on the next keystroke', async () => {
     await render('---\ntheme: demo\n---\n# a')
-    expect(banner()).toEqual(['Theme "demo" is not recognized. Add it in Settings | Tools | Marp or to themeSet in .marprc.yml.'])
+    expect(banner()).toEqual(["Theme 'demo' is not recognized. Add it in Settings | Tools | Marp or to themeSet in .marprc.yml."])
     await render('---\ntheme: demo\n---\n# ab')
     expect(posted.filter((m) => m.type === 'error')).toHaveLength(1)
   })
 
   it('relabels through setStrings', () => {
-    bridge.setStrings({ dismiss: 'x', themeError: 'x', renderError: 'x', unknownTheme: 'Motiv "{0}" neexistuje' })
-    expect(banner()).toEqual(['Motiv "demo" neexistuje'])
+    bridge.setStrings({ dismiss: 'x', themeError: 'x', renderError: 'x', unknownTheme: "Motiv '{0}' neexistuje", emptyDeck: 'x' })
+    expect(banner()).toEqual(["Motiv 'demo' neexistuje"])
   })
 
   it('clears once setThemes registers the theme', async () => {

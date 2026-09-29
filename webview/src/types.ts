@@ -4,6 +4,8 @@ export type MathMode = 'mathjax' | 'katex' | 'off'
 export interface RenderOptions {
   html: HtmlMode
   math: MathMode
+  /** Presenter notes (a slide's HTML comments that are not directives) under each slide. Absent means off. */
+  notes?: boolean
 }
 
 export interface ThemeInput {
@@ -21,6 +23,8 @@ export interface PreviewStrings {
   renderError: string
   /** A `theme:` directive names a theme that is neither built in nor registered: `{0}` the name. */
   unknownTheme: string
+  /** Hint under the preview when the deck has no content yet (an empty file, or front matter only). */
+  emptyDeck: string
 }
 
 export interface MarpBridge {

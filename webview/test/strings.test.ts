@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { Marp } from '@marp-team/marp-core'
+import { describe, expect, it, vi } from 'vitest'
 import { createErrorBanner } from '../src/error-banner'
-import { createMarp } from '../src/marp-factory'
+import { createMarp, marpKey } from '../src/marp-factory'
 import { defaultStrings, formatMessage, mergeStrings } from '../src/strings'
 
 describe('strings', () => {
@@ -15,6 +16,12 @@ describe('strings', () => {
   it('keeps English defaults for missing or malformed fields', () => {
     expect(mergeStrings(undefined)).toEqual(defaultStrings)
     expect(mergeStrings({ dismiss: 'Zavřít', themeError: 42, renderError: '' })).toEqual({ ...defaultStrings, dismiss: 'Zavřít' })
+  })
+
+  it('has an empty-deck hint that a localized one replaces', () => {
+    expect(defaultStrings.emptyDeck).toContain('---')
+    expect(mergeStrings({ emptyDeck: 'Zatím žádné snímky.' }).emptyDeck).toBe('Zatím žádné snímky.')
+    expect(mergeStrings({ emptyDeck: null }).emptyDeck).toBe(defaultStrings.emptyDeck)
   })
 })
 
@@ -43,14 +50,34 @@ describe('error banner', () => {
     banner.set([])
     expect(banner.element.hidden).toBe(true)
   })
+
+  it('closes on Escape while shown, and lets Escape through otherwise', () => {
+    const banner = createErrorBanner(document, 'Dismiss')
+    const escape = () => {
+      const e = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+      document.body.dispatchEvent(e)
+      return e
+    }
+    banner.set(['a'])
+    expect(escape().defaultPrevented).toBe(true)
+    expect(banner.element.hidden).toBe(true)
+    // Dismissed like the button: the same messages stay hidden, new ones show again.
+    banner.set(['a'])
+    expect(banner.element.hidden).toBe(true)
+    expect(escape().defaultPrevented).toBe(false)
+    banner.set(['b'])
+    expect(banner.element.hidden).toBe(false)
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    expect(banner.element.hidden).toBe(false)
+  })
 })
 
 describe('theme errors', () => {
   it('are reported with their source, unformatted', () => {
     const { errors } = createMarp({ html: 'default', math: 'off' }, [{ source: 'broken.css', css: 'section { color: red }' }])
     expect(errors).toHaveLength(1)
-    expect(errors[0].source).toBe('broken.css')
-    expect(errors[0].message).not.toBe('')
+    expect(errors[0]?.source).toBe('broken.css')
+    expect(errors[0]?.message).not.toBe('')
   })
 })
 
@@ -91,7 +118,38 @@ describe('unknown theme', () => {
   })
 
   it('has a default text with a placeholder and merges a localized one', () => {
-    expect(formatMessage(defaultStrings.unknownTheme, 'demo')).toContain('"demo"')
+    expect(formatMessage(defaultStrings.unknownTheme, 'demo')).toContain("'demo'")
     expect(mergeStrings({ unknownTheme: 'Motiv {0}' }).unknownTheme).toBe('Motiv {0}')
+  })
+
+  it('turns itself off, instead of breaking every render, when Marpit renames its directive rule', () => {
+    const ruler = new Marp().markdown.core.ruler
+    const proto = Object.getPrototypeOf(ruler)
+    const original = proto.before
+    const before = vi.spyOn(proto, 'before').mockImplementation(function (this: unknown, name: unknown, ...rest: unknown[]) {
+      if (name === 'marpit_directives_global_parse') throw new Error(`Parser rule not found: ${name}`)
+      return original.call(this, name, ...rest)
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      for (let i = 0; i < 2; i++) {
+        const build = createMarp({ html: 'default', math: 'off' }, [])
+        expect(build.marp.render('---\ntheme: nope\n---\n# a').html).toContain('>a</h1>')
+        expect(build.unknownThemes()).toEqual([])
+      }
+      expect(warn).toHaveBeenCalledTimes(1)
+    } finally {
+      before.mockRestore()
+      warn.mockRestore()
+    }
+  })
+})
+
+describe('marpKey', () => {
+  it('ignores the notes option: showing notes needs no new Marp instance', () => {
+    const key = (notes?: boolean) => marpKey({ html: 'default', math: 'katex', ...(notes === undefined ? {} : { notes }) }, [])
+    expect(key(true)).toBe(key())
+    expect(key(false)).toBe(key())
+    expect(marpKey({ html: 'all', math: 'katex' }, [])).not.toBe(key())
   })
 })

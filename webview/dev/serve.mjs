@@ -2,8 +2,10 @@
 //   /                          dev page (?deck=<abs md path>&themes=<abs css>,<abs css>&dark=1)
 //   /doc/<absolute path>       local files, like the plugin's https://marp.localhost/doc/ handler
 //   /file?path=<abs path>      raw text of a file (used by the mock host)
+//   ?html=off|default|all  ?math=mathjax|katex|off  ?notes=1  ?kerr=<text>   options for the mock host
 // The dev page gets the Content-Security-Policy of src/index.html, adapted to this origin (CSP=0 leaves it out).
-// Dev only: serves any readable file on this machine to localhost.
+// Dev only: serves any readable file on this machine to localhost. Requests must name localhost or 127.0.0.1 as Host,
+// so a page whose DNS name is rebound to 127.0.0.1 cannot read them.
 import { context } from "esbuild"
 import { createServer } from "node:http"
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises"
@@ -58,6 +60,7 @@ async function send(res, file) {
 }
 
 createServer(async (req, res) => {
+  if (!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(req.headers.host ?? "")) return res.writeHead(403).end("forbidden host")
   const url = new URL(req.url, `http://127.0.0.1:${port}`)
   if (url.pathname.startsWith("/doc/")) return send(res, decodeURIComponent(url.pathname.slice(4)))
   if (url.pathname === "/file") return send(res, url.searchParams.get("path") ?? "")

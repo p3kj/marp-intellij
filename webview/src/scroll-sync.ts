@@ -2,6 +2,10 @@
 // Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 // Adapted: the layout is injected (`Bounds`), so the math is testable without a browser,
 // and the document version cache is replaced by an explicit `collectCodeLines` call.
+// Changed: `offsetForLine` is the exact inverse of `lineForViewportPosition` (VS Code maps editor lines onto the gaps
+// between elements one way and onto element tops the other way), so a position the user scrolled to comes back to the
+// same pixel when it is re-applied after a resize; and VS Code's `hi > 1` off-by-one in `getLineElementsAtPosition` is
+// fixed.
 
 import { codeLineClass, dataLine } from './line-number'
 
@@ -57,7 +61,7 @@ function elementBounds(entry: CodeLine): Bounds {
 function createEntry(element: HTMLElement, line: number, opts: { codeBlock?: boolean; endLine?: number } = {}): CodeLine {
   const entry: CodeLine = {
     line,
-    endLine: opts.endLine,
+    ...(opts.endLine !== undefined ? { endLine: opts.endLine } : {}),
     element,
     isCodeBlock: !!opts.codeBlock,
     bounds: () => elementBounds(entry),
@@ -93,39 +97,48 @@ export function collectCodeLines(root: ParentNode, body: HTMLElement): CodeLine[
   return entries
 }
 
-/** Entries that map to `targetLine`: exact match, or the ones surrounding it. */
-export function getElementsForSourceLine(entries: readonly CodeLine[], targetLine: number): Neighbours {
-  const lineNumber = Math.floor(targetLine)
-  let previous: CodeLine | undefined = entries[0]
-  for (const entry of entries) {
-    if (entry.line === lineNumber) return { previous: entry }
-    if (entry.line > lineNumber) return { previous, next: entry }
-    previous = entry
+/**
+ * Entries around source `line`: `previous` is the last one at or before it (on an exact line the first of several with
+ * that line, e.g. the slide wrapper before its first heading, so the whole slide shows), `next` the one after `previous`.
+ * They are adjacent in `entries`, the same pairs `getLineElementsAtPosition` finds for positions between their tops.
+ */
+export function getElementsForSourceLine(entries: readonly CodeLine[], line: number): Neighbours {
+  let index = -1
+  for (const [i, entry] of entries.entries()) {
+    if (entry.line > line) break
+    if (entry.line !== line || entries[index]?.line !== line) index = i
   }
-  return { previous }
+  const previous = entries[index]
+  if (!previous) return {}
+  const next = entries[index + 1]
+  return next ? { previous, next } : { previous }
 }
 
-/** Entry pair around a viewport-relative `position` (pixels from viewport top). */
+/** Entry pair around a viewport-relative `position` (pixels from viewport top), among the visible entries. */
 export function getLineElementsAtPosition(entries: readonly CodeLine[], position: number): Neighbours {
   const lines = entries.filter((x) => x.isVisible())
-  if (!lines.length) return {}
+  // First entry that ends below `position`. Strictly below: an element that ends exactly where the next one starts
+  // hands over to that one, so an element top at the viewport top reports the element's own line.
   let lo = -1
   let hi = lines.length - 1
   while (lo + 1 < hi) {
     const mid = Math.floor((lo + hi) / 2)
-    const b = lines[mid].bounds()
-    if (b.top + b.height >= position) hi = mid
+    // lo < mid < hi <= lines.length - 1, so the entry exists.
+    const b = lines[mid]!.bounds()
+    if (b.top + b.height > position) hi = mid
     else lo = mid
   }
   const hiElement = lines[hi]
+  if (!hiElement) return {}
   const hiBounds = hiElement.bounds()
 
-  if (hi >= 1 && hiBounds.top > position) {
-    return { previous: lines[lo], next: hiElement }
-  }
-  if (hi > 1 && hi < lines.length && hiBounds.top + hiBounds.height > position) {
-    return { previous: hiElement, next: lines[hi + 1] }
-  }
+  // In the gap above hiElement. The loop leaves lo = hi - 1; hi = 0 is the top-of-page sentinel, which has no previous.
+  const before = lines[hi - 1]
+  if (before && hiBounds.top > position) return { previous: before, next: hiElement }
+  // Inside hiElement (VS Code has `hi > 1` here, which drops `next` inside the first real entry: a jump in the reported
+  // line while scrolling through the first slide's top padding).
+  const after = lines[hi + 1]
+  if (hi >= 1 && after && hiBounds.top + hiBounds.height > position) return { previous: hiElement, next: after }
   return { previous: hiElement }
 }
 
@@ -141,42 +154,40 @@ function contentBounds(entry: CodeLine): Bounds & { paddingTop: number; paddingB
 }
 
 /**
- * Absolute page offset (pixels from document top) at which fractional source `line`
- * should be at the top of the viewport. Returns undefined when nothing maps.
+ * Absolute page offset (pixels from document top) at which fractional source `line` should be at the top of the
+ * viewport, the inverse of `lineForViewportPosition`: linear between the tops of the entries before and after the line,
+ * proportional to the content inside a fenced code block, one element height per line past the last entry. Returns
+ * undefined when nothing maps.
  */
 export function offsetForLine(entries: readonly CodeLine[], line: number, env: ScrollEnv): number | undefined {
   if (line <= 0) return 0
 
-  const { previous, next } = getElementsForSourceLine(entries, line)
+  // Visible entries only, like the inverse: a closed <details> has zero-size children that would pin the offset.
+  const { previous, next } = getElementsForSourceLine(entries.filter((x) => x.isVisible()), line)
   if (!previous) return undefined
-
-  const rect = previous.bounds()
-  const previousTop = rect.top
-  let scrollTo: number
-
-  const between = (from: number, prevEnd: number, nextLine: number) => {
-    const progress = (line - from) / (nextLine - from)
-    const nextTop = env.scrollY + next!.element.getBoundingClientRect().top
-    return prevEnd + progress * (nextTop - prevEnd)
-  }
-  const previousEnd = env.scrollY + previousTop + rect.height
+  const b = previous.bounds()
+  let y: number
 
   if (previous.endLine !== undefined && previous.endLine > previous.line) {
-    if (line < previous.endLine) {
-      const content = contentBounds(previous)
-      const progress = (line - previous.line) / (previous.endLine - previous.line)
-      scrollTo = env.scrollY + content.top + content.height * progress
-    } else if (next && next.line !== previous.line) {
-      scrollTo = between(previous.endLine, previousEnd, next.line)
+    const content = contentBounds(previous)
+    const contentEnd = content.top + content.height
+    if (line <= previous.endLine) {
+      y = content.top + content.height * ((line - previous.line) / (previous.endLine - previous.line))
+    } else if (next) {
+      const gapHeight = Math.max(0, next.bounds().top - contentEnd)
+      y = contentEnd + gapHeight * ((line - previous.endLine) / (next.line - previous.endLine))
     } else {
-      scrollTo = previousEnd
+      y = contentEnd + b.height * (line - previous.endLine)
     }
-  } else if (next && next.line !== previous.line) {
-    scrollTo = between(previous.line, previousEnd, next.line)
+  } else if (next && next.line > previous.line) {
+    y = b.top + (next.bounds().top - b.top) * ((line - previous.line) / (next.line - previous.line))
+  } else if (next) {
+    // `line` is exactly the line of `previous` and `next` (a run of entries on one line).
+    y = b.top
   } else {
-    scrollTo = env.scrollY + previousTop + rect.height * (line - Math.floor(line))
+    y = b.top + b.height * (line - previous.line)
   }
-  return Math.max(1, scrollTo)
+  return Math.max(0, env.scrollY + y)
 }
 
 /** Fractional source line at the top of the viewport (position 0) shifted by `viewportOffset` pixels. */
@@ -186,23 +197,27 @@ export function lineForViewportPosition(entries: readonly CodeLine[], viewportOf
   if (previous.line < 0) return 0
 
   const pb = previous.bounds()
-  const offsetFromPrevious = viewportOffset - pb.top
 
   if (previous.endLine !== undefined && previous.endLine > previous.line) {
     const content = contentBounds(previous)
     const offsetFromContent = viewportOffset - content.top
-    if (offsetFromContent >= 0 && offsetFromContent <= content.height) {
-      return previous.line + (offsetFromContent / content.height) * (previous.endLine - previous.line)
+    const contentEnd = content.top + content.height
+    // The block's top padding still shows its first line (VS Code interpolates towards `next` here, which then jumps
+    // back at the content top).
+    if (offsetFromContent < 0) return previous.line
+    if (offsetFromContent <= content.height) {
+      const progress = content.height > 0 ? offsetFromContent / content.height : 0
+      return previous.line + progress * (previous.endLine - previous.line)
     }
-    if (next && offsetFromContent > content.height) {
-      const gapHeight = next.bounds().top - (content.top + content.height)
-      if (gapHeight > 0) {
-        const progress = (offsetFromContent - content.height) / gapHeight
-        return previous.endLine + progress * (next.line - previous.endLine)
-      }
+    if (next) {
+      const gapHeight = next.bounds().top - contentEnd
+      if (gapHeight <= 0) return previous.endLine
+      return previous.endLine + ((viewportOffset - contentEnd) / gapHeight) * (next.line - previous.endLine)
     }
+    return previous.endLine + (pb.height > 0 ? (viewportOffset - contentEnd) / pb.height : 0)
   }
 
+  const offsetFromPrevious = viewportOffset - pb.top
   if (next) {
     const span = next.bounds().top - pb.top
     if (span > 0) return previous.line + (offsetFromPrevious / span) * (next.line - previous.line)

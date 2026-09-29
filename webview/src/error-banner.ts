@@ -2,6 +2,7 @@
 export function createErrorBanner(doc: Document, dismissLabel: string) {
   const el = doc.createElement('div')
   el.id = 'marp-error-banner'
+  // role=alert already implies an assertive live region; an extra aria-live would only contradict it.
   el.setAttribute('role', 'alert')
   el.hidden = true
 
@@ -20,9 +21,17 @@ export function createErrorBanner(doc: Document, dismissLabel: string) {
   let signature = ''
   let dismissed = ''
 
-  close.addEventListener('click', () => {
+  const dismiss = () => {
     dismissed = signature
     el.hidden = true
+  }
+  close.addEventListener('click', dismiss)
+  // Escape while the preview has focus. Only consumed when there was a banner to close, so a second Escape still
+  // reaches the IDE (JCEF passes unhandled keys on).
+  doc.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || el.hidden) return
+    e.preventDefault()
+    dismiss()
   })
 
   return {
