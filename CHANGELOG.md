@@ -18,6 +18,8 @@
 - Automatic pickup of `themeSet` from `.marprc.yml`, `.marprc.yaml`, `.marprc.json` or `.marprc` in the project root
 - Theme CSS edits show up in the preview while typing, before the file is saved
 - Warning in the preview when the `theme:` directive names a theme that is not available
+- File | New | Marp Presentation creates a starter deck: front matter with `marp: true`, `theme` and `paginate`, a lead title slide, example slides and presenter notes
+- Live templates for Marp decks: `slide` (new slide), `lead` (`<!-- _class: lead -->`), `bg` (background image) and `notes` (presenter notes). They expand only in Markdown files with `marp: true` and are listed under Settings | Editor | Live Templates | Marp
 - Local image support, including `![bg](...)` backgrounds
 - Math rendering with MathJax (works offline) or KaTeX
 - Setting for inline HTML in slides: off, default or all

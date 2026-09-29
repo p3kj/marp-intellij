@@ -1,0 +1,40 @@
+#[[---
+marp: true
+theme: default
+paginate: true
+---
+
+<!-- _class: lead -->
+<!-- _paginate: false -->
+
+# Presentation title
+
+Subtitle, speaker and date
+
+---
+
+## A content slide
+
+- A line with three dashes starts a new slide
+- An underscore directive in an HTML comment, like `<!-- _class: lead -->`, changes only its own slide
+- The `theme:` in the front matter picks the look: default, gaia or uncover
+
+<!--
+Presenter notes: an HTML comment that is not a directive, like this one.
+-->
+
+---
+
+## Images and backgrounds
+
+- `![w:300](images/photo.png)` scales an image to 300 px wide
+- `![bg](images/photo.png)` fills the slide background
+- `![bg right:40%](images/photo.png)` puts the image on the right 40 percent
+
+---
+
+<!-- _class: lead -->
+
+# Thank you
+
+Questions?]]#

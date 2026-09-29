@@ -33,7 +33,7 @@ Requires an IDE on the 2026.2 platform or newer, running on the JetBrains Runtim
 ## Quick start
 
 1. Install the plugin.
-2. Create `deck.md` with a Marp front matter and a few slides:
+2. Create `deck.md` with File | New | Marp Presentation, or by hand with a Marp front matter and a few slides:
 
    ```markdown
    ---
@@ -64,6 +64,7 @@ For a bigger example open the `samples/` folder of this repository as a project.
 
 - Live preview of Marp decks next to the Markdown editor, refreshed while typing
 - Two-way scroll sync, highlight of the slide under the caret, double-click a slide to jump to its source line
+- File | New | Marp Presentation starter deck, and live templates `slide`, `lead`, `bg` and `notes` (type the abbreviation and press Tab)
 - Custom themes from files, folders and URLs, and automatic pickup of `themeSet` from `.marprc.yml`
 - Theme CSS edits show up live, before the file is saved
 - Local images with relative paths, including `![bg](...)` backgrounds
@@ -186,7 +187,7 @@ The bundled Markdown plugin renders a document, not a deck. It has no notion of 
 - Export through Marp CLI (HTML, PDF, PPTX, images)
 - Presenter notes in the preview
 - Directive completion and inspections
-- Toggle Marp and New Marp deck actions
+- Toggle Marp action
 - PDF export through JCEF, without Node.js
 
 These are plans, not promises. Ideas and votes go to the [issue tracker](https://github.com/p3kj/marp-intellij/issues).

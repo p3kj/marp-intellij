@@ -73,6 +73,14 @@ changelog {
 }
 
 kover {
+    currentProject {
+        instrumentation {
+            // Instrument only the plugin's own classes. Kover adds a `__$hits$__` field to every class it instruments, and
+            // Velocity (renders the file templates) reads the fields of its DeprecatedRuntimeConstants by name and
+            // refuses to start with the extra one. Platform classes need no coverage anyway.
+            includedClasses.add("cz.p3kj.marp.*")
+        }
+    }
     reports {
         total {
             xml {

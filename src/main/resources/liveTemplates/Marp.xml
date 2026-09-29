@@ -1,0 +1,17 @@
+<templateSet group="Marp">
+  <template name="slide" value="&#10;---&#10;&#10;## $TITLE$&#10;&#10;$END$" resource-bundle="messages.MarpBundle" key="liveTemplate.slide" toReformat="false" toShortenFQNames="false">
+    <variable name="TITLE" expression="" defaultValue="&quot;Title&quot;" alwaysStopAt="true"/>
+    <context><option name="MARP_DECK" value="true"/></context>
+  </template>
+  <template name="lead" value="&lt;!-- _class: lead --&gt;&#10;$END$" resource-bundle="messages.MarpBundle" key="liveTemplate.lead" toReformat="false" toShortenFQNames="false">
+    <context><option name="MARP_DECK" value="true"/></context>
+  </template>
+  <template name="bg" value="![bg $OPTIONS$]($IMAGE$)$END$" resource-bundle="messages.MarpBundle" key="liveTemplate.bg" toReformat="false" toShortenFQNames="false">
+    <variable name="OPTIONS" expression="" defaultValue="&quot;right:40%&quot;" alwaysStopAt="true"/>
+    <variable name="IMAGE" expression="" defaultValue="" alwaysStopAt="true"/>
+    <context><option name="MARP_DECK" value="true"/></context>
+  </template>
+  <template name="notes" value="&lt;!--&#10;$END$&#10;--&gt;" resource-bundle="messages.MarpBundle" key="liveTemplate.notes" toReformat="false" toShortenFQNames="false">
+    <context><option name="MARP_DECK" value="true"/></context>
+  </template>
+</templateSet>

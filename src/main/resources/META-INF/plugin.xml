@@ -14,6 +14,7 @@
             <li><b>Local images</b> with relative paths, <code>![bg](...)</code> backgrounds, fitting headers, Twemoji.</li>
             <li><b>Math</b> with MathJax (works offline) or KaTeX.</li>
             <li><b>Inline HTML</b> in slides: off, Marp's safe allow list, or all. Untrusted projects render without HTML and without remote themes.</li>
+            <li><b>New deck and live templates</b>: File | New | Marp Presentation, and <code>slide</code>, <code>lead</code>, <code>bg</code> and <code>notes</code> live templates in Marp decks.</li>
             <li>The preview follows the IDE light or dark theme. Links open in the IDE (project files) or in the system browser.</li>
         </ul>
         <p>Settings: <b>Settings | Tools | Marp</b>.</p>
@@ -46,6 +47,13 @@
                 instance="cz.p3kj.marp.settings.MarpConfigurable"
                 key="settings.displayName"
                 bundle="messages.MarpBundle"/>
+
+        <!-- New deck and live templates -->
+        <internalFileTemplate name="Marp Presentation"/>
+        <defaultLiveTemplates file="/liveTemplates/Marp.xml"/>
+        <liveTemplateContext contextId="MARP_DECK"
+                             baseContextId="MARKDOWN"
+                             implementation="cz.p3kj.marp.templates.MarpTemplateContextType"/>
     </extensions>
 
     <actions>
@@ -66,5 +74,13 @@
                     class="cz.p3kj.marp.editor.MarpOpenSettingsAction"
                     icon="AllIcons.General.Settings"/>
         </group>
+
+        <!-- File | New | Marp Presentation, creates a deck from the internal file template of the same name. -->
+        <action id="Marp.NewPresentation"
+                class="cz.p3kj.marp.templates.MarpNewPresentationAction"
+                icon="AllIcons.FileTypes.Markdown">
+            <synonym key="action.Marp.NewPresentation.synonym"/>
+            <add-to-group group-id="NewGroup" anchor="after" relative-to-action="NewDir"/>
+        </action>
     </actions>
 </idea-plugin>
