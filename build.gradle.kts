@@ -94,13 +94,37 @@ val buildWebview = tasks.register<Exec>("buildWebview") {
     commandLine(npm, "run", "build", "--")
 }
 
-val testWebview = tasks.register<Exec>("testWebview") {
-    group = "verification"
-    description = "Runs the webview unit tests (vitest)."
-    dependsOn(webviewInstall)
-    workingDir(webviewDir)
-    commandLine(npm, "test")
-}
+// Verification tasks over the webview sources. They have no real output, so each writes a stamp file: that makes
+// them UP-TO-DATE (and skips npm) when nothing they read has changed.
+fun registerWebviewCheck(name: String, taskDescription: String, vararg npmArgs: String) =
+    tasks.register<Exec>(name) {
+        group = "verification"
+        description = taskDescription
+        dependsOn(webviewInstall)
+        workingDir(webviewDir)
+        inputs.dir(webviewDir.dir("src"))
+        inputs.dir(webviewDir.dir("test"))
+        inputs.dir(webviewDir.dir("scripts"))
+        inputs.files(
+            webviewDir.file("build.mjs"),
+            webviewDir.file("package.json"),
+            webviewDir.file("package-lock.json"),
+            webviewDir.file("tsconfig.json"),
+        )
+        inputs.files(fileTree(webviewDir) { include("vitest.config.*", "vite.config.*") })
+        // NOTICE is compared with the real bundle by the notices check, the others do not read it
+        inputs.file(layout.projectDirectory.file("NOTICE"))
+        val stamp = layout.buildDirectory.file("reports/$name.stamp")
+        outputs.file(stamp)
+        commandLine(listOf(npm) + npmArgs)
+        doLast { stamp.get().asFile.apply { parentFile.mkdirs() }.writeText("ok\n") }
+    }
+
+val testWebview = registerWebviewCheck("testWebview", "Runs the webview unit tests (vitest).", "test")
+val typecheckWebview = registerWebviewCheck("typecheckWebview", "Type-checks the webview sources (tsc).", "run", "typecheck")
+val checkNotices = registerWebviewCheck(
+    "checkNotices", "Fails when the NOTICE package list does not match the bundled packages.", "run", "notices:check",
+)
 
 sourceSets {
     main {
@@ -110,7 +134,7 @@ sourceSets {
 
 tasks {
     check {
-        dependsOn(testWebview)
+        dependsOn(testWebview, typecheckWebview, checkNotices)
     }
 
     runIde {
