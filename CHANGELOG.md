@@ -21,6 +21,10 @@
 - Structure tool window and File Structure popup list the slides of a Marp deck ("Slide 3: Agenda") with their headings nested; selecting one moves the caret there and the preview follows. Respects `headingDivider`; other Markdown files keep the heading outline
 - File | New | Marp Presentation creates a starter deck: front matter with `marp: true`, `theme` and `paginate`, a lead title slide, example slides and presenter notes
 - Live templates for Marp decks: `slide` (new slide), `lead` (`<!-- _class: lead -->`), `bg` (background image) and `notes` (presenter notes). They expand only in Markdown files with `marp: true` and are listed under Settings | Editor | Live Templates | Marp
+- Directive comments in Marp decks are highlighted: directive keys and values get their own colors and presenter-note comments are shown differently (Settings | Editor | Color Scheme | Marp)
+- Completion of directive names in comments (global, local and the `_` form for one slide) and of values: `paginate`, `math`, `size`, `headingDivider`, `class`, background options and built-in and custom theme names
+- Quick documentation and hover docs for directives
+- Marp directive inspection: unknown directives (with a "did you mean"), global directives written with `_` such as `_theme`, invalid `paginate`, `math` and `headingDivider` values
 - Local image support, including `![bg](...)` backgrounds
 - Math rendering with MathJax (works offline) or KaTeX
 - Setting for inline HTML in slides: off, default or all

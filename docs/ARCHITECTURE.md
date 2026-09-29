@@ -31,12 +31,13 @@ avoids internal, deprecated and experimental APIs.
 | `cz.p3kj.marp.MarpDetector` | front-matter `marp: true` detection, and where the front matter ends |
 | `cz.p3kj.marp.slides` | slide model: Markdown PSI -> blocks (`MarpSlideParser`), Marp's split rules (`MarpSlideSplitter`, `MarpHeadingDivider`), `MarpDeck` / `MarpSlide` |
 | `cz.p3kj.marp.structure` | slide outline for the Structure tool window and the File Structure popup |
+| `cz.p3kj.marp.directives` | directive comments: catalog of the Marp directives, comment parser, highlighting and color page, completion, documentation, inspection |
 | `cz.p3kj.marp.editor` | file editor provider, split editor, preview file editor, preview toolbar actions (group `Marp.PreviewToolbar`) |
 | `cz.p3kj.marp.preview` | JCEF panel, JS bridge, resource request handler |
 | `cz.p3kj.marp.sync` | editor <-> preview scroll sync, caret -> active slide |
 | `cz.p3kj.marp.notifications` | "Marp deck detected, reopen with preview" banner |
 | `cz.p3kj.marp.settings` | project settings (`.idea/marp.xml`), settings page |
-| `cz.p3kj.marp.themes` | theme resolution, reading, URL cache, VFS watching |
+| `cz.p3kj.marp.themes` | theme resolution, reading, URL cache, VFS watching, theme names from `@theme` comments |
 
 ## Build wiring
 
@@ -249,6 +250,53 @@ today, slide navigation and folding later.
   highlights the slide in the preview. The tree follows the caret through `getCurrentEditorElement`. It does not
   implement `ExpandInfoProvider` (experimental).
 
+## Directive comments (Kotlin)
+
+Package `cz.p3kj.marp.directives`. Every feature is limited to Marp decks: `MarpDirectiveComments.isMarpDeck(file)`
+(front matter `marp: true`, cached per PSI modification) is checked first, and other Markdown files are untouched.
+
+- `MarpDirectiveCatalog` is the one source of directive facts, taken from Marpit 3.2 and marp-core 4.4 (the versions in
+  `webview/node_modules`): the 16 directives with scope (global or local), origin (Marpit or marp-core), value
+  suggestions and value check, `resolve(key)` (known, global written with `_`, or unknown with a "did you mean" from a
+  small edit distance), and `isValid(directive, rawValue, value)`. Marpit recognises `theme`, `style`, `headingDivider`
+  and `lang` as global and the `background*` family, `class`, `color`, `footer`, `header` and `paginate` as local (each
+  local one also as `_name` for one slide); marp-core adds the globals `size` and `math`. A global with an underscore
+  (`_theme`) is recognised by nothing, so Marp ignores it. The front matter support (#6) reuses the catalog and the
+  bundle documentation keys (`directive.doc.<name>`).
+- A comment is a directive comment to Marp when its YAML is a mapping with at least one recognised key, otherwise a
+  presenter note. Magic comments of other tools (`prettier-ignore`, `markdownlint-...`, `lint disable ...`, as in
+  Marpit's `comment.js`) are neither, and `<!-- fit -->` inside a heading is marp-core's fitting header.
+- `MarpDirectiveComments.parse` is a small line scanner for the `key: value` shape (Marpit's comment regular expression,
+  then `key: value` lines, comment lines, indented and `- item` continuation lines). It is not YAML: flow mappings are
+  read as notes. It works on the text of one comment element, so it is pure and unit-tested. The YAML language injection
+  was rejected: `MarkdownHtmlBlock` is not an injection host, and the plugin would need the YAML plugin.
+- Finding the comment: with the XML module the IDE parses a Markdown file a second time as HTML (the view provider is a
+  template view provider), so the same `<!-- ... -->` also exists as an `XmlComment` in a second tree, and
+  `PsiFile.findElementAt` on the Markdown file returns that HTML leaf. `commentElementAt` therefore walks the AST of the
+  Markdown file itself (`node.findLeafElementAt`) up to the `HTML_BLOCK` or inline `HTML_TAG` that starts with `<!--`
+  (the same rule as the slide parser). Comments inside blockquotes and list items contain `>` or indentation on their
+  continuation lines and are read as notes.
+- Highlighting is a `MarpDirectiveAnnotator` on the Markdown language (`MARP_DIRECTIVE_KEY`, `MARP_DIRECTIVE_VALUE` and
+  `MARP_PRESENTER_NOTE`, which fall back to the metadata, string and doc comment colors) and a `ColorSettingsPage`
+  (Settings | Editor | Color Scheme | Marp). A comment that looks like directives (a known key or a global with `_`) gets
+  key and value colors, anything else that is not magic or empty gets the note color.
+- Completion is a `CompletionContributor` and a `CompletionConfidence`, both registered for `language="any"` because the
+  caret element is usually in the HTML tree. The contributor ignores `parameters.position` and looks at the original
+  Markdown tree (`parameters.originalFile`, `parameters.offset`), then asks `completionSpot` whether the caret is at a key
+  (`_pa`) or a value (`paginate: h`). Custom theme names come from `MarpThemeService.cachedThemeNames()`, which reads the
+  cached theme set without waiting (it only starts loading when nothing is cached). The confidence opens the automatic
+  popup where a directive is written (after `_`, after `key: ` of a directive with values, on a new line of a directive
+  comment) and skips it elsewhere in comments, because the IDE would otherwise pop up directive names while typing a
+  presenter note. Documentation in the completion popup is not provided: that needs
+  `LookupElementDocumentationTargetProvider`, which is `@ApiStatus.Experimental`.
+- Documentation (Ctrl+Q and hover) is a `DocumentationTargetProvider` returning a `DocumentationTarget` for the key under
+  the caret; the popup HTML (`MarpDirectiveDocs`) uses the public `DocumentationMarkup` strings, not the `CLASS_*`
+  constants (`@ApiStatus.Internal`). The provider interface is `@ApiStatus.OverrideOnly`, which is fine to implement.
+- `MarpDirectiveInspection` (`LocalInspectionTool`, `DumbAware`, short name `MarpDirective`) reports unknown keys, globals
+  written with `_`, and invalid `paginate`, `math` and `headingDivider` values (inline values only). A comment that Marp
+  reads as a note is only reported when a key is a near miss of a directive (`Class: lead`), so `Note: text` stays
+  quiet. Unknown theme names are not checked, the preview page warns about them.
+
 ## Threading and lifecycle rules
 
 - No blocking work on the EDT; document text read in read actions; file I/O and HTTP on `Dispatchers.IO`.
@@ -283,7 +331,9 @@ today, slide navigation and folding later.
   not need the platform: `MarpDetector`, `MarpSlideSplitter` and `MarpHeadingDivider` (slide splitting, tricky cases by
   hand-built blocks; `MarpSlideParserTest` and `MarpStructureViewTest` cover the PSI adapter and the tree), `MarpBridgeState`, `MarpScrollEchoGuard`, `MarpLinkPolicy` (and request
   routing), `MarpResourcePaths`, `MarpJcefStartup`, the `.marprc` parser, `MarpThemePaths`, `MarpThemeFolder`,
-  `MarpThemeWatch` and the theme URL validation of the settings page.
+  `MarpThemeWatch`, `MarpThemeNames` and the theme URL validation of the settings page. The directive features have plain
+  unit tests for the catalog and the comment parser, and light platform tests for highlighting, completion (including
+  the automatic popup with `CompletionAutoPopupTester`), documentation and the inspection.
 - Webview (`webview/test`, vitest with jsdom): the host bridge and message queue, marp-core plugins and render options,
   scroll sync, active slide, link and click handling, the unknown-theme warning and the string table.
 - `./gradlew check` runs all of them plus `tsc --noEmit` and the NOTICE freshness check. `verifyPlugin` covers binary
