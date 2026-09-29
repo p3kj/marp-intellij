@@ -1,0 +1,126 @@
+/* Preview look ported from marp-team/marp-vscode/marp-vscode.css (MIT), adapted to the IDE theme. */
+
+:root {
+  --ide-bg: #ffffff;
+  --ide-fg: #1e1e1e;
+  --marp-accent: #1a73e8;
+  --marp-shadow: rgb(0 0 0 / 25%);
+  --marp-error-bg: #fdecea;
+  --marp-error-fg: #5f1a14;
+  --marp-error-border: #e5867d;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.ide-light) {
+    --ide-bg: #1e1f22;
+    --ide-fg: #dfe1e5;
+  }
+}
+
+html.ide-dark {
+  --marp-accent: #5aa2ff;
+  --marp-shadow: rgb(0 0 0 / 60%);
+  --marp-error-bg: #4a2523;
+  --marp-error-fg: #ffdad6;
+  --marp-error-border: #a1443d;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.ide-light) {
+    --marp-accent: #5aa2ff;
+    --marp-shadow: rgb(0 0 0 / 60%);
+    --marp-error-bg: #4a2523;
+    --marp-error-fg: #ffdad6;
+    --marp-error-border: #a1443d;
+    color-scheme: dark;
+  }
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--ide-bg);
+  color: var(--ide-fg);
+}
+
+body {
+  overflow-y: scroll;
+  font: 13px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+#marp-root {
+  overflow-anchor: none;
+  padding: 4px 0;
+}
+
+#marp-root [data-marp-slide-wrapper] {
+  position: relative;
+  box-sizing: border-box;
+  width: calc(100% - 40px);
+  max-width: 1600px;
+  margin: 20px auto;
+}
+
+#marp-root svg[data-marpit-svg] {
+  display: block;
+  margin: 0;
+  box-shadow: 0 5px 10px var(--marp-shadow);
+}
+
+#marp-root [data-marp-slide-wrapper].marp-active-slide::before {
+  content: '';
+  position: absolute;
+  inset: -7px;
+  border: 3px solid var(--marp-accent);
+  border-radius: 2px;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+#marp-error-banner {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  background: var(--marp-error-bg);
+  color: var(--marp-error-fg);
+  border-bottom: 1px solid var(--marp-error-border);
+  font-size: 12px;
+}
+
+#marp-error-banner[hidden] {
+  display: none;
+}
+
+#marp-error-banner ul {
+  flex: 1;
+  margin: 0;
+  padding: 0 0 0 16px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+#marp-error-banner .marp-error-close {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font-size: 16px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+#marp-error-banner .marp-error-close:hover {
+  background: rgb(127 127 127 / 30%);
+}

@@ -1,0 +1,10 @@
+/* @theme dev-sample */
+@import 'default';
+
+section {
+  background: #fff8e1;
+  color: #3e2723;
+  font-family: Georgia, serif;
+}
+h1, h2 { color: #bf360c; }
+.cols { border-left: 6px solid #bf360c; padding-left: 16px; }
