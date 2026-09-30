@@ -27,6 +27,7 @@
 - Marp directive inspection: unknown directives (with a "did you mean"), global directives written with `_` such as `_theme`, invalid `paginate`, `math` and `headingDivider` values
 - Completion, hover docs and the Marp directive inspection in the front matter of Marp decks: directive names and values, theme names, `marp`, and values Marp ignores or misreads
 - Inspection for a `theme:` directive that names an unknown theme, with quick fixes to add a CSS file or folder in Settings | Tools | Marp, create a `.marprc.yml` with `themeSet` or open the existing one, and open the settings. It stays quiet while themes load, in untrusted projects and while a theme source has an error
+- Ctrl+click (Cmd+click on macOS) or Go to Declaration on a theme name in `theme:`, in the front matter or a directive comment, opens the theme's CSS file at its `@theme` comment (themes from files)
 - Local image support, including `![bg](...)` backgrounds
 - Math rendering with MathJax (works offline) or KaTeX
 - Setting for inline HTML in slides: off, default or all
