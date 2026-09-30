@@ -168,6 +168,18 @@
             <add-to-group group-id="GoToMenu" anchor="last"/>
         </group>
 
+        <!-- Code | Move Slide Up / Down, after Move Line Up. No default shortcut, every candidate clashes with something in one of the keymaps. -->
+        <group id="Marp.SlideReordering">
+            <separator/>
+            <action id="Marp.MoveSlideUp" class="cz.p3kj.marp.navigation.MarpMoveSlideUpAction">
+                <synonym key="action.Marp.MoveSlideUp.synonym"/>
+            </action>
+            <action id="Marp.MoveSlideDown" class="cz.p3kj.marp.navigation.MarpMoveSlideDownAction">
+                <synonym key="action.Marp.MoveSlideDown.synonym"/>
+            </action>
+            <add-to-group group-id="CodeMenu" anchor="after" relative-to-action="MoveLineUp"/>
+        </group>
+
         <!-- File | New | Marp Presentation, creates a deck from the internal file template of the same name. -->
         <action id="Marp.NewPresentation"
                 class="cz.p3kj.marp.templates.MarpNewPresentationAction"
