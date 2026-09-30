@@ -105,14 +105,27 @@ interface Press {
 /**
  * Drag and drop of the thumbnails in the slide overview, from plain mouse events. HTML5 drag and drop is not usable: the
  * preview browser renders off-screen and its drag handler refuses every native drag. Press on a thumbnail, move more
- * than `dragThreshold`, and an insertion mark follows the pointer; releasing posts the move, Escape (or losing the focus,
- * or a release outside the page) cancels. The click that ends a drag is swallowed, so the drop does not also move the
- * caret to a slide. Wheel scrolling during a drag works, the mark follows; there is no auto-scroll at the edges.
+ * than `dragThreshold`, and an insertion mark follows the pointer; releasing posts the move, Escape (or losing the focus)
+ * cancels. Mouse moves are not checked for the button state (`buttons`): off-screen rendering may not set it, and a drag
+ * that never starts is worse than one that ends late. The release reaches the page even outside it, and the next press
+ * starts afresh anyway. The click that ends a drag is swallowed, so the drop does not also move the caret to a slide.
+ * Wheel scrolling during a drag works, the mark follows; there is no auto-scroll at the edges.
  */
 export function installSlideDrag(doc: Document, { root, enabled, post }: SlideDragOptions): { cancel(): void } {
   const win = doc.defaultView ?? window
   let press: Press | undefined
+  /** The next click is the one that ends a drag. */
   let swallowClick = false
+  /** Escape ended a drag with the button still down: the click comes with the release, later. */
+  let escaped = false
+
+  /** Swallows the click that follows this event. Cleared after it: a drag without a click must not eat a later one. */
+  function swallowNextClick(): void {
+    swallowClick = true
+    win.setTimeout(() => {
+      swallowClick = false
+    }, 0)
+  }
 
   const wrappers = (): HTMLElement[] => Array.from(root.querySelectorAll<HTMLElement>(wrapperSelector))
 
@@ -153,6 +166,7 @@ export function installSlideDrag(doc: Document, { root, enabled, post }: SlideDr
 
   doc.addEventListener('mousedown', (e) => {
     swallowClick = false
+    escaped = false
     stop()
     if (e.button !== 0 || !enabled()) return
     const dragged = e.target instanceof Element ? e.target.closest<HTMLElement>(wrapperSelector) : null
@@ -166,11 +180,6 @@ export function installSlideDrag(doc: Document, { root, enabled, post }: SlideDr
 
   doc.addEventListener('mousemove', (e) => {
     if (!press) return
-    // The button was released where the page did not see it (over another window or a dialog).
-    if ((e.buttons & 1) === 0) {
-      stop()
-      return
-    }
     press.x = e.clientX
     press.y = e.clientY
     if (!press.dragging) {
@@ -184,7 +193,11 @@ export function installSlideDrag(doc: Document, { root, enabled, post }: SlideDr
 
   doc.addEventListener('mouseup', (e) => {
     const current = press
-    if (!current) return
+    if (!current) {
+      if (escaped) swallowNextClick()
+      escaped = false
+      return
+    }
     if (!current.dragging) {
       stop()
       return
@@ -193,14 +206,14 @@ export function installSlideDrag(doc: Document, { root, enabled, post }: SlideDr
     current.y = e.clientY
     const to = track(current)
     stop()
-    swallowClick = true
+    swallowNextClick()
     if (to !== undefined) post({ from: current.from, to, line: current.line, count: current.count })
   })
 
   doc.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || !press) return
     e.preventDefault()
-    if (press.dragging) swallowClick = true
+    escaped = press.dragging
     stop()
   })
 

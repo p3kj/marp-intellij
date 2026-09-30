@@ -515,9 +515,27 @@ describe('slide overview', () => {
       expect(escape.defaultPrevented).toBe(true)
       noMarks()
       move(340, 30)
+      // The button is released later, the click that comes with it is still swallowed.
+      await new Promise((resolve) => setTimeout(resolve, 5))
       up(340, 30)
       click(slides()[0]!)
       expect(posted).toEqual([])
+      click(slides()[1]!)
+      expect(posted).toEqual([{ type: 'didClick', line: startLines()[1] }])
+    })
+
+    it('a drag that ends without a click does not swallow a later one', async () => {
+      await ready()
+      down(slides()[0]!, 50, 30)
+      move(340, 30)
+      up(340, 30)
+      // No click follows (the release was on another element in some browsers): a click from the keyboard, later, counts.
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      click(slides()[1]!)
+      expect(posted).toEqual([
+        { type: 'didMoveSlide', from: 0, to: 2, line: startLines()[0], count: 3 },
+        { type: 'didClick', line: startLines()[1] },
+      ])
     })
 
     it('Escape without a drag does nothing to the click', async () => {
@@ -539,14 +557,15 @@ describe('slide overview', () => {
       expect(posted).toEqual([{ type: 'didClick', line: startLines()[0] }])
     })
 
-    it('a release outside the page ends the drag when the pointer comes back without the button', async () => {
+    it('does not depend on the button state of mouse moves, which off-screen rendering may not report', async () => {
       await ready()
       down(slides()[0]!, 50, 30)
-      move(340, 30)
       mouse('mousemove', document.body, 340, 30, { buttons: 0 })
-      noMarks()
-      up(340, 30)
-      expect(moves()).toEqual([])
+      expect(marked('marp-dragging')).toEqual([slides()[0]])
+      expect(marked('marp-drop-after')).toEqual([slides()[2]])
+      mouse('mouseup', document.body, 340, 30, { buttons: 0 })
+      click(slides()[0]!)
+      expect(posted).toEqual([{ type: 'didMoveSlide', from: 0, to: 2, line: startLines()[0], count: 3 }])
     })
 
     it('losing the window focus cancels the drag', async () => {

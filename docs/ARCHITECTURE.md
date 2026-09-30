@@ -83,7 +83,9 @@ page removes `<meta http-equiv>`, `<iframe>`, `<frame>`, `<object>`, `<embed>`, 
 `<link rel=import>` from the deck HTML, and every `autofocus` attribute, before it is inserted (under every HTML
 setting). The page also cancels `dragover` / `drop`, so a dropped file or link never becomes a navigation. The slide
 drag of the overview (#22) carries no drag data (it is built from mouse events, see Slide overview), does not change this
-and adds nothing to the CSP. Remote
+and adds nothing to the CSP. Deck HTML cannot run script under this CSP, so only the page's own drag code posts
+`didMoveSlide`; a forged one could only reorder the open deck, as one undoable step, and Kotlin validates it first (see
+Slide reordering). Remote
 images work over https. `http:` images are mixed content in Chromium (upgraded to https or blocked) although the CSP
 lists `http:`. Only the bundled `/app/` script runs; inline `<script>`, event handler attributes, `javascript:` URLs, frames,
   plugins and `fetch` are blocked, and forms cannot submit (`form-action 'none'`, they still render). Theme CSS (injected as a `<style>` text), marp-core's inline styles, KaTeX /
@@ -230,9 +232,13 @@ with the grid on still gives one slide per page. In the grid:
     index the slide gets (`undefined` next to itself), `indicatorFor` the wrapper and side for the bar. The drag ends
     without a move when the thumbnails change under it (a render replaced them).
   - Releasing posts `{"type":"didMoveSlide","from","to","line","count"}`, except on the slide's own place, which posts
-    nothing. Escape, losing the window focus, a mouse move without the button (released outside the page) and turning the
-    overview off cancel the drag. The click that follows a drop (or an Escape during a drag) is swallowed by a capturing listener on
-    the window, so it does not also post `didClick` and move the caret to a slide.
+    nothing. Escape, losing the window focus and turning the overview off cancel the drag. Mouse moves are deliberately not
+    checked for the button state (`MouseEvent.buttons`): it is not confirmed that off-screen rendering sets it, and a drag
+    that never starts is worse than one that ends late. Swing delivers the release to the pressed component even outside
+    it, and the next press starts afresh. The click that follows a drop is swallowed by a capturing listener on the
+    window, so it does not also post `didClick` and move the caret to a slide. That flag is cleared by a `setTimeout(0)`
+    after the release, so a drop that gets no click cannot eat a later, keyboard-activated one. After an Escape the click
+    comes with the release, which can be much later: the release then arms the swallowing for its own click.
   - Decks with `headingDivider` are not reorderable, as in Kotlin: after every successful render the page reads
     `lastGlobalDirectives.headingDivider` (a protected Marpit field, cast like the title in `export-html.ts`, with the
     Marpit option as fallback) and sets `reorderable`; a failed render clears it. There is no new bridge setter and no
