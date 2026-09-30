@@ -11,9 +11,11 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.fileChooser.FileChooserFactory
 import com.intellij.openapi.fileChooser.FileSaverDescriptor
 import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.MessageDialogBuilder
 import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.ide.progress.withBackgroundProgress
 import cz.p3kj.marp.MarpBundle
 import cz.p3kj.marp.editor.MarpPreviewFileEditor
@@ -21,6 +23,7 @@ import cz.p3kj.marp.editor.MarpProjectScope
 import cz.p3kj.marp.editor.MarpSplitEditor
 import cz.p3kj.marp.preview.MarpExportException
 import cz.p3kj.marp.preview.MarpPreviewPanel
+import cz.p3kj.marp.settings.MarpConfigurable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -60,12 +63,12 @@ internal object MarpExporter {
             notify(project, NotificationType.WARNING, MarpBundle.message("export.notReady"))
             return
         }
-        val target = chooseTarget(project, preview, format) ?: return
+        val target = chooseTarget(project, preview.file, format) ?: return
         MarpProjectScope.getInstance(project).scope.launch { run(project, preview, panel, format, target) }
     }
 
-    private fun chooseTarget(project: Project, preview: MarpPreviewFileEditor, format: MarpExportFormat): Path? {
-        val markdown = preview.file
+    /** EDT. The save dialog for [markdown]; the path to write with the extension of [format], `null` when cancelled or when an overwrite is declined. */
+    fun chooseTarget(project: Project, markdown: VirtualFile, format: MarpExportTarget): Path? {
         // Relative images and theme URLs of an HTML file resolve against where it is saved, so start next to the deck.
         val directory = markdown.parent?.let { it.fileSystem.getNioPath(it) }
         val descriptor = FileSaverDescriptor(format.dialogTitle, MarpBundle.message("export.dialog.description"), format.extension)
@@ -123,17 +126,23 @@ internal object MarpExporter {
     }
 
     private fun done(project: Project, target: Path) {
-        if (project.isDisposed) return
-        NotificationGroupManager.getInstance().getNotificationGroup(NOTIFICATION_GROUP)
-            .createNotification(MarpBundle.message("export.done", target.fileName.toString()), NotificationType.INFORMATION)
-            .addAction(NotificationAction.createSimpleExpiring(MarpBundle.message("export.open")) { BrowserUtil.browse(target) })
-            .notify(project)
+        notify(project, NotificationType.INFORMATION, MarpBundle.message("export.done", target.fileName.toString()), MarpBundle.message("export.open")) {
+            BrowserUtil.browse(target)
+        }
     }
 
-    fun notify(project: Project, type: NotificationType, content: String) {
+    /** Shows a notification of the export group, with one action button when [actionText] is given. */
+    fun notify(project: Project, type: NotificationType, content: String, actionText: String? = null, action: () -> Unit = {}) {
         if (project.isDisposed) return
-        NotificationGroupManager.getInstance().getNotificationGroup(NOTIFICATION_GROUP)
-            .createNotification(content, type)
-            .notify(project)
+        val notification = NotificationGroupManager.getInstance().getNotificationGroup(NOTIFICATION_GROUP).createNotification(content, type)
+        if (actionText != null) notification.addAction(NotificationAction.createSimpleExpiring(actionText, action))
+        notification.notify(project)
+    }
+
+    /** A notification with an action that opens Settings | Tools | Marp, for problems with the Marp CLI path. */
+    fun notifyWithSettings(project: Project, type: NotificationType, content: String) {
+        notify(project, type, content, MarpBundle.message("export.cli.openSettings")) {
+            ShowSettingsUtil.getInstance().showSettingsDialog(project, MarpConfigurable::class.java)
+        }
     }
 }

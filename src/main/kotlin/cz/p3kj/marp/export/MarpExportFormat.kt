@@ -6,16 +6,16 @@ import java.nio.file.Path
 
 private const val BUNDLE = "messages.MarpBundle"
 
-/** What a deck can be exported to. Both go through the live preview page, see `docs/ARCHITECTURE.md`. */
-enum class MarpExportFormat(
-    /** File extension without the dot, also what the save dialog filters on. */
-    val extension: String,
-    @PropertyKey(resourceBundle = BUNDLE) private val dialogTitleKey: String,
-) {
-    HTML("html", "export.dialog.title.html"),
-    PDF("pdf", "export.dialog.title.pdf");
+/** For a Markdown file that is nothing but an extension (`.md`). */
+private const val DEFAULT_BASE_NAME = "deck"
 
-    val dialogTitle: String get() = MarpBundle.message(dialogTitleKey)
+/** A file a deck can be exported to: what the save dialog needs to know about it. */
+interface MarpExportTarget {
+    /** File extension without the dot, also what the save dialog filters on. */
+    val extension: String
+
+    /** Title of the save dialog. */
+    val dialogTitle: String
 
     /** `deck.md` -> `deck.html`. The extension of the Markdown file is replaced, a name without one gets the new one. */
     fun defaultName(markdownName: String): String {
@@ -23,14 +23,20 @@ enum class MarpExportFormat(
         return "$base.$extension"
     }
 
-    /** [path] as it is when its name already ends in `.html` / `.pdf` (any case), otherwise with the extension appended. */
+    /** [path] as it is when its name already ends in the [extension] (any case), otherwise with the extension appended. */
     fun withExtension(path: Path): Path {
         val name = path.fileName?.toString() ?: return path
         return if (name.endsWith(".$extension", ignoreCase = true)) path else path.resolveSibling("$name.$extension")
     }
+}
 
-    private companion object {
-        /** For a Markdown file that is nothing but an extension (`.md`). */
-        const val DEFAULT_BASE_NAME = "deck"
-    }
+/** What a deck can be exported to by the live preview page: HTML and PDF, see `docs/ARCHITECTURE.md`. Marp CLI formats are [MarpCliFormat]. */
+enum class MarpExportFormat(
+    override val extension: String,
+    @PropertyKey(resourceBundle = BUNDLE) private val dialogTitleKey: String,
+) : MarpExportTarget {
+    HTML("html", "export.dialog.title.html"),
+    PDF("pdf", "export.dialog.title.pdf");
+
+    override val dialogTitle: String get() = MarpBundle.message(dialogTitleKey)
 }
