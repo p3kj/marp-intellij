@@ -2,9 +2,11 @@ package cz.p3kj.marp.export
 
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
-import com.intellij.execution.configurations.PathEnvironmentVariableUtil
+import com.intellij.openapi.util.SystemInfo
+import com.intellij.util.EnvironmentUtil
 import cz.p3kj.marp.settings.MarpHtmlMode
 import cz.p3kj.marp.settings.MarpMathMode
+import java.io.File
 import java.nio.file.Files
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
@@ -19,8 +21,8 @@ sealed interface MarpCliLocation {
 
 /**
  * Finds the Marp CLI executable from the `marpCliPath` of [cz.p3kj.marp.settings.MarpAppSettings]: empty means `marp`
- * on the PATH, an absolute path is used as it is, anything else (`marp.cmd`) is a name to look up on the PATH. Touches
- * the file system, so call it off the EDT.
+ * on the PATH (`marp.cmd` on Windows), an absolute path is used as it is, anything else (`marp.cmd`) is a name to look
+ * up on the PATH. Touches the file system, so call it off the EDT.
  */
 object MarpCliLocator {
 
@@ -40,10 +42,42 @@ object MarpCliLocator {
         }
         return onPath(text)?.let(MarpCliLocation::Found) ?: MarpCliLocation.Missing(text)
     }
+
+    /**
+     * The first file [name] names in a directory of [pathVariable] (the value of the PATH), `null` when there is none.
+     * [windowsExtensions] are the `PATHEXT` entries on Windows, `null` elsewhere. Windows starts only files with such an
+     * extension, so `marp` is found as `marp.cmd` and the extensionless shell script npm writes next to it is skipped;
+     * elsewhere the file must be executable. (`PathEnvironmentVariableUtil.findExecutableInPathOnAnyOS` does this too,
+     * but it is scheduled for removal.)
+     */
+    fun findExecutable(name: String, pathVariable: String?, windowsExtensions: List<String>?): Path? {
+        val candidates = when {
+            windowsExtensions == null -> listOf(name)
+            windowsExtensions.any { it.isNotEmpty() && name.endsWith(it, ignoreCase = true) } -> listOf(name)
+            else -> windowsExtensions.filter { it.isNotEmpty() }.map { name + it }
+        }
+        for (directory in pathVariable.orEmpty().split(File.pathSeparatorChar)) {
+            if (directory.isBlank()) continue
+            for (candidate in candidates) {
+                val file = try {
+                    Path.of(directory.trim('"'), candidate)
+                } catch (_: InvalidPathException) {
+                    continue
+                }
+                if (Files.isRegularFile(file) && (windowsExtensions != null || Files.isExecutable(file))) return file
+            }
+        }
+        return null
+    }
 }
 
-/** Handles Windows: `marp` is found as `marp.cmd`. */
-private fun findOnPath(name: String): Path? = PathEnvironmentVariableUtil.findExecutableInPathOnAnyOS(name)?.toPath()
+/** [MarpCliLocator.findExecutable] on the PATH the IDE gives to the processes it starts (the shell environment on macOS). */
+private fun findOnPath(name: String): Path? {
+    val windowsExtensions = if (SystemInfo.isWindows) (EnvironmentUtil.getValue("PATHEXT") ?: DEFAULT_PATHEXT).split(';') else null
+    return MarpCliLocator.findExecutable(name, EnvironmentUtil.getValue("PATH"), windowsExtensions)
+}
+
+private const val DEFAULT_PATHEXT = ".COM;.EXE;.BAT;.CMD"
 
 /** The command line and the configuration of a Marp CLI run. Pure, the process is started by [runMarpCli]. */
 object MarpCliArgs {

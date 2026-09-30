@@ -2,15 +2,18 @@ package cz.p3kj.marp.export
 
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.intellij.openapi.util.SystemInfo
 import cz.p3kj.marp.settings.MarpHtmlMode
 import cz.p3kj.marp.settings.MarpMathMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -189,5 +192,66 @@ class MarpCliCommandTest {
     @Test
     fun anInvalidPathIsMissing() {
         assertEquals(MarpCliLocation.Missing("a\u0000b"), MarpCliLocator.locate("a\u0000b", FakePath()))
+    }
+
+    // The PATH search itself, on real files.
+
+    private fun file(vararg parts: String, executable: Boolean = true): Path {
+        val file = parts.fold(temp.root.toPath()) { dir, part -> dir.resolve(part) }
+        Files.createDirectories(file.parent)
+        Files.writeString(file, "x")
+        file.toFile().setExecutable(executable)
+        return file
+    }
+
+    private fun pathOf(vararg directories: String): String =
+        directories.joinToString(File.pathSeparator) { temp.root.toPath().resolve(it).toString() }
+
+    @Test
+    fun theFirstDirectoryWithTheProgramWins() {
+        val second = file("b", "marp")
+        file("c", "marp")
+        assertEquals(second, MarpCliLocator.findExecutable("marp", pathOf("a", "b", "c"), null))
+    }
+
+    @Test
+    fun aFileThatIsNotExecutableIsSkippedOutsideWindows() {
+        assumeFalse(SystemInfo.isWindows)
+        file("a", "marp", executable = false)
+        val executable = file("b", "marp")
+        assertEquals(executable, MarpCliLocator.findExecutable("marp", pathOf("a", "b"), null))
+    }
+
+    @Test
+    fun aFolderNamedLikeTheProgramIsNotTheProgram() {
+        temp.newFolder("a", "marp")
+        assertNull(MarpCliLocator.findExecutable("marp", pathOf("a"), null))
+    }
+
+    @Test
+    fun nothingToSearchFindsNothing() {
+        assertNull(MarpCliLocator.findExecutable("marp", null, null))
+        assertNull(MarpCliLocator.findExecutable("marp", "", null))
+        assertNull(MarpCliLocator.findExecutable("marp", File.pathSeparator + "  ", null))
+    }
+
+    @Test
+    fun onWindowsTheExtensionsOfPathextAreTried() {
+        file("npm", "marp")
+        val cmd = file("npm", "marp.cmd")
+        file("npm", "marp.ps1")
+        assertEquals(cmd, MarpCliLocator.findExecutable("marp", pathOf("npm"), listOf(".com", ".exe", ".bat", ".cmd")))
+    }
+
+    @Test
+    fun onWindowsAGivenExtensionIsKept() {
+        val cmd = file("npm", "marp.cmd")
+        assertEquals(cmd, MarpCliLocator.findExecutable("marp.cmd", pathOf("npm"), listOf(".exe", ".cmd")))
+    }
+
+    @Test
+    fun onWindowsTheScriptWithoutAnExtensionIsNotAProgram() {
+        file("npm", "marp")
+        assertNull(MarpCliLocator.findExecutable("marp", pathOf("npm"), listOf(".exe", ".cmd")))
     }
 }
