@@ -1,11 +1,20 @@
 <html>
 <body>
-Reports directive comments in a Marp deck that Marp ignores or misreads: a directive name that does not exist, a global directive
-written with an underscore, and an invalid value for <code>paginate</code>, <code>math</code> or <code>headingDivider</code>.
+Reports directive comments and the front matter of a Marp deck that Marp ignores or misreads: a directive name that does not
+exist, a global directive written with an underscore, and an invalid value for <code>paginate</code>, <code>math</code> or
+<code>headingDivider</code>.
 <p>Marp drops such a directive without a hint, and the slide just looks wrong.</p>
 <pre><code>&lt;!-- _theme: gaia --&gt;
 &lt;!-- _clas: lead --&gt;
 &lt;!-- paginate: yes --&gt;</code></pre>
+<p>The same checks apply to the front matter:</p>
+<pre><code>---
+marp: true
+pagiante: true
+math: katex # KaTeX
+---</code></pre>
+<p>The front matter also holds metadata of other tools (<code>title</code>, <code>author</code> and so on), so a key in it is only
+reported when it is a near miss of a directive, as a weak warning.</p>
 <p>Unknown theme names are not reported here, the preview page shows a warning for them.</p>
 </body>
 </html>

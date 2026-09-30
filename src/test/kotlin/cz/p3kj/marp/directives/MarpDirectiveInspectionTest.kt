@@ -138,6 +138,99 @@ _class: invert
         )
     }
 
+    // Front matter ----------------------------------------------------------------------------------------------------
+
+    fun testMisspelledDirectiveInTheFrontMatterIsAWeakWarning() {
+        check(
+            "---\nmarp: true\n<weak_warning descr=\"'pagiante' is not a Marp directive, did you mean 'paginate'?\">pagiante</weak_warning>: true\n---\n",
+        )
+    }
+
+    fun testGlobalDirectiveWithUnderscoreInTheFrontMatter() {
+        check(
+            "---\nmarp: true\n<warning descr=\"'_theme' is a global directive: it applies to the whole deck and has no '_' form, use 'theme'\">_theme</warning>: gaia\n---\n",
+        )
+    }
+
+    fun testInvalidValuesInTheFrontMatter() {
+        check(
+            "---\nmarp: true\n" +
+                "paginate: <warning descr=\"Invalid value 'yes' for 'paginate', expected one of: true, false, hold, skip\">yes</warning>\n" +
+                "math: <warning descr=\"Invalid value 'foo' for 'math', expected one of: mathjax, katex\">foo</warning>\n" +
+                "headingDivider: <warning descr=\"Invalid value '9' for 'headingDivider', expected a level from 1 to 6, a list of levels or false\">9</warning>\n" +
+                "---\n",
+        )
+    }
+
+    fun testTrailingCommentBecomesPartOfAMarpitValueInTheFrontMatter() {
+        check(
+            "---\nmarp: true\n" +
+                "paginate: <warning descr=\"Invalid value 'true # c' for 'paginate', expected one of: true, false, hold, skip\">true # c</warning>\n" +
+                "---\n",
+        )
+    }
+
+    fun testMathWithATrailingCommentInTheFrontMatter() {
+        check(
+            "---\nmarp: true\n" +
+                "math: <warning descr=\"Invalid value 'katex # c' for 'math', expected one of: mathjax, katex\">katex # c</warning>\n" +
+                "---\n",
+        )
+    }
+
+    fun testInvalidValueOfASpotDirectiveInTheFrontMatterNamesTheKeyAsWritten() {
+        check(
+            "---\nmarp: true\n_paginate: <warning descr=\"Invalid value 'nope' for '_paginate', expected one of: true, false, hold, skip\">nope</warning>\n---\n",
+        )
+    }
+
+    fun testFrontMatterAndCommentsAreBothChecked() {
+        check(
+            "---\nmarp: true\npaginate: <warning descr=\"Invalid value 'yes' for 'paginate', expected one of: true, false, hold, skip\">yes</warning>\n---\n\n" +
+                "<!-- math: <warning descr=\"Invalid value 'foo' for 'math', expected one of: mathjax, katex\">foo</warning> -->\n",
+        )
+    }
+
+    fun testFrontMatterOfOtherToolsIsQuiet() {
+        check(
+            """---
+marp: true
+title: My deck
+author: Me
+description: A talk
+date: 2026-09-30
+tags:
+  - slides
+  - talk
+theme: gaia
+size: 4:3
+math: katex
+paginate: true
+class: lead
+headingDivider: 2
+header: '**Hi**'
+_class: invert
+---
+
+# Title
+""",
+        )
+    }
+
+    fun testFrontMatterThatIsNotAMappingIsQuiet() {
+        // A repeated key makes YAML reject the whole front matter, the YAML plugin reports that.
+        check("---\nmarp: true\nmarp: true\npaginate: yes\npagiante: 1\n---\n")
+    }
+
+    fun testNothingAfterTheFrontMatter() {
+        check("---\nmarp: true\n---\n\npaginate: yes\npagiante: true\n")
+    }
+
+    fun testNothingInTheFrontMatterOfPlainMarkdown() {
+        check("---\ntitle: Post\npaginate: yes\npagiante: true\n_theme: gaia\n---\n\n# Post\n")
+        check("---\nmarp: false\npaginate: yes\n---\n")
+    }
+
     fun testNothingInPlainMarkdown() {
         check("# Not a deck\n\n<!-- _theme: gaia -->\n\n<!-- paginate: yes -->\n")
     }

@@ -7,10 +7,12 @@ import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiElementVisitor
+import com.intellij.psi.PsiFile
 import cz.p3kj.marp.MarpBundle
+import org.intellij.plugins.markdown.lang.psi.impl.MarkdownFile
 
 /**
- * Reports what Marp silently ignores in the directive comments of a Marp deck:
+ * Reports what Marp silently ignores in the directive comments and in the front matter of a Marp deck:
  * - a directive name that does not exist (with a "did you mean" for near misses),
  * - a global directive written with an underscore, such as `_theme`, which only exists for local directives,
  * - a value that Marp does not accept for `paginate`, `math` and `headingDivider`.
@@ -18,14 +20,48 @@ import cz.p3kj.marp.MarpBundle
  * A comment that has no valid directive at all is a presenter note to Marp, so it is left alone unless a key is a
  * near miss of a directive, as in `Class: lead` (a weak warning, since it may well be a note). Comments of other tools (`prettier-ignore`, `markdownlint-disable`)
  * are skipped. Unknown theme names are not reported, the preview warns about them.
+ *
+ * The front matter holds the metadata of other tools too (`title`, `author`, ...), so an unknown key there is only a weak
+ * warning when it is a near miss of a directive, and nothing otherwise. It is found by [MarpFrontMatter] in the text of the
+ * file, not in the PSI: the problems are registered on the file itself with document offsets (the Markdown plugin's front
+ * matter element is experimental API), and the Markdown file element is visited like any other element. The YAML plugin
+ * reports YAML errors, such as a repeated key, so those are not repeated here.
  */
 class MarpDirectiveInspection : LocalInspectionTool(), DumbAware {
 
     override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean): PsiElementVisitor = object : PsiElementVisitor() {
         override fun visitElement(element: PsiElement) {
+            // The Markdown file only: with the XML module the same file also has an HTML root, which is visited too.
+            if (element is MarkdownFile) {
+                if (MarpDirectiveComments.isMarpDeck(element)) checkFrontMatter(element, holder)
+                return
+            }
             if (!MarpDirectiveComments.isCommentElement(element)) return
             if (!MarpDirectiveComments.isMarpDeck(element.containingFile)) return
             check(element, holder)
+        }
+    }
+
+    private fun checkFrontMatter(file: PsiFile, holder: ProblemsHolder) {
+        val text = MarpFrontMatter.text(file) ?: return
+        val frontMatter = MarpFrontMatter.parse(text) ?: return
+        if (!frontMatter.isMapping) return
+        for (entry in frontMatter.entries) {
+            when (val key = entry.resolved) {
+                is MarpDirectiveKey.GlobalWithUnderscore -> report(
+                    holder, file, entry.keyRange,
+                    MarpBundle.message("inspection.directive.globalWithUnderscore", entry.key, key.directive.name),
+                )
+                // Other keys are the metadata of other tools, only a near miss of a directive is worth a hint.
+                is MarpDirectiveKey.Unknown -> key.suggestion?.let { suggestion ->
+                    report(
+                        holder, file, entry.keyRange,
+                        MarpBundle.message("inspection.frontMatter.unknown", entry.key, suggestion),
+                        ProblemHighlightType.WEAK_WARNING,
+                    )
+                }
+                is MarpDirectiveKey.Known -> checkValue(holder, file, entry, key.directive)
+            }
         }
     }
 
