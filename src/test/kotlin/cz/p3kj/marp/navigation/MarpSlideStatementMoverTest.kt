@@ -51,7 +51,7 @@ class MarpSlideStatementMoverTest : MarpLightTestCase() {
     fun testSecondSlideUpSwapsBodiesAndKeepsTheFrontMatterFirst() {
         open("$front\n# One\n\n<caret>---\n\n# Two\n\n---\n\n# Three\n")
         up()
-        myFixture.checkResult("$front<caret>\n# Two\n\n---\n\n# One\n\n---\n\n# Three\n")
+        myFixture.checkResult("$front\n<caret># Two\n\n---\n\n# One\n\n---\n\n# Three\n")
     }
 
     fun testLastSlideUpKeepsTheEndOfTheFile() {

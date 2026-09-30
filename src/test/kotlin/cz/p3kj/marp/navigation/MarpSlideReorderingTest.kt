@@ -69,7 +69,7 @@ class MarpSlideReorderingTest : MarpLightTestCase() {
         myFixture.editor.caretModel.moveToOffset(text().indexOf("true"))
         move(down = true)
         assertEquals("$front\n# Two\n\n---\n\n# One\n", text())
-        assertEquals(text().indexOf("\n# One"), myFixture.editor.caretModel.offset)
+        assertEquals(text().indexOf("# One"), myFixture.editor.caretModel.offset)
     }
 
     fun testFirstSlideCannotMoveUpAndLastCannotMoveDown() {

@@ -364,8 +364,9 @@ included. Moving the caret is all they do, scroll sync then makes the preview fo
 Issue #15. One pure edit function and two ways to trigger it, both in Marp decks only.
 
 - `MarpSlideReorder.move(text, deck, index, down)` (package `slides`, plain Kotlin) returns an `Edit` or `null`. An `Edit`
-  replaces `[start, end)` with `text` and knows the moved piece (`movedFrom`, `movedLength`, `movedTo`) so that
-  `caretAfter(caret)` can keep a caret inside the moved piece at its place and send any other caret to the start of it.
+  replaces `[start, end)` with `text` and knows the moved piece (`movedFrom`, `movedLength`, `movedTo`, `contentTo`) so that
+  `caretAfter(caret)` can keep a caret inside the moved piece at its place and send any other caret to the first
+  non-blank line of it.
   Both triggers apply exactly this edit, there is no second edit path.
 - Two neighbouring slides are swapped as one range. A slide travels as the text from its separator line to the start of
   the next slide, so separator styles (`---`, `***`, `___`), local directives and notes move with it. The front matter
@@ -373,7 +374,10 @@ Issue #15. One pure edit function and two ways to trigger it, both in Marp decks
   next separator) and the separator line of slide 1 stays between them.
 - `blankEnded` puts a blank line after a piece that is followed by a separator and does not end with one. A paragraph line
   directly above `---` would otherwise become a setext heading and swallow the slide break. Decks with a blank line before
-  each separator are not touched by it. What follows the last slide (the line breaks at the end of the file) stays at
+  each separator are not touched by it. The same goes for the top of the range: the piece that lands first starts with a
+  separator line, and directly under a paragraph line (a `***` deck, tight decks) a `---` would be a setext underline,
+  so a blank line is added there too (not below the front matter or below an empty slide). An empty first slide that
+  moves down gets a blank line after its separator so that two separator lines do not end up in a row. What follows the last slide (the line breaks at the end of the file) stays at
   the end of the file, so moving the last slide up and back down gives the original text.
 - `supports(deck)` is `deck.headingDivider.isEmpty()`. With a `headingDivider` a swap can merge slides (a slide without a
   divider heading at its start joins the slide before it) and reorder the competing `headingDivider` comments, so those
@@ -406,7 +410,7 @@ Issue #15. One pure edit function and two ways to trigger it, both in Marp decks
   a separator line of slide 1 or later and a next slide satisfy. All of it runs inside the platform's command and write
   action, so it is one undo step. The deck comes from the cached PSI (the handler commits the document first), read on
   the EDT like every mover does; a caret on the separator line of a moved slide stays on it, except when slide 1 moves up
-  (its separator stays between the swapped bodies) where the caret goes to the start of the moved body.
+  (its separator stays between the swapped bodies) where the caret goes to the first non-blank line of the moved body.
 - Not done: reordering from the preview or the overview, moving by more than one place, several slides at once,
   keeping the collapsed state of the slide folds (the replaced range drops the fold regions inside it).
 

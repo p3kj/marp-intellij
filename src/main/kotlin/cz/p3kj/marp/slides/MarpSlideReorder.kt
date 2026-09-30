@@ -9,9 +9,10 @@ package cz.p3kj.marp.slides
  * belongs to the first slide in [MarpDeck] but it stays at the top. Swapping the first two slides swaps the bodies of
  * both and the separator line of the second slide stays between them.
  *
- * A slide that is moved before a following separator needs a blank line before it, otherwise a paragraph line right
- * above `---` becomes a setext heading and the slide break is lost. That only matters for a moved last slide or a deck
- * without blank lines before its separators, a deck that has them is not changed by the blank lines. What follows the
+ * A separator that lands right below a paragraph line, or a paragraph line right above a separator, turns `---` into a
+ * setext heading underline and the slide break is lost. So a blank line is added where a moved slide would meet a
+ * separator without one: after a moved last slide, and before the first piece when the slide above ends in a paragraph
+ * (a `***` deck, tight decks). A deck with a blank line before each separator is not changed by this. What follows the
  * last slide (the line breaks at the end of the file) stays at the end of the file, so moving the last slide up and back
  * down gives the original text.
  *
@@ -22,7 +23,7 @@ object MarpSlideReorder {
 
     /**
      * Replace `[start, end)` of the text with [text]. The moved slide was the piece `[movedFrom, movedFrom + movedLength)`
-     * and starts at [movedTo] after the edit.
+     * and starts at [movedTo] after the edit, its first non-blank line at [contentTo].
      */
     data class Edit(
         val start: Int,
@@ -31,13 +32,15 @@ object MarpSlideReorder {
         val movedFrom: Int,
         val movedLength: Int,
         val movedTo: Int,
+        val contentTo: Int,
     ) {
         /**
          * Where a caret at [caret] (an offset before the edit) is after it: inside the moved piece it keeps its place in
-         * it, anywhere else (the front matter, the separator line that stays) it goes to the start of the moved piece.
+         * it, anywhere else (the front matter, the separator line that stays) it goes to the first non-blank line of the
+         * moved piece, like the navigation puts the caret at the content of a slide.
          */
         fun caretAfter(caret: Int): Int =
-            if (caret in movedFrom..movedFrom + movedLength) movedTo + (caret - movedFrom) else movedTo
+            if (caret in movedFrom..movedFrom + movedLength) movedTo + (caret - movedFrom) else contentTo
     }
 
     /** `false` for decks that use `headingDivider`, see the class comment. */
@@ -64,17 +67,48 @@ object MarpSlideReorder {
         val p = text.slice(start, lower.startOffset)
         val q = text.slice(qStart, lower.endOffset)
 
-        val before = blankEnded(q) + separator
-        val after = if (atEnd) p.trimEnd('\n') + q.takeLastWhile { it == '\n' } else blankEnded(p)
+        // The piece that lands first starts with a separator line (unless the front matter is above). Directly under a
+        // paragraph line a `---` would be a setext underline and the two slides would merge, so a blank line goes between.
+        // A slide without a body is preceded by a separator or the front matter fence, and neither is a paragraph.
+        val lead = if (!first && deck.slides[upperIndex - 1].bodyOffset < start && !lastLineIsBlank(lineBefore(text, start))) "\n" else ""
+        val before = lead + blankEnded(q) + separator
+        // An empty first slide that moves down would leave two separator lines in a row, so a blank line goes between.
+        val after = when {
+            atEnd -> p.trimEnd('\n') + q.takeLastWhile { it == '\n' }
+            p.isEmpty() -> "\n"
+            else -> blankEnded(p)
+        }
         val replacement = before + after
         return if (down) {
-            Edit(start, lower.endOffset, replacement, movedFrom = start, movedLength = p.length, movedTo = start + before.length)
+            val movedTo = start + before.length
+            Edit(start, lower.endOffset, replacement, start, p.length, movedTo, movedTo + firstContent(p))
         } else {
-            Edit(start, lower.endOffset, replacement, movedFrom = qStart, movedLength = q.length, movedTo = start)
+            val movedTo = start + lead.length
+            Edit(start, lower.endOffset, replacement, qStart, q.length, movedTo, movedTo + firstContent(q))
         }
     }
 
     private fun CharSequence.slice(from: Int, to: Int): String = subSequence(from, to).toString()
+
+    /** The line that ends just before [offset] (an offset at the start of a line), with its line break. */
+    private fun lineBefore(text: CharSequence, offset: Int): String {
+        var lineStart = offset - 1
+        while (lineStart > 0 && text[lineStart - 1] != '\n') lineStart--
+        return text.slice(lineStart, offset)
+    }
+
+    /** Offset in [piece] of the first line that is not blank, 0 when all of it is. */
+    private fun firstContent(piece: String): Int {
+        var lineStart = 0
+        while (lineStart < piece.length) {
+            var i = lineStart
+            while (i < piece.length && (piece[i] == ' ' || piece[i] == '\t' || piece[i] == '\r')) i++
+            if (i >= piece.length) break
+            if (piece[i] != '\n') return lineStart
+            lineStart = i + 1
+        }
+        return 0
+    }
 
     /** [s] with a line break at the end, unless it is empty or has one. */
     private fun lineEnded(s: String): String = if (s.isEmpty() || s.endsWith('\n')) s else s + "\n"

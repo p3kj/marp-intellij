@@ -128,7 +128,8 @@ class MarpSlideReorderTest : MarpLightTestCase() {
     fun testEmptyFirstSlideDown() {
         val text = "$front---\n\n# Two\n\n---\n\n# Three\n"
         assertEquals(listOf("-", "Two", "Three"), titles(text))
-        assertMoved("$front\n# Two\n\n---\n---\n\n# Three\n", text, 0, down = true, listOf("Two", "-", "Three"), ::handDeck)
+        assertMoved("$front\n# Two\n\n---\n\n---\n\n# Three\n", text, 0, down = true, listOf("Two", "-", "Three"))
+        assertMoved("$front\n# Two\n\n---\n\n---\n\n# Three\n", text, 1, down = false, listOf("Two", "-", "Three"))
     }
 
     // The end of the file -----------------------------------------------------------------------------------------------
@@ -149,13 +150,31 @@ class MarpSlideReorderTest : MarpLightTestCase() {
 
     fun testTightDeckGetsBlankLinesAroundMovedSlides() {
         val text = "$front# A\n---\n# B\n---\n# C\n"
-        assertMoved("$front# A\n---\n# C\n\n---\n# B\n", text, 1, down = true, listOf("A", "C", "B"), ::handDeck)
+        assertMoved("$front# A\n\n---\n# C\n\n---\n# B\n", text, 1, down = true, listOf("A", "C", "B"), ::handDeck)
     }
 
     fun testEmptyLastSlideMovesUp() {
         val text = "$front\n# One\n\n---\n\n# Two\n\n---\n"
         assertEquals(listOf("One", "Two", "-"), titles(text))
         assertMoved("$front\n# One\n\n---\n\n---\n\n# Two\n", text, 2, down = false, listOf("One", "-", "Two"))
+    }
+
+    fun testASeparatorMovedBelowAParagraphDoesNotBecomeASetextUnderline() {
+        // `***` can follow a paragraph line directly, a moved-in `---` would make it a heading and merge the slides.
+        val text = "$front\nOne para\n***\n\n# Two\n\n---\n\n# Three\n"
+        assertEquals(listOf("-", "Two", "Three"), titles(text))
+        val expected = "$front\nOne para\n\n---\n\n# Three\n\n***\n\n# Two\n"
+        assertMoved(expected, text, 2, down = false, listOf("-", "Three", "Two"))
+        assertMoved(expected, text, 1, down = true, listOf("-", "Three", "Two"))
+        // The other way round the moved-in separator is `***` and the paragraph line is above it as well.
+        val back = "$front\nOne para\n\n---\n\n# Three\n\n***\n\n# Two\n"
+        assertMoved("$front\nOne para\n\n***\n\n# Two\n\n---\n\n# Three\n", back, 2, down = false, listOf("-", "Two", "Three"))
+    }
+
+    fun testNoBlankLineIsAddedBelowTheFrontMatterOrABlankLine() {
+        val text = "$front---\n\n# Two\n\n---\n\n# Three\n"
+        assertMoved("$front---\n\n# Three\n\n---\n\n# Two\n", text, 2, down = false, listOf("-", "Three", "Two"))
+        assertMoved("$front---\n\n# Three\n\n---\n\n# Two\n", text, 1, down = true, listOf("-", "Three", "Two"))
     }
 
     fun testRoundTripsGiveTheOriginalText() {
@@ -208,16 +227,24 @@ class MarpSlideReorderTest : MarpLightTestCase() {
         assertEquals(result.indexOf("# Three") + 4, up.caretAfter(text.indexOf("# Three") + 4))
     }
 
-    fun testCaretOutsideTheMovedPieceGoesToItsStart() {
-        // First slide down: the front matter is outside the moved body and the caret goes to the start of it, inside it keeps its place.
+    fun testCaretOutsideTheMovedPieceGoesToItsFirstNonBlankLine() {
+        // First slide down: the front matter is outside the moved body, the caret goes to its content, inside it keeps its place.
         val down = edit(threeSlides, 0, down = true)!!
         val downResult = threeSlides.replaceRange(down.start, down.end, down.text)
-        assertEquals(downResult.indexOf("\n# One"), down.caretAfter(0))
+        assertEquals(downResult.indexOf("# One"), down.caretAfter(0))
         assertEquals(downResult.indexOf("# One"), down.caretAfter(threeSlides.indexOf("# One")))
-        // Slide 2 up onto slide 1: the separator line of slide 2 stays, the caret on it goes to the start of the moved body.
+        // Slide 2 up onto slide 1: the separator line of slide 2 stays, the caret on it goes to the content of the moved body.
         val up = edit(threeSlides, 1, down = false)!!
         val upResult = threeSlides.replaceRange(up.start, up.end, up.text)
-        assertEquals(upResult.indexOf("\n# Two"), up.caretAfter(threeSlides.indexOf("---\n\n# Two")))
+        assertEquals(upResult.indexOf("# Two"), up.caretAfter(threeSlides.indexOf("---\n\n# Two")))
         assertEquals(upResult.indexOf("# Two") + 1, up.caretAfter(threeSlides.indexOf("# Two") + 1))
+    }
+
+    fun testCaretFollowsTheMovedSlideAfterABlankLineWasAdded() {
+        val text = "$front\nOne para\n***\n\n# Two\n\n---\n\n# Three\n"
+        val edit = edit(text, 2, down = false)!!
+        val result = text.replaceRange(edit.start, edit.end, edit.text)
+        assertEquals(result.indexOf("---\n\n# Three"), edit.caretAfter(text.indexOf("---\n\n# Three")))
+        assertEquals(result.indexOf("# Three") + 2, edit.caretAfter(text.indexOf("# Three") + 2))
     }
 }
