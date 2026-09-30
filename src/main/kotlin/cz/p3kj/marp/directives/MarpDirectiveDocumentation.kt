@@ -57,8 +57,10 @@ object MarpDirectiveDocs {
     private const val MARP_CORE_URL = "https://github.com/marp-team/marp-core#readme"
 
     /** A short line for the hint: the name and where the directive applies. */
-    fun hint(directive: MarpDirective): String =
-        "${directive.name}: ${MarpBundle.message(if (directive.scope == MarpDirectiveScope.GLOBAL) "completion.type.global" else "completion.type.local")}"
+    fun hint(directive: MarpDirective): String {
+        val scope = MarpBundle.message(if (directive.scope == MarpDirectiveScope.GLOBAL) "completion.type.global" else "completion.type.local")
+        return MarpBundle.message("directive.doc.hint", directive.name, scope)
+    }
 
     /** The documentation popup: the name, the description and scope, then the values and who defines the directive. */
     fun html(directive: MarpDirective): String = buildString {

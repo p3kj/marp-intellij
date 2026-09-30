@@ -97,6 +97,8 @@ class MarpThemeServiceTest : MarpLightTestCase() {
         assertEmpty(service.cachedThemeNames())
         load()
         assertEquals(listOf("alpha", "beta"), service.cachedThemeNames())
+        // The names of a cached set are read once.
+        assertSame(service.cachedThemeNames(), service.cachedThemeNames())
     }
 
     fun testFolderExpansionIsRecursiveAndSorted() {

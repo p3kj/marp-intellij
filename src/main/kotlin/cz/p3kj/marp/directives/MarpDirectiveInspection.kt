@@ -1,6 +1,7 @@
 package cz.p3kj.marp.directives
 
 import com.intellij.codeInspection.LocalInspectionTool
+import com.intellij.codeInspection.ProblemHighlightType
 import com.intellij.codeInspection.ProblemsHolder
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.util.TextRange
@@ -15,7 +16,7 @@ import cz.p3kj.marp.MarpBundle
  * - a value that Marp does not accept for `paginate`, `math` and `headingDivider`.
  *
  * A comment that has no valid directive at all is a presenter note to Marp, so it is left alone unless a key is a
- * near miss of a directive, as in `Class: lead`. Comments of other tools (`prettier-ignore`, `markdownlint-disable`)
+ * near miss of a directive, as in `Class: lead` (a weak warning, since it may well be a note). Comments of other tools (`prettier-ignore`, `markdownlint-disable`)
  * are skipped. Unknown theme names are not reported, the preview warns about them.
  */
 class MarpDirectiveInspection : LocalInspectionTool(), DumbAware {
@@ -46,9 +47,11 @@ class MarpDirectiveInspection : LocalInspectionTool(), DumbAware {
                             MarpBundle.message("inspection.directive.unknown.suggestion", entry.key, suggestion),
                         )
                         isDirective -> report(holder, element, entry.keyRange, MarpBundle.message("inspection.directive.unknown", entry.key))
+                        // Notes like `Header: welcome` are plausible, so this one is only a weak warning.
                         suggestion != null -> report(
                             holder, element, entry.keyRange,
                             MarpBundle.message("inspection.directive.unknownInNote", entry.key, suggestion),
+                            ProblemHighlightType.WEAK_WARNING,
                         )
                     }
                 }
@@ -70,7 +73,10 @@ class MarpDirectiveInspection : LocalInspectionTool(), DumbAware {
         report(holder, element, range, message)
     }
 
-    private fun report(holder: ProblemsHolder, element: PsiElement, range: TextRange, message: String) {
-        holder.registerProblem(element, range, message)
+    private fun report(
+        holder: ProblemsHolder, element: PsiElement, range: TextRange, message: String,
+        type: ProblemHighlightType = ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
+    ) {
+        holder.registerProblem(element, message, type, range)
     }
 }

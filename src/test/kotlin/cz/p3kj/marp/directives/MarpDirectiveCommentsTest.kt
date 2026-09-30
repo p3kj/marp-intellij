@@ -57,14 +57,69 @@ class MarpDirectiveCommentsTest {
     }
 
     @Test
-    fun trailingYamlCommentIsNotPartOfTheValue() {
+    fun marpitDirectivesTakeTheWholeRestOfTheLineAsTheValue() {
+        // Marpit's loose YAML quotes the value, so a trailing comment belongs to it.
         val text = "<!-- paginate: true # show numbers -->"
         val entry = parse(text).entries.single()
-        assertEquals("true", entry.rawValue)
-        assertEquals("true", slice(text, entry.valueRange!!))
+        assertEquals("true # show numbers", entry.rawValue)
+        assertEquals("true # show numbers", slice(text, entry.valueRange!!))
+        assertEquals("lead # x", parse("<!-- _class: lead # x -->").entries.single().rawValue)
+        assertEquals("#fff", parse("<!-- backgroundColor: #fff -->").entries.single().rawValue)
+        assertEquals("Say **hi**", parse("<!-- header: Say **hi** -->").entries.single().rawValue)
+    }
+
+    @Test
+    fun otherKeysEndAPlainValueAtAYamlComment() {
+        assertEquals("4:3", parse("<!-- size: 4:3 # x -->").entries.single().rawValue)
+        assertEquals("katex", parse("<!-- math: katex # x -->").entries.single().rawValue)
+        assertEquals("hi", parse("<!-- Note: hi # x -->").entries.single().rawValue)
+        assertNull(parse("<!-- size: #fff -->").entries.single().valueRange)
+    }
+
+    @Test
+    fun quotedAndFlowValuesOfMarpitDirectivesStayYaml() {
         val quoted = parse("<!-- header: 'Hi # there' # note -->").entries.single()
         assertEquals("'Hi # there'", quoted.rawValue)
         assertEquals("Hi # there", quoted.value)
+        assertEquals("[1, 3]", parse("<!-- headingDivider: [1, 3] # note -->").entries.single().rawValue)
+    }
+
+    @Test
+    fun aValueStartingWithAStarIsAYamlAliasAndMakesTheCommentANote() {
+        for (text in listOf("<!-- header: **Bold** -->", "<!-- Note: *hi* -->", "<!-- _class: lead\nheader: *x -->")) {
+            val comment = parse(text)
+            assertFalse(text, comment.isMapping)
+            assertFalse(text, comment.isDirective)
+        }
+        assertTrue(parse("<!-- header: '**Bold**' -->").isDirective)
+        assertTrue(parse("<!-- header: Say **hi** -->").isDirective)
+    }
+
+    @Test
+    fun aRepeatedKeyMakesTheCommentANote() {
+        val comment = parse("<!--\n_class: lead\n_class: invert\n-->")
+        assertFalse(comment.isMapping)
+        assertFalse(comment.isDirective)
+        assertTrue(parse("<!--\n_class: lead\nclass: invert\n-->").isDirective)
+    }
+
+    @Test
+    fun anIndentedLineAfterACompleteValueMakesTheCommentANote() {
+        assertFalse(parse("<!--\npaginate: true\n  more\n-->").isMapping)
+        assertFalse(parse("<!--\n_class: lead\n  invert\n-->").isDirective)
+        assertFalse(parse("<!--\nheader: \"Hi\"\n  more\n-->").isMapping)
+    }
+
+    @Test
+    fun valuesThatContinueOnTheNextLinesAreFine() {
+        assertTrue(parse("<!--\nstyle: |\n  section { color: red }\n-->").isDirective)
+        assertTrue(parse("<!--\nheader: >\n  text\n  more\n-->").isDirective)
+        assertTrue(parse("<!--\nheader: \"open\n  more\"\n-->").isDirective)
+        assertTrue(parse("<!--\nheadingDivider: [1,\n  2]\n-->").isDirective)
+        assertTrue(parse("<!--\nheadingDivider:\n  - 1\n  - 2\n-->").isDirective)
+        assertTrue(parse("<!--\nclass: lead\n  - x\n-->").isMapping)
+        // A plain scalar of a key that is not a Marpit directive may continue, as in YAML.
+        assertTrue(parse("<!--\nNote: hello\n  world\n-->").isMapping)
     }
 
     @Test

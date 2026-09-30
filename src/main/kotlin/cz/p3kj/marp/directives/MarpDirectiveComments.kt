@@ -18,14 +18,18 @@ import org.intellij.plugins.markdown.lang.psi.impl.MarkdownHeader
 data class MarpDirectiveEntry(
     val key: String,
     val keyRange: TextRange,
-    /** The value as written, without a trailing ` # comment`, quotes kept. */
+    /**
+     * The value as written, quotes kept. Without a trailing ` # comment`, except for the Marpit directives: their
+     * value is taken up to the end of the line, see [MarpDirectiveComments].
+     */
     val rawValue: String,
     /** [rawValue] without its quotes. */
     val value: String,
     /** Where [rawValue] is in the text, `null` when the value is empty (no text after the colon). */
     val valueRange: TextRange?,
 ) {
-    val resolved: MarpDirectiveKey get() = MarpDirectiveCatalog.resolve(key)
+    /** What [key] means, resolved once when the entry is created. */
+    val resolved: MarpDirectiveKey = MarpDirectiveCatalog.resolve(key)
 }
 
 /**
@@ -72,6 +76,12 @@ sealed interface MarpCompletionSpot {
  * `<!--+\s*([\s\S]*?)\s*--+>`, then YAML) closely enough to tell directives from presenter notes. Flow mappings
  * (`{ class: lead }`) and other exotic YAML are read as notes.
  *
+ * marp-core parses with Marpit's loose YAML: for the Marpit directives (with or without `_`) a value that does not start
+ * with one of ``["'{|>~&*`` is quoted as a whole, so `paginate: true # c` has the value `true # c` (which is not
+ * `true`). Every other key follows plain YAML, where ` #` starts a comment. A body that YAML rejects makes Marp read
+ * the whole comment as a note: a value that starts with `*` (an alias, as in `header: **Bold**`), a repeated key, and
+ * a line that continues a value that is already complete.
+ *
  * The first half of this object works on text and is independent of the IDE, the second half finds comments in the
  * Markdown PSI. Comments are only interpreted in Marp decks ([isMarpDeck]).
  */
@@ -115,10 +125,12 @@ object MarpDirectiveComments {
     /**
      * The `key: value` lines of the body and whether the whole body is a mapping. Blank and `#` lines are skipped;
      * indented lines and `- item` lines continue the previous entry (a block scalar or sequence); a line that is
-     * neither a key line nor a continuation means the body is prose.
+     * neither a key line nor a continuation means the body is prose. So does what YAML rejects: a value that starts
+     * with `*`, a repeated key, and an indented line after a value that is already complete (see the class comment).
      */
     private fun readEntries(text: CharSequence, bodyStart: Int, bodyEnd: Int): Pair<List<MarpDirectiveEntry>, Boolean> {
         val entries = ArrayList<MarpDirectiveEntry>()
+        val keys = HashSet<String>()
         var lineStart = bodyStart
         while (lineStart <= bodyEnd) {
             var lineEnd = lineStart
@@ -129,9 +141,14 @@ object MarpDirectiveComments {
             val trimmed = line.trim()
             when {
                 trimmed.isEmpty() || trimmed.startsWith("#") -> Unit
-                line[0] == ' ' || line[0] == '\t' || isSequenceItem(line) -> if (entries.isEmpty()) return entries to false
+                isSequenceItem(trimmed) -> if (entries.isEmpty()) return entries to false
+                line[0] == ' ' || line[0] == '\t' -> {
+                    val previous = entries.lastOrNull() ?: return entries to false
+                    if (isCompleteScalar(previous)) return entries to false
+                }
                 else -> {
                     val entry = readKeyLine(line, lineStart) ?: return entries to false
+                    if (entry.rawValue.startsWith("*") || !keys.add(entry.key)) return entries to false
                     entries += entry
                 }
             }
@@ -140,7 +157,24 @@ object MarpDirectiveComments {
         return entries to entries.isNotEmpty()
     }
 
-    private fun isSequenceItem(line: String): Boolean = line[0] == '-' && (line.length == 1 || line[1] == ' ' || line[1] == '\t')
+    private fun isSequenceItem(trimmed: String): Boolean = trimmed[0] == '-' && (trimmed.length == 1 || trimmed[1] == ' ' || trimmed[1] == '\t')
+
+    /**
+     * Whether the value of [entry] is a scalar that ends on its own line, so that an indented line after it is a YAML
+     * error: a closed quoted scalar, or a value of a Marpit directive that loose YAML quotes as a whole. Block scalars,
+     * flow collections, an unclosed quote and plain scalars of other keys can continue on the next lines.
+     */
+    private fun isCompleteScalar(entry: MarpDirectiveEntry): Boolean {
+        val raw = entry.rawValue
+        if (raw.isEmpty()) return false
+        val first = raw[0]
+        if (isLooseKey(entry.key) && first !in MarpHeadingDivider.YAML_SPECIAL_START) return true
+        return (first == '"' || first == '\'') && raw.length >= 2 && raw.last() == first
+    }
+
+    /** The Marpit directives (`_` form included) are parsed with loose YAML, marp-core's own `size` and `math` are not. */
+    private fun isLooseKey(key: String): Boolean =
+        MarpDirectiveCatalog.find(key.removePrefix("_"))?.origin == MarpDirectiveOrigin.MARPIT
 
     private fun readKeyLine(line: String, lineOffset: Int): MarpDirectiveEntry? {
         val match = KEY_LINE.find(line) ?: return null
@@ -149,17 +183,22 @@ object MarpDirectiveComments {
         val afterColon = match.range.last + 1
         var valueStart = afterColon
         while (valueStart < line.length && (line[valueStart] == ' ' || line[valueStart] == '\t')) valueStart++
-        val rawValue = rawValueOf(line.substring(valueStart))
+        val rawValue = rawValueOf(line.substring(valueStart), isLooseKey(key))
         val keyRange = TextRange(lineOffset + keyGroup.range.first, lineOffset + keyGroup.range.last + 1)
         if (rawValue.isEmpty()) return MarpDirectiveEntry(key, keyRange, "", "", null)
         val valueRange = TextRange(lineOffset + valueStart, lineOffset + valueStart + rawValue.length)
         return MarpDirectiveEntry(key, keyRange, rawValue, MarpHeadingDivider.unquote(rawValue), valueRange)
     }
 
-    /** The value up to the end of a closing quote, or up to a ` # comment`, without trailing white space. */
-    private fun rawValueOf(rest: String): String {
+    /**
+     * The value at the end of a key line, without trailing white space. With [loose] (a Marpit directive) a value that
+     * does not start with a YAML special character is the whole rest of the line, ` # comment` included. Otherwise it
+     * ends after a closing quote, or before a ` # comment`.
+     */
+    private fun rawValueOf(rest: String, loose: Boolean): String {
         val text = rest.trimEnd()
         if (text.isEmpty()) return ""
+        if (loose && text[0] !in MarpHeadingDivider.YAML_SPECIAL_START) return text
         val quote = text[0]
         if (quote == '"' || quote == '\'') {
             val end = text.indexOf(quote, 1)

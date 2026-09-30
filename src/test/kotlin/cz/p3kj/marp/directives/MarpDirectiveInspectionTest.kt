@@ -14,7 +14,7 @@ class MarpDirectiveInspectionTest : MarpLightTestCase() {
 
     private fun check(text: String) {
         myFixture.configureByText("deck.md", text)
-        myFixture.checkHighlighting(true, false, false)
+        myFixture.checkHighlighting(true, false, true)
     }
 
     fun testIsRegisteredWithADescription() {
@@ -40,7 +40,7 @@ class MarpDirectiveInspectionTest : MarpLightTestCase() {
 
     fun testMisspelledDirectiveAloneIsAPresenterNote() {
         check(
-            "$deck<!-- <warning descr=\"'_clas' is not a Marp directive, did you mean '_class'? This comment is shown as a presenter note.\">_clas</warning>: lead -->\n",
+            "$deck<!-- <weak_warning descr=\"'_clas' is not a Marp directive, did you mean '_class'? This comment is shown as a presenter note.\">_clas</weak_warning>: lead -->\n",
         )
     }
 
@@ -52,12 +52,17 @@ class MarpDirectiveInspectionTest : MarpLightTestCase() {
 
     fun testNearMissInANoteIsReportedAsANote() {
         check(
-            "$deck<!-- <warning descr=\"'Class' is not a Marp directive, did you mean 'class'? This comment is shown as a presenter note.\">Class</warning>: lead -->\n",
+            "$deck<!-- <weak_warning descr=\"'Class' is not a Marp directive, did you mean 'class'? This comment is shown as a presenter note.\">Class</weak_warning>: lead -->\n",
         )
     }
 
     fun testInvalidPaginate() {
         check("$deck<!-- paginate: <warning descr=\"Invalid value 'yes' for 'paginate', expected one of: true, false, hold, skip\">yes</warning> -->\n")
+    }
+
+    fun testTrailingCommentBecomesPartOfAMarpitValue() {
+        // Marpit's loose YAML quotes the value: `true # c` is not `true`, so paginate is off.
+        check("$deck<!-- paginate: <warning descr=\"Invalid value 'true # c' for 'paginate', expected one of: true, false, hold, skip\">true # c</warning> -->\n")
     }
 
     fun testInvalidMath() {
@@ -110,6 +115,13 @@ class MarpDirectiveInspectionTest : MarpLightTestCase() {
 <!-- Say hello, then show the demo. -->
 
 <!-- Todo: buy milk -->
+
+<!-- header: **Bold** -->
+
+<!--
+_class: lead
+_class: invert
+-->
 
 # Title <!-- fit -->
 """,

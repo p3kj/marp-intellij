@@ -49,6 +49,15 @@ class MarpDirectiveAnnotatorTest : MarpLightTestCase() {
         assertEmpty(highlighted(text, MarpDirectiveHighlighting.KEY))
     }
 
+    fun testYamlThatMarpRejectsIsANote() {
+        val text = "$deck<!-- header: **Bold** -->\n\n<!--\n_class: lead\n_class: invert\n-->\n"
+        assertEquals(
+            listOf("<!-- header: **Bold** -->", "<!--\n_class: lead\n_class: invert\n-->"),
+            highlighted(text, MarpDirectiveHighlighting.NOTE),
+        )
+        assertEmpty(highlighted(text, MarpDirectiveHighlighting.KEY))
+    }
+
     fun testGlobalWithUnderscoreIsStillShownAsADirective() {
         val text = "$deck<!-- _theme: gaia -->\n"
         assertEquals(listOf("_theme"), highlighted(text, MarpDirectiveHighlighting.KEY))

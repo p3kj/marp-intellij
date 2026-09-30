@@ -240,7 +240,8 @@ today, slide navigation and folding later.
   default `headingDivider`, or if Marpit changes the rules (the code cites the Marpit files it ports).
 - `MarpHeadingDivider.resolve` finds the `headingDivider` global directive like Marpit: front matter first, then every
   directive comment in document order, the last valid value wins for the whole deck. Values follow Marpit's conversion
-  (a number `n` means levels 1..n, a list keeps 1..6, `false` is off, anything else is ignored). YAML is not parsed,
+  (a number `n` means levels 1..n, a list keeps 1..6, `false` is off, anything else is ignored). They are read with Marpit's
+  loose YAML: an unquoted value is the rest of the line, so `false # off` is not `false` and is ignored. YAML is not parsed,
   only `headingDivider:` at the start of a line (inline value, `[1, 3]` list or block sequence) is recognised.
 - `MarpStructureViewBuilder` (returned by `MarpSplitEditor.getStructureViewBuilder`, so only Marp decks get it, other
   Markdown files keep the Markdown plugin's outline) lists one node per slide, `Slide 3: Agenda`, titled by its first
@@ -268,7 +269,12 @@ Package `cz.p3kj.marp.directives`. Every feature is limited to Marp decks: `Marp
   Marpit's `comment.js`) are neither, and `<!-- fit -->` inside a heading is marp-core's fitting header.
 - `MarpDirectiveComments.parse` is a small line scanner for the `key: value` shape (Marpit's comment regular expression,
   then `key: value` lines, comment lines, indented and `- item` continuation lines). It is not YAML: flow mappings are
-  read as notes. It works on the text of one comment element, so it is pure and unit-tested. The YAML language injection
+  read as notes. It follows marp-core's loose YAML: for the Marpit directives (`_` form included) a value that does not
+  start with one of ``["'{|>~&*`` is the whole rest of the line, so `paginate: true # c` has the value `true # c`,
+  which Marp reads as `false`; other keys (`size`, `math`, unknown ones) end a plain value at ` #`. A body that YAML
+  rejects is a note to Marp: a value starting with `*` (`header: **Bold**` is an alias), a repeated key, and an indented
+  line after a value that is already complete (a quoted scalar, or a loose Marpit value). It works on the text of one
+  comment element, so it is pure and unit-tested. The YAML language injection
   was rejected: `MarkdownHtmlBlock` is not an injection host, and the plugin would need the YAML plugin.
 - Finding the comment: with the XML module the IDE parses a Markdown file a second time as HTML (the view provider is a
   template view provider), so the same `<!-- ... -->` also exists as an `XmlComment` in a second tree, and
@@ -294,7 +300,7 @@ Package `cz.p3kj.marp.directives`. Every feature is limited to Marp decks: `Marp
   constants (`@ApiStatus.Internal`). The provider interface is `@ApiStatus.OverrideOnly`, which is fine to implement.
 - `MarpDirectiveInspection` (`LocalInspectionTool`, `DumbAware`, short name `MarpDirective`) reports unknown keys, globals
   written with `_`, and invalid `paginate`, `math` and `headingDivider` values (inline values only). A comment that Marp
-  reads as a note is only reported when a key is a near miss of a directive (`Class: lead`), so `Note: text` stays
+  reads as a note is only reported, as a weak warning, when a key is a near miss of a directive (`Class: lead`), so `Note: text` stays
   quiet. Unknown theme names are not checked, the preview page warns about them.
 
 ## Threading and lifecycle rules

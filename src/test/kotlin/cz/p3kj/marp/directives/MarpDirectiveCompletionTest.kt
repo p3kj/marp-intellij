@@ -1,5 +1,6 @@
 package cz.p3kj.marp.directives
 
+import com.intellij.util.ThreeState
 import cz.p3kj.marp.MarpLightTestCase
 
 class MarpDirectiveCompletionTest : MarpLightTestCase() {
@@ -93,5 +94,29 @@ class MarpDirectiveCompletionTest : MarpLightTestCase() {
     fun testNothingOutsideAComment() {
         val items = complete("${deck}pag<caret>")
         assertTrue(items.isNullOrEmpty())
+    }
+
+    private fun confidenceAtCaret(textWithCaret: String): ThreeState {
+        myFixture.configureByText("deck.md", textWithCaret)
+        val offset = myFixture.caretOffset
+        val element = myFixture.file.findElementAt(maxOf(0, offset - 1))!!
+        return MarpDirectiveCompletionConfidence().shouldSkipAutopopup(myFixture.editor, element, myFixture.file, offset)
+    }
+
+    fun testConfidenceOpensWhereADirectiveIsWritten() {
+        assertEquals(ThreeState.NO, confidenceAtCaret("$deck<!-- _cla<caret> -->"))
+        assertEquals(ThreeState.NO, confidenceAtCaret("$deck<!-- paginate: h<caret> -->"))
+    }
+
+    fun testConfidenceSkipsNotes() {
+        assertEquals(ThreeState.YES, confidenceAtCaret("$deck<!-- pag<caret> -->"))
+        assertEquals(ThreeState.YES, confidenceAtCaret("$deck<!-- Say hello, then<caret> -->"))
+    }
+
+    fun testConfidenceLeavesTheCaretOutsideTheCommentAlone() {
+        assertEquals(ThreeState.UNSURE, confidenceAtCaret("$deck<!-- _class: lead --><caret>"))
+        assertEquals(ThreeState.UNSURE, confidenceAtCaret("$deck<caret><!-- _class: lead -->"))
+        assertEquals(ThreeState.UNSURE, confidenceAtCaret("${deck}Some text<caret>"))
+        assertEquals(ThreeState.UNSURE, confidenceAtCaret("# Not a deck\n\n<!-- _cla<caret> -->"))
     }
 }

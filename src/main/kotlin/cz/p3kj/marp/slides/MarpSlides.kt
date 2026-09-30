@@ -171,7 +171,8 @@ object MarpSlideSplitter {
  * Off (no levels) is the default, the preview page sets no `headingDivider` option.
  *
  * YAML is not parsed, only lines `headingDivider: value` at the start of a line are recognised, and a list may be
- * written inline (`[1, 3]`) or as a block sequence.
+ * written inline (`[1, 3]`) or as a block sequence. Like Marp, the front matter and the comments are read with loose
+ * YAML, see [parseValue].
  */
 object MarpHeadingDivider {
 
@@ -188,15 +189,26 @@ object MarpHeadingDivider {
         return levels
     }
 
-    /** The levels for one directive value as written after `headingDivider:`; `null` when Marpit would ignore it. */
+    /**
+     * The levels for one directive value as written after `headingDivider:`; `null` when Marpit would ignore it. Marp
+     * parses with Marpit's loose YAML, which quotes the rest of the line unless it starts with one of
+     * [YAML_SPECIAL_START]: `2 # c` is the string `2 # c` (still 2 for `parseInt`) and `false # c` is not `false`, so
+     * it is ignored. A quoted value or a list is real YAML, where ` #` starts a comment.
+     */
     internal fun parseValue(raw: String): Set<Int>? {
-        val value = withoutYamlComment(raw.trim())
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty()) return null
+        val loose = trimmed[0] !in YAML_SPECIAL_START
+        val value = if (loose) trimmed else withoutYamlComment(trimmed)
         if (value.startsWith("[") && value.endsWith("]")) return parseItems(value.substring(1, value.length - 1).split(','))
         val scalar = unquote(value)
         if (scalar == "false") return emptySet()
         val number = jsParseInt(scalar) ?: return null
         return if (number in 1..MAX_LEVEL) (1..number).toSet() else null
     }
+
+    /** Marpit's `yamlSpecialChars`: a value that starts with one of these is left to YAML, anything else is quoted whole. */
+    internal const val YAML_SPECIAL_START = "[\"'{|>~&*"
 
     private const val KEY = "headingDivider"
     private const val MAX_LEVEL = 6
@@ -221,7 +233,7 @@ object MarpHeadingDivider {
             var j = KEY.length
             while (j < line.length && (line[j] == ' ' || line[j] == '\t')) j++
             if (j >= line.length || line[j] != ':') continue
-            val value = withoutYamlComment(line.substring(j + 1).trim())
+            val value = line.substring(j + 1).trim()
             if (value.isNotEmpty()) {
                 parseValue(value)?.let { result = it }
                 continue

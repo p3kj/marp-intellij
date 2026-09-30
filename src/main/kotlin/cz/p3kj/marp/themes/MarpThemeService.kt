@@ -162,8 +162,15 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
             cs.launch { loadThemes() }
             return emptyList()
         }
-        return set.themes.mapNotNull { MarpThemeNames.nameOf(it.css) }.distinct()
+        // The names of one set are read once, completion asks for them on every keystroke.
+        names?.let { if (it.first === set) return it.second }
+        val result = set.themes.mapNotNull { MarpThemeNames.nameOf(it.css) }.distinct()
+        names = set to result
+        return result
     }
+
+    @Volatile
+    private var names: Pair<MarpThemeSet, List<String>>? = null
 
     private fun trustChanged(changed: Project) {
         if (changed != project) return

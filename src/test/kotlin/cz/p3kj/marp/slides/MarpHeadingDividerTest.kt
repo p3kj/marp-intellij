@@ -23,6 +23,7 @@ class MarpHeadingDividerTest {
     @Test
     fun valuesAreReadWithParseInt() {
         assertEquals(levels(1, 2), MarpHeadingDivider.parseValue("2.5"))
+        // Loose YAML keeps the comment in the value, parseInt still reads the 2.
         assertEquals(levels(1, 2), MarpHeadingDivider.parseValue("2 # a comment"))
         assertEquals(levels(1, 2), MarpHeadingDivider.parseValue("2abc"))
         assertEquals(levels(1, 2), MarpHeadingDivider.parseValue("+2"))
@@ -38,7 +39,18 @@ class MarpHeadingDividerTest {
     @Test
     fun falseTurnsDividingOff() {
         assertEquals(emptySet<Int>(), MarpHeadingDivider.parseValue("false"))
-        assertEquals(emptySet<Int>(), MarpHeadingDivider.parseValue("false # off"))
+    }
+
+    @Test
+    fun aTrailingCommentMakesFalseAStringThatIsIgnored() {
+        // Marpit's loose YAML quotes the rest of the line: `false # off` is not `false`, and not a number either.
+        assertNull(MarpHeadingDivider.parseValue("false # off"))
+        assertNull(MarpHeadingDivider.parseValue("false x"))
+        // Quoted values and lists are YAML, where the comment ends the value.
+        assertEquals(emptySet<Int>(), MarpHeadingDivider.parseValue("[] # off"))
+        assertEquals(emptySet<Int>(), MarpHeadingDivider.parseValue("'false' # off"))
+        assertEquals(levels(1, 2), MarpHeadingDivider.parseValue("'2' # two"))
+        assertEquals(levels(1, 2), MarpHeadingDivider.parseValue("\"2\" # two"))
     }
 
     @Test
@@ -76,7 +88,8 @@ class MarpHeadingDividerTest {
         assertEquals(levels(1, 4), resolve("headingDivider:\n  - '1'\n  - \"4\"\n  - x\n"))
         // Nothing after the key: null in YAML, ignored.
         assertEquals(emptySet<Int>(), resolve("headingDivider:\nmarp: true\n"))
-        assertEquals(levels(2, 3), resolve("headingDivider: # levels\n  - 2\n  - 3\n"))
+        // Loose YAML quotes `# levels` as the value, the indented lines after it are a YAML error: ignored.
+        assertEquals(emptySet<Int>(), resolve("headingDivider: # levels\n  - 2\n  - 3\n"))
     }
 
     @Test
@@ -86,6 +99,15 @@ class MarpHeadingDividerTest {
         assertEquals(emptySet<Int>(), resolve("_headingDivider: 2\n"))
         assertEquals(emptySet<Int>(), resolve("headingDividers: 2\n"))
         assertEquals(emptySet<Int>(), resolve("xheadingDivider: 2\n"))
+    }
+
+    @Test
+    fun trailingCommentInTheFrontMatterAndInComments() {
+        assertEquals(levels(1, 2), resolve("headingDivider: 2 # two\n"))
+        assertEquals(emptySet<Int>(), resolve("headingDivider: false\n"))
+        assertEquals(levels(1, 2, 3), resolve("headingDivider: 3\n", "<!-- headingDivider: false # off -->"))
+        assertEquals(levels(1, 2), resolve(null, "<!-- headingDivider: 2 # two -->"))
+        assertEquals(levels(1, 2, 3), resolve(null, "<!-- headingDivider: 3 -->", "<!-- headingDivider: false # off -->"))
     }
 
     @Test

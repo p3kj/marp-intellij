@@ -128,12 +128,17 @@ internal object MarpDirectiveCompletion {
      */
     class Context(val spot: MarpCompletionSpot?, val directiveIsLikely: Boolean)
 
-    /** The completion context at [offset] of [file], `null` when the caret is not in a comment. */
+    /**
+     * The completion context at [offset] of [file], `null` when the caret is not in a comment. The caret right before
+     * `<!--` or right after `-->` is not in the comment, although the comment element is found there.
+     */
     fun contextAt(file: PsiFile, offset: Int): Context? {
         val markdown = MarpDirectiveComments.markdownFile(file) ?: return null
         val element = MarpDirectiveComments.commentElementAt(markdown, offset) ?: return null
         val text = element.text
         val caret = offset - element.textRange.startOffset
+        val range = MarpDirectiveComments.parse(text)?.range
+        if (range != null && (caret <= range.startOffset || caret >= range.endOffset)) return null
         val spot = MarpDirectiveComments.completionSpot(text, caret)
         val likely = spot is MarpCompletionSpot.Key && (spot.prefix.startsWith("_") || isDirectiveWithoutLineAt(text, caret))
         return Context(spot, likely)
