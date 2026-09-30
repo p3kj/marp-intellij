@@ -159,6 +159,10 @@ class MarpThemeGotoDeclarationTest : MarpLightTestCase() {
         assertEmpty(targets("${deck}<!-- _theme: al<caret>pha -->"))
     }
 
+    fun testNothingInACommentThatMarpReadsAsANote() {
+        assertEmpty(targets("$deck<!--\ntheme: al<caret>pha\nSay hello\n-->"))
+    }
+
     fun testNothingOnABlankValue() {
         assertEmpty(targets("---\nmarp: true\ntheme: <caret>\n---\n"))
     }

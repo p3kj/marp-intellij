@@ -31,7 +31,7 @@ avoids internal, deprecated and experimental APIs.
 | `cz.p3kj.marp.MarpDetector` | front-matter `marp: true` detection, and where the front matter starts and ends |
 | `cz.p3kj.marp.slides` | slide model: Markdown PSI -> blocks (`MarpSlideParser`), Marp's split rules (`MarpSlideSplitter`, `MarpHeadingDivider`), `MarpDeck` / `MarpSlide` |
 | `cz.p3kj.marp.structure` | slide outline for the Structure tool window and the File Structure popup |
-| `cz.p3kj.marp.directives` | directives in comments and the front matter: catalog of the Marp directives, comment and front matter parser, highlighting and color page (comments), completion, documentation, inspection |
+| `cz.p3kj.marp.directives` | directives in comments and the front matter: catalog of the Marp directives, comment and front matter parser, highlighting and color page (comments), completion, documentation, theme navigation, inspection |
 | `cz.p3kj.marp.editor` | file editor provider, split editor, preview file editor, preview toolbar actions (group `Marp.PreviewToolbar`) |
 | `cz.p3kj.marp.preview` | JCEF panel, JS bridge, resource request handler |
 | `cz.p3kj.marp.sync` | editor <-> preview scroll sync, caret -> active slide |
@@ -327,6 +327,17 @@ The front matter is covered in the "Front matter" bullet at the end of this sect
   - Not used: `DaemonCodeAnalyzer.restart()` and `restart(PsiFile)` (deprecated),
     `FileChooserDescriptorFactory.createSingleFileOrFolderDescriptor*` (obsolete), `FileEditorManager.openFile` overloads
     (experimental flags, `OpenFileDescriptor` instead).
+- Theme navigation (#8): `MarpThemeGotoDeclarationHandler` (`GotoDeclarationHandler`, `DumbAware`) opens the CSS file of a
+  custom theme from the value of `theme:` (front matter and comments, not `_theme`). It is a handler rather than a
+  reference because the platform asks handlers first, before references, about the injected YAML and then about the host
+  file, so one handler that maps (file, offset) with `MarpDirectiveComments.entriesAt` covers the front matter with and
+  without the YAML plugin and the comments, and needs no reference on injected leaves. `entriesAt` only returns what Marp
+  reads as directives (a YAML mapping, no magic comment), like the highlighting. The handler reads only
+  `MarpThemeService.cachedThemeFile()` (cached set, never loads, `null` while nothing is cached, for URL themes and for
+  built-in names; a custom theme wins over a built-in one and the last file that declares a name wins, like the preview).
+  The target is the `@theme` comment token of the CSS PSI, or the whole file without the CSS plugin. Ctrl+hover underlines
+  the leaf under the mouse: the name in the front matter, the whole comment text in a comment. Not used: references,
+  `GotoDeclarationOrUsageHandler2` and `CtrlMouseData` (internal).
 - Front matter (#6) reuses the code above on the front matter TEXT, not on a schema and not on the front matter PSI:
   - Located by `MarpDetector.findFrontMatter` (the rule that decides whether the file is a deck, and that the slide model
     uses; `FrontMatter.bodyStart` is the offset in the original text, byte order mark included), then read by
@@ -341,7 +352,7 @@ The front matter is covered in the "Front matter" bullet at the end of this sect
     YAML for the Marpit directives only. `size` and `math` are plain YAML in the front matter too (marp-core's custom
     directive lists are empty at runtime, so the loose set is Marpit's built-ins), so `math: katex # c` is KaTeX.
   - YAML injection: with the YAML plugin (bundled in IntelliJ IDEA) the Markdown plugin parses `FRONT_MATTER_HEADER` and
-    injects YAML into it. Completion, completion confidence and documentation are then called with the injected YAML
+    injects YAML into it. Completion, completion confidence, documentation and go to declaration are then called with the injected YAML
     file and injected offsets (hover asks the injected file first, then the host), and without the YAML plugin the caret is
     in Markdown PSI. Every entry point therefore maps (file, offset) to the Markdown file with
     `InjectedLanguageManager` (`MarpFrontMatter.hostOf`, the identity for a host file) and then works on the text. Tests load
