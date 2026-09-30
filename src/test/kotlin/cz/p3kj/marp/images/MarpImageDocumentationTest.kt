@@ -86,7 +86,7 @@ class MarpImageDocumentationTest : MarpLightTestCase() {
 
     fun testHints() {
         assertEquals("bg: background", MarpImageDocs.hint(MarpImageKeywordCatalog.BG))
-        assertEquals("w:: size", MarpImageDocs.hint(MarpImageKeywordCatalog.resolve("w")!!))
+        assertEquals("w: size", MarpImageDocs.hint(MarpImageKeywordCatalog.resolve("w")!!))
         assertEquals("N%: background", MarpImageDocs.hint(MarpImageKeywordCatalog.PERCENTAGE))
     }
 

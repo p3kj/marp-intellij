@@ -6,6 +6,7 @@ import cz.p3kj.marp.MarpLightTestCase
 class MarpImageCompletionTest : MarpLightTestCase() {
 
     private val deck = "---\nmarp: true\n---\n\n"
+    private val keywordStrings = MarpImageKeywordCatalog.ALL.map { it.lookupString }.toSet()
 
     /** The lookup strings after basic completion at `<caret>`, or `null` when completion inserted the only item. */
     private fun complete(text: String): List<String>? {
@@ -45,10 +46,17 @@ class MarpImageCompletionTest : MarpLightTestCase() {
     }
 
     fun testBgMayComeAfterTheWordBeingCompleted() {
-        // The platform matches inside words too (le is in grayscale), the keyword that starts with it ranks first.
-        val items = complete("$deck![le<caret> bg](x.png)")!!
-        assertEquals("left", items.first())
-        assertContainsElements(items, "grayscale")
+        // Only keywords that start with the prefix are offered (le is inside grayscale, which stays out).
+        assertNull(complete("$deck![le<caret> bg](x.png)"))
+        myFixture.checkResult("$deck![left<caret> bg](x.png)")
+    }
+
+    fun testOffersOnlyKeywordsThatStartWithThePrefix() {
+        val items = complete("$deck![bg co<caret>](x.png)")!!
+        assertEquals(listOf("contain", "cover", "contrast"), items)
+        // The first letter of a description matches inside drop-shadow and opacity, but starts no keyword.
+        assertEmpty(complete("$deck![p<caret>").orEmpty().filter { it in keywordStrings })
+        assertEmpty(complete("$deck![B<caret>").orEmpty().filter { it in keywordStrings })
     }
 
     fun testInsertsAKeywordWithoutAValue() {
@@ -63,8 +71,7 @@ class MarpImageCompletionTest : MarpLightTestCase() {
 
     fun testInsertsASizeKeywordWithAColon() {
         val items = complete("$deck![w<caret>](x.png)")!!
-        // The platform matches inside words too (w ends drop-shadow), the keywords that start with it rank first.
-        assertEquals(listOf("w:", "width:"), items.take(2))
+        assertEquals(listOf("w:", "width:"), items)
         myFixture.finishLookup(Lookup.NORMAL_SELECT_CHAR)
         myFixture.checkResult("$deck![w:<caret>](x.png)")
     }
@@ -73,6 +80,24 @@ class MarpImageCompletionTest : MarpLightTestCase() {
         val items = complete("$deck![bg left blur:5px <caret>](x.png)")!!
         assertDoesntContain(items, "bg", "left", "blur")
         assertContainsElements(items, "right", "cover", "brightness", "w:")
+    }
+
+    fun testWidthAndHeightAreAliases() {
+        val width = complete("$deck![w:400 <caret>](x.png)")!!
+        assertDoesntContain(width, "w:", "width:")
+        assertContainsElements(width, "h:", "height:")
+        val height = complete("$deck![bg height:300 <caret>](x.png)")!!
+        assertDoesntContain(height, "h:", "height:")
+        assertContainsElements(height, "w:", "width:", "left")
+        val short = complete("$deck![h:1 wid<caret>](x.png)")
+        assertNull(short)
+        myFixture.checkResult("$deck![h:1 width:<caret>](x.png)")
+    }
+
+    fun testOtherKeywordsAreNotAliases() {
+        val items = complete("$deck![bg left <caret>](x.png)")!!
+        assertDoesntContain(items, "left")
+        assertContainsElements(items, "right")
     }
 
     fun testCompletesInTheMiddleOfAWord() {

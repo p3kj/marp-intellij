@@ -68,6 +68,13 @@ object MarpImageKeywordCatalog {
     val PERCENTAGE: MarpImageKeyword =
         MarpImageKeyword("N%", MarpImageKeywordKind.FLAG, backgroundOnly = true, docKey = "image.doc.percent")
 
+    /** The name of the setting a [keyword] changes: `w` and `width` are the same setting, and so are `h` and `height`. */
+    fun effectOf(keyword: MarpImageKeyword): String = when (keyword.name) {
+        "width" -> "w"
+        "height" -> "h"
+        else -> keyword.name
+    }
+
     /** The keyword a [word] of the alt text stands for (`left:40%` and `w:400` included), `null` for any other word. */
     fun resolve(word: String): MarpImageKeyword? {
         if (PERCENT_WORD.matches(word)) return PERCENTAGE

@@ -104,6 +104,12 @@ class MarpImageSyntaxTest {
     }
 
     @Test
+    fun anEscapedImageStartIsNotAnImage() {
+        assertNull(spot("\\![b|"))
+        assertNull(spot("text \\![bg le|"))
+    }
+
+    @Test
     fun aBracketInTheAltTextEndsIt() {
         assertNull(spot("![a [b] c|]"))
         assertNull(spot("![a [b c|]"))

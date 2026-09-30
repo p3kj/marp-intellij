@@ -17,8 +17,9 @@ import com.intellij.util.ThreeState
  * Completes the Marp keywords in the alt text of an image in a Marp deck: `![b` offers `bg` and the filters that start
  * with a `b`, `![bg le` offers `left`. The keywords that only act on backgrounds (`left`, `cover`, ...) are offered when
  * the alt text has the word `bg`, and `bg` is offered when it does not. A keyword the alt text already has is left
- * out. Values are not completed: `w:` ends in the colon, and a filter or `left` is inserted bare, Marp then uses its
- * default (`blur` is `blur:10px`).
+ * out (`w:400` also hides `width:`, they are the same setting). Only keywords that start with what is typed are
+ * offered. Values are not completed: `w:` ends in the colon, and a filter or `left` is inserted bare, Marp then uses
+ * its default (`blur` is `blur:10px`).
  *
  * Like the directive completion (see [cz.p3kj.marp.directives.MarpDirectiveCompletionContributor]) this is registered
  * for every language, because with the XML module the IDE parses a Markdown file a second time as HTML. The alt text is
@@ -33,9 +34,12 @@ class MarpImageCompletionContributor : CompletionContributor(), DumbAware {
         val spot = MarpImageSyntax.spotAt(parameters.originalFile, parameters.offset) ?: return
         val prefixed = result.withPrefixMatcher(spot.prefix)
         val background = MarpImageSyntax.hasBackground(spot)
-        val taken = spot.otherWords.mapNotNull { MarpImageKeywordCatalog.resolve(it) }.toSet()
+        val taken = spot.otherWords.mapNotNull { MarpImageKeywordCatalog.resolve(it) }.map { MarpImageKeywordCatalog.effectOf(it) }.toSet()
+        // Only keywords that start with the prefix, case-sensitive: the platform matcher would also match inside
+        // words (`p` in drop-shadow), which makes the popup flash on the first letter of a description.
         val keywords = MarpImageKeywordCatalog.ALL.filter { keyword ->
-            keyword !in taken && (if (background) keyword != MarpImageKeywordCatalog.BG else !keyword.backgroundOnly)
+            keyword.lookupString.startsWith(spot.prefix) && MarpImageKeywordCatalog.effectOf(keyword) !in taken &&
+                (if (background) keyword != MarpImageKeywordCatalog.BG else !keyword.backgroundOnly)
         }
         keywords.forEachIndexed { index, keyword ->
             val element = LookupElementBuilder.create(keyword.lookupString)

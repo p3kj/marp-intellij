@@ -36,7 +36,7 @@ object MarpImageSyntax {
      * The alt text around [caret] in [text], `null` when the caret is not between `![` and the closing `]` on its line.
      * From the caret the line is scanned back: a `]` or a `[` without a `!` before it means the caret is elsewhere (in a
      * link, in the URL, after the image). The alt text ends at the first `]` or the end of the line behind the caret.
-     * Escaped brackets and alt text over several lines are not handled.
+     * An escaped `\![` is not an image. Other escaped brackets and alt text over several lines are not handled.
      */
     fun altSpot(text: CharSequence, caret: Int): MarpImageAltSpot? {
         if (caret < 0 || caret > text.length) return null
@@ -46,7 +46,7 @@ object MarpImageSyntax {
             val c = text[i]
             if (c == '\n' || c == '\r' || c == ']') return null
             if (c == '[') {
-                if (i > 0 && text[i - 1] == '!') altStart = i + 1
+                if (i > 0 && text[i - 1] == '!' && (i < 2 || text[i - 2] != '\\')) altStart = i + 1
                 break
             }
             i--

@@ -476,15 +476,18 @@ to Marp decks (`MarpDirectiveComments.isMarpDeck`), all `DumbAware`.
   (`image.doc.<name>`).
 - `MarpImageSyntax.altSpot(text, caret)` is pure and works on the text of the line, not on PSI: while `![b` is typed the
   Markdown tree has no image element (just `!`, `[` and text), and `![b]` alone may parse as a reference link. From the
-  caret it scans back to a `[` preceded by `!` and stops with `null` at a line break, a `]` or a `[` without `!`. The alt
-  text ends at the first `]` or the line end. Escaped brackets and alt text over several lines are not handled.
+  caret it scans back to a `[` preceded by `!` (not by `\!`) and stops with `null` at a line break, a `]` or a `[`
+  without `!`. The alt text ends at the first `]` or the line end. Other escaped brackets and alt text over several
+  lines are not handled.
 - `spotAt(file, offset)` adds the file checks: `MarpFrontMatter.hostOf` for injected files, deck detection, the front
   matter (`MarpDetector.findFrontMatter`, reject before its `endOffset`), and a walk up from the `[` in the Markdown tree
   of the file (`node.findLeafElementAt`, not `PsiFile.findElementAt`, see the directive section) that rejects
   `CODE_FENCE`, `CODE_BLOCK`, `CODE_SPAN`, `HTML_BLOCK` and `HTML_TAG`.
 - Completion is a `CompletionContributor` and a `CompletionConfidence` for `language="any"`, like the directive ones. It
-  offers the keywords for the word before the caret, without `bg` when the alt text has it and only the ones without
-  `backgroundOnly` when it does not, minus the keywords already present. Priority follows the catalog order. There is no
+  offers the keywords whose lookup string starts with the word before the caret (case-sensitive: the platform matcher
+  also matches inside words, so `![p` would offer drop-shadow and opacity), without `bg` when the alt text has it and
+  only the ones without `backgroundOnly` when it does not, minus the keywords already present (`w` and `width`, `h` and
+  `height` count as the same, `MarpImageKeywordCatalog.effectOf`). Priority follows the catalog order. There is no
   insert handler: the lookup string of `w`/`h`/`width`/`height` ends in `:`, the others are bare. Percentages are
   documented but not offered. The contributor calls `stopHere()` only when the alt text holds nothing but keywords
   (`optionsLikely`), so Ctrl+Space in a description still gets the other completions.
@@ -495,7 +498,7 @@ to Marp decks (`MarpDirectiveComments.isMarpDeck`), all `DumbAware`.
   (the offset at the end of the word counts) and reuses `MarpDirectiveDocs`' section table (`docSection`).
 - The `MARP_DECK` live template context is false inside alt text (`MarpTemplateContextType`), otherwise the `bg` template
   would expand on Tab in `![bg`.
-- Out of scope: inspections for unknown keywords or bad values, completion of values, the colour image `![bg](red)`.
+- Out of scope: inspections for unknown keywords or bad values, completion of values, the color image `![bg](red)`.
 
 ## Threading and lifecycle rules
 
@@ -534,8 +537,9 @@ to Marp decks (`MarpDirectiveComments.isMarpDeck`), all `DumbAware`.
   routing), `MarpResourcePaths`, `MarpJcefStartup`, the `.marprc` parser, `MarpThemePaths`, `MarpThemeFolder`,
   `MarpThemeWatch`, `MarpThemeNames` and the theme URL validation of the settings page. The directive features have plain
   unit tests for the catalog and the comment parser, and light platform tests for highlighting, completion (including
-  the automatic popup with `CompletionAutoPopupTester`), documentation and the inspection. The image syntax has a plain unit test for the catalog and the alt text finder and
-  light platform tests for completion, the automatic popup and documentation.
+  the automatic popup with `CompletionAutoPopupTester`), documentation and the inspection. The image syntax has a
+  plain unit test for the catalog and the alt text finder and light platform tests for completion, the automatic popup
+  and documentation.
 - Webview (`webview/test`, vitest with jsdom): the host bridge and message queue, marp-core plugins and render options,
   scroll sync, active slide, link and click handling, the unknown-theme warning and the string table.
 - `./gradlew check` runs all of them plus `tsc --noEmit` and the NOTICE freshness check. `verifyPlugin` covers binary

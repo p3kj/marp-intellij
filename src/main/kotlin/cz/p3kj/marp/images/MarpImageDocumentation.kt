@@ -57,7 +57,7 @@ object MarpImageDocs {
     )
 
     /** A short line for the hint: the keyword and what it does. */
-    fun hint(keyword: MarpImageKeyword): String = MarpBundle.message("image.doc.hint", keyword.lookupString, typeText(keyword))
+    fun hint(keyword: MarpImageKeyword): String = MarpBundle.message("image.doc.hint", keyword.name, typeText(keyword))
 
     /** The documentation popup: the keyword, the description, then the default and who defines it. */
     fun html(keyword: MarpImageKeyword): String = buildString {
