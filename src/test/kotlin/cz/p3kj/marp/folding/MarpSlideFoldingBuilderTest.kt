@@ -30,8 +30,12 @@ class MarpSlideFoldingBuilderTest : MarpLightTestCase() {
         var previousEnd = 0
         return descriptors.map {
             val range = it.range
-            // The region starts at the line break of the visible first line and ends on the last visible character.
-            assertEquals("\n", document.getText(range).take(1))
+            // The region starts at the line break of the visible first line (front matter, `---`) or, for a slide that
+            // headingDivider started, at its heading, and ends on the last visible character.
+            val startLine = document.getLineNumber(range.startOffset)
+            val atLineBreak = range.startOffset == document.getLineEndOffset(startLine)
+            val atHeading = range.startOffset == document.getLineStartOffset(startLine) && document.getText(range).startsWith("#")
+            assertTrue("region starts at a line break or a heading", atLineBreak || atHeading)
             assertFalse(document.getText(range).last().isWhitespace())
             assertTrue("regions are ascending and do not overlap", range.startOffset >= previousEnd)
             previousEnd = range.endOffset
@@ -91,7 +95,7 @@ class MarpSlideFoldingBuilderTest : MarpLightTestCase() {
 
     fun testASlideStartedByAHeadingOnlyHasNoRegion() {
         val regions = regionsOf("---\nmarp: true\nheadingDivider: 2\n---\n\nintro\n\n## B\n\n## C\n\ntext")
-        assertEquals(listOf(Region(3, 5, "Slide 1"), Region(9, 11, "Slide 3")), regions)
+        assertEquals(listOf(Region(3, 5, "Slide 1"), Region(9, 11, "Slide 3: C")), regions)
     }
 
     fun testADeckWithNothingAfterTheFrontMatterHasNoRegion() {
@@ -99,7 +103,7 @@ class MarpSlideFoldingBuilderTest : MarpLightTestCase() {
         assertEquals(emptyList<Region>(), regionsOf("---\nmarp: true\n---"))
     }
 
-    fun testSlidesStartedByHeadingDividerFoldFromTheHeadingLine() {
+    fun testSlidesStartedByHeadingDividerFoldFromTheHeading() {
         val regions = regionsOf(
             """
             ---
@@ -120,8 +124,12 @@ class MarpSlideFoldingBuilderTest : MarpLightTestCase() {
             more
             """.trimIndent(),
         )
-        // The heading that starts a slide is the visible first line, so it is not repeated in the placeholder.
-        assertEquals(listOf(Region(3, 7, "Slide 1: A"), Region(9, 11, "Slide 2"), Region(13, 15, "Slide 3")), regions)
+        // The region of a slide that a heading started covers the heading and the placeholder shows its text.
+        assertEquals(listOf(Region(3, 7, "Slide 1: A"), Region(9, 11, "Slide 2: B"), Region(13, 15, "Slide 3: C")), regions)
+        val document = myFixture.editor.document
+        assertEquals("## B\n\ntext", document.getText(runReadActionBlocking {
+            builder.buildFoldRegions(myFixture.file, document, false)[1].range
+        }))
     }
 
     fun testASlideWithoutHeadingIsNumberedAndALateHeadingIsItsTitle() {
@@ -223,6 +231,10 @@ class MarpSlideFoldingBuilderTest : MarpLightTestCase() {
 
             Intro
 
+            ```
+            code
+            ```
+
             ---
 
             ## A
@@ -247,9 +259,9 @@ class MarpSlideFoldingBuilderTest : MarpLightTestCase() {
         val slides = regions.filter { it.placeholderText.startsWith("Slide ") }
         assertEquals(
             listOf(
-                Region(2, 6, "Slide 1: Title"),
-                Region(8, 16, "Slide 2: A"),
-                Region(18, 22, "Slide 3: B"),
+                Region(2, 10, "Slide 1: Title"),
+                Region(12, 20, "Slide 2: A"),
+                Region(22, 26, "Slide 3: B"),
             ),
             slides.map { Region(document.getLineNumber(it.startOffset), document.getLineNumber(it.endOffset), it.placeholderText) },
         )
@@ -258,5 +270,58 @@ class MarpSlideFoldingBuilderTest : MarpLightTestCase() {
         val frontMatter = regions.filter { it.startOffset == 0 }
         assertEquals(1, frontMatter.size)
         assertTrue(frontMatter.single().endOffset <= slides.first().startOffset)
+        // Regions of the Markdown plugin that stay inside a slide survive next to the slide regions: the code fence here.
+        val fence = regions.filter { !it.placeholderText.startsWith("Slide ") && document.getLineNumber(it.startOffset) == 8 }.single()
+        assertEquals(10, document.getLineNumber(fence.endOffset))
+        assertTrue(fence.startOffset >= slides.first().startOffset && fence.endOffset <= slides.first().endOffset)
+    }
+
+    /**
+     * The region of a slide that a heading started has the range of the Markdown plugin's region for that heading, so the
+     * composite keeps ours (it comes first) and the line has one fold marker. The regions inside the slide stay.
+     */
+    fun testSlideStartedByAHeadingHasOneRegionOnItsHeadingLine() {
+        myFixture.configureByText(
+            "deck.md",
+            """
+            ---
+            marp: true
+            headingDivider: 2
+            ---
+
+            # A
+
+            intro
+
+            ## B
+
+            - one
+            - two
+
+            ### Sub
+
+            text
+
+            ## C
+
+            more
+
+            ## D
+            """.trimIndent(),
+        )
+        val editor = myFixture.editor
+        EditorTestUtil.buildInitialFoldingsInBackground(editor)
+        val document = editor.document
+        val regions = editor.foldingModel.allFoldRegions
+        fun line(offset: Int) = document.getLineNumber(offset)
+        val slides = regions.filter { it.placeholderText.startsWith("Slide ") }
+        assertEquals(
+            listOf(Region(3, 7, "Slide 1: A"), Region(9, 16, "Slide 2: B"), Region(18, 20, "Slide 3: C")),
+            slides.map { Region(line(it.startOffset), line(it.endOffset), it.placeholderText) },
+        )
+        assertEquals("only ours starts on the heading line", 1, regions.count { line(it.startOffset) == 9 })
+        assertEquals("the heading text is part of the folded range", "## B", document.text.substring(slides[1].startOffset, slides[1].startOffset + 4))
+        assertTrue("the list inside the slide keeps its region", regions.any { line(it.startOffset) == 11 && line(it.endOffset) == 12 })
+        assertTrue("the ### heading inside the slide keeps its region", regions.any { line(it.startOffset) == 14 && line(it.endOffset) == 16 })
     }
 }

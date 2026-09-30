@@ -305,14 +305,19 @@ Markdown, `DumbAware`) that returns one region per slide of a Marp deck and noth
 (`MarpDirectiveComments.isMarpDeck`). The slides come from `MarpSlideParser.deck`, so they are the ones of the preview,
 `headingDivider` included. No settings, regions are never collapsed by default.
 
-- `folds(deck, document)` (pure, tested) maps a slide to a region. The visible first line of a slide is the closing
-  front matter line (slide 1), the `---` line, or the heading line of a `headingDivider` slide (`bodyOffset - 1` for the
-  first two, `startOffset` for the last). The region starts at the end of that line and ends after the last non-blank
-  character of the slide, so trailing blank lines stay outside and the region never reaches the next `---` or heading.
-  A slide with nothing after its first line gets no region.
+- `folds(deck, document)` (pure, tested) maps a slide to a region. A slide started by the front matter or a `---` line
+  (`bodyOffset > startOffset`) gets a region that starts at the end of that line (`bodyOffset - 1`), so the marker sits
+  on the visible line and it reads `---[Slide 3: Agenda]`. A slide that `headingDivider` started (`bodyOffset ==
+  startOffset`) begins with its heading, so its region starts at the heading (`startOffset`) and the placeholder
+  replaces it (`[Slide 4: B]`). That is the range of the Markdown plugin's heading region, so the composite keeps ours
+  and drops Markdown's duplicate: one marker on the line, and Collapse All shows our placeholder. The region ends after
+  the last non-blank character of the slide, so trailing blank lines stay outside and it never reaches the next `---`
+  or heading. A region has to span more than one line, so a slide with nothing after its first line (a lone divider
+  heading, a `---` followed by blanks or the end of the file) has none. A slide with a single line of content folds
+  that line.
 - The placeholder is `Slide 3: Agenda` (`folding.slide.titled`) or `Slide 3` (`folding.slide.untitled`), so a collapsed
-  slide reads `---[Slide 3: Agenda]`. The title is the first heading of the slide unless that heading is the visible
-  first line, and is shortened to 60 characters. The number is passed as a string so that 1000 is not "1,000".
+  slide reads `---[Slide 3: Agenda]`. The title is the first heading inside the region (the divider heading of a
+  `headingDivider` slide counts) and is shortened to 60 characters. The number is passed as a string so that 1000 is not "1,000".
   Descriptors carry their own placeholder text, `getPlaceholderText(ASTNode)` is not used.
 - Descriptors hang on the file node (like the Markdown plugin's TOC regions), so the fold state is not restored for
   slides after the file is closed and reopened.
