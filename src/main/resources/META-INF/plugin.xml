@@ -41,6 +41,11 @@
         <editorNotificationProvider implementation="cz.p3kj.marp.notifications.MarpEditorNotificationProvider"/>
         <editorFactoryDocumentListener implementation="cz.p3kj.marp.notifications.MarpNotificationDocumentListener"/>
 
+        <!-- Slide navigation: "Slide 3 / 12" in the status bar, shown only while a Marp deck is in the editor -->
+        <statusBarWidgetFactory id="Marp.SlidePosition"
+                                implementation="cz.p3kj.marp.navigation.MarpSlideWidgetFactory"
+                                order="before Position"/>
+
         <!-- Settings and themes -->
         <projectConfigurable
                 parentId="tools"
