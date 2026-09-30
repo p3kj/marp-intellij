@@ -87,9 +87,11 @@ object MarpCliArgs {
     private const val MAX_LINES = 15
     private const val MAX_CHARS = 1500
 
+    private fun lines(text: String): List<String> = ANSI.replace(text, "").lines().map { it.trimEnd() }.filter { it.isNotBlank() }
+
     /** The end of the CLI output for a notification: no colors, no blank lines, the last [MAX_LINES] lines, [MAX_CHARS] characters at most. */
-    fun outputTail(text: String): String {
-        val lines = ANSI.replace(text, "").lines().map { it.trimEnd() }.filter { it.isNotBlank() }
-        return lines.takeLast(MAX_LINES).joinToString("\n").takeLast(MAX_CHARS).trim()
-    }
+    fun outputTail(text: String): String = lines(text).takeLast(MAX_LINES).joinToString("\n").takeLast(MAX_CHARS).trim()
+
+    /** The first line of [text] that has anything on it, without colors; `null` when there is none. */
+    fun firstLine(text: String): String? = lines(text).firstOrNull()?.trim()
 }

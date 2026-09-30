@@ -23,10 +23,16 @@ class MarpAppSettings : SimplePersistentStateComponent<MarpAppSettings.AppState>
 
         /** The preview shows each slide's presenter notes (HTML comments that are not directives) under it. */
         var presenterNotes by property(false)
+
+        /** The Marp CLI executable used for the PPTX and image export, `null` (or blank) for `marp` on the PATH. */
+        var marpCliPath by string()
     }
 
     val scrollSync: Boolean get() = state.scrollSync
     val presenterNotes: Boolean get() = state.presenterNotes
+
+    /** The configured Marp CLI path, empty when it is not set. */
+    val marpCliPath: String get() = state.marpCliPath.orEmpty()
 
     /** Changes the settings and, when anything actually changed, notifies [MarpAppSettingsListener.TOPIC] subscribers. */
     fun update(block: AppState.() -> Unit) {

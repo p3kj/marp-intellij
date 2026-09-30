@@ -12,28 +12,41 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.openapi.ui.InputValidatorEx
 import com.intellij.openapi.ui.Messages
+import com.intellij.openapi.ui.TextFieldWithBrowseButton
 import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.platform.ide.progress.runWithModalProgressBlocking
 import com.intellij.ui.CollectionListModel
+import com.intellij.ui.DocumentAdapter
 import com.intellij.ui.DoubleClickListener
 import com.intellij.ui.ToolbarDecorator
+import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBList
 import com.intellij.ui.dsl.builder.Align
+import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.MAX_LINE_LENGTH_WORD_WRAP
+import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindSelected
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.ui.dsl.listCellRenderer.textListCellRenderer
 import cz.p3kj.marp.MarpBundle
+import cz.p3kj.marp.export.MarpCliLocation
+import cz.p3kj.marp.export.MarpCliLocator
+import cz.p3kj.marp.export.marpCliVersion
 import cz.p3kj.marp.themes.MarpThemePaths
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.awt.event.MouseEvent
 import java.net.URI
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import javax.swing.ListSelectionModel
+import javax.swing.event.DocumentEvent
 
 /**
- * Settings | Tools | Marp. Themes, `.marprc`, HTML and math are project settings ([MarpSettings]); presenter notes and
- * scroll sync are IDE-wide preferences ([MarpAppSettings]).
+ * Settings | Tools | Marp. Themes, `.marprc`, HTML and math are project settings ([MarpSettings]); presenter notes,
+ * scroll sync and the Marp CLI path are IDE-wide preferences ([MarpAppSettings]). The CLI path stays out of the project
+ * settings on purpose: a path in a cloned repository's `.idea/marp.xml` would let the repository pick what runs.
  */
 class MarpConfigurable(private val project: Project) : BoundConfigurable(MarpBundle.message("settings.displayName")) {
 
@@ -42,11 +55,16 @@ class MarpConfigurable(private val project: Project) : BoundConfigurable(MarpBun
 
     /** The theme entries being edited; internal for tests. */
     internal val themeEntries = CollectionListModel<String>()
+
+    /** The Marp CLI path field while the page exists; internal for tests. */
+    internal var cliPathField: TextFieldWithBrowseButton? = null
+        private set
     private var useMarprcThemeSet = true
     private var html = MarpHtmlMode.DEFAULT
     private var math = MarpMathMode.MATHJAX
     private var scrollSync = true
     private var presenterNotes = false
+    private var marpCliPath = ""
 
     private val projectDir: Path? get() = project.basePath?.let { Path.of(it) }
 
@@ -70,6 +88,21 @@ class MarpConfigurable(private val project: Project) : BoundConfigurable(MarpBun
                 return true
             }
         }.installOn(list)
+
+        val cliField = TextFieldWithBrowseButton().apply {
+            addBrowseFolderListener(
+                project,
+                FileChooserDescriptorFactory.singleFile().withTitle(MarpBundle.message("settings.marpCli.browse.title")),
+            )
+        }
+        cliPathField = cliField
+        val cliResult = JBLabel()
+        // A result belongs to the path it was made for.
+        cliField.textField.document.addDocumentListener(object : DocumentAdapter() {
+            override fun textChanged(e: DocumentEvent) {
+                cliResult.text = ""
+            }
+        })
 
         // Comments wrap at the width of the page instead of widening it (the default is a fixed line length).
         return panel {
@@ -107,7 +140,29 @@ class MarpConfigurable(private val project: Project) : BoundConfigurable(MarpBun
                         .comment(MarpBundle.message("settings.scrollSync.comment"))
                 }
             }
+            group(MarpBundle.message("settings.marpCli.group")) {
+                row(MarpBundle.message("settings.marpCli.path")) {
+                    cell(cliField).bindText(::marpCliPath).align(AlignX.FILL).resizableColumn()
+                    button(MarpBundle.message("settings.marpCli.test")) { cliResult.text = testCli(cliField.text) }
+                }.rowComment(MarpBundle.message("settings.marpCli.comment"), MAX_LINE_LENGTH_WORD_WRAP)
+                row { cell(cliResult) }
+            }
         }
+    }
+
+    /** EDT. Looks for the CLI the way an export does and asks it for its version, under a modal progress. Returns what to show. */
+    private fun testCli(configured: String): String =
+        runWithModalProgressBlocking(project, MarpBundle.message("settings.marpCli.test.progress")) {
+            when (val location = withContext(Dispatchers.IO) { MarpCliLocator.locate(configured) }) {
+                is MarpCliLocation.Missing -> MarpBundle.message("settings.marpCli.test.notFound")
+                is MarpCliLocation.Found -> marpCliVersion(location.executable)?.let { MarpBundle.message("settings.marpCli.test.found", it) }
+                    ?: MarpBundle.message("settings.marpCli.test.failed", location.executable.toString())
+            }
+        }
+
+    override fun disposeUIResources() {
+        super.disposeUIResources()
+        cliPathField = null
     }
 
     override fun isModified(): Boolean =
@@ -131,6 +186,7 @@ class MarpConfigurable(private val project: Project) : BoundConfigurable(MarpBun
         appSettings.update {
             scrollSync = this@MarpConfigurable.scrollSync
             presenterNotes = this@MarpConfigurable.presenterNotes
+            marpCliPath = this@MarpConfigurable.marpCliPath.trim().ifEmpty { null }
         }
     }
 
@@ -142,6 +198,7 @@ class MarpConfigurable(private val project: Project) : BoundConfigurable(MarpBun
         math = s.math
         scrollSync = appSettings.scrollSync
         presenterNotes = appSettings.presenterNotes
+        marpCliPath = appSettings.marpCliPath
     }
 
     private fun htmlLabel(mode: MarpHtmlMode): String = when (mode) {

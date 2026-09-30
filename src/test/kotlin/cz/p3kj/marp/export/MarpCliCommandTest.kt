@@ -6,6 +6,7 @@ import cz.p3kj.marp.settings.MarpHtmlMode
 import cz.p3kj.marp.settings.MarpMathMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -123,6 +124,12 @@ class MarpCliCommandTest {
     fun outputTailOfNothingIsEmpty() {
         assertEquals("", MarpCliArgs.outputTail(""))
         assertEquals("", MarpCliArgs.outputTail("\n \n\u001B[0m\n"))
+    }
+
+    @Test
+    fun firstLineSkipsBlankLinesAndColors() {
+        assertEquals("@marp-team/marp-cli v4.2.3", MarpCliArgs.firstLine("\n \u001B[1m@marp-team/marp-cli v4.2.3\u001B[0m  \nsecond"))
+        assertNull(MarpCliArgs.firstLine(" \n"))
     }
 
     // Locator: a fake PATH lookup and real files.

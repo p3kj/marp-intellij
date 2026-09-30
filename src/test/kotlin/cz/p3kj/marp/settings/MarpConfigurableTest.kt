@@ -21,6 +21,7 @@ class MarpConfigurableTest : MarpLightTestCase() {
         try {
             configurable.disposeUIResources()
             MarpSettings.getInstance(project).update { themes.clear() }
+            MarpAppSettings.getInstance().update { marpCliPath = null }
         } finally {
             super.tearDown()
         }
@@ -96,5 +97,43 @@ class MarpConfigurableTest : MarpLightTestCase() {
         } finally {
             appSettings.update { scrollSync = before }
         }
+    }
+
+    fun testMarpCliPathIsAnIdeSettingAndBlankIsStoredAsNothing() {
+        val field = configurable.cliPathField!!
+        assertEquals("", field.text)
+        assertFalse(configurable.isModified())
+
+        field.text = "  /opt/marp/bin/marp  "
+        assertTrue(configurable.isModified())
+        configurable.apply()
+        assertEquals("/opt/marp/bin/marp", MarpAppSettings.getInstance().marpCliPath)
+        assertFalse(configurable.isModified())
+
+        configurable.reset()
+        assertEquals("/opt/marp/bin/marp", field.text)
+
+        field.text = "   "
+        configurable.apply()
+        assertEquals("", MarpAppSettings.getInstance().marpCliPath)
+        assertNull(MarpAppSettings.getInstance().state.marpCliPath)
+    }
+
+    fun testResetDropsAnUnsavedMarpCliPath() {
+        MarpAppSettings.getInstance().update { marpCliPath = "/usr/bin/marp" }
+        configurable.reset()
+        val field = configurable.cliPathField!!
+        assertEquals("/usr/bin/marp", field.text)
+
+        field.text = "/elsewhere/marp"
+        assertTrue(configurable.isModified())
+        configurable.reset()
+        assertEquals("/usr/bin/marp", field.text)
+        assertFalse(configurable.isModified())
+    }
+
+    fun testMarpCliPathIsEmptyByDefault() {
+        assertNull(MarpAppSettings.AppState().marpCliPath)
+        assertEquals("", MarpAppSettings.getInstance().marpCliPath)
     }
 }
