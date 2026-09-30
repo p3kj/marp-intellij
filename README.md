@@ -79,6 +79,7 @@ For a bigger example open the `samples/` folder of this repository as a project.
 - The IDE spellchecker knows Marp words such as `marp`, Marpit and Twemoji, so `marp: true` is not flagged as a typo
 - Inline HTML in slides: off, Marp's allow list or all
 - Export a deck to a standalone HTML file or to a PDF with one page per slide (File | Export or the preview toolbar), without Node.js
+- Present a deck in the system browser, one slide at a time, starting at the slide under the caret, with keyboard navigation and full screen (Present Deck in the preview toolbar)
 - The preview follows the IDE light or dark theme
 - Locked-down preview page (Content Security Policy, no navigation away) and a restricted mode for untrusted projects
 - Works in every IntelliJ-based IDE, no IDE-specific APIs
@@ -96,7 +97,7 @@ A Markdown file is treated as a Marp deck when its front matter contains `marp: 
 - **Front matter**: the same completion, documentation and inspection work on the top-level keys of the front matter of a deck, which also offers `marp` and does not offer a key that is already there (a repeated key makes Marp ignore the whole front matter). The keys of the Markdown plugin's front matter schema, such as `title`, keep working next to the Marp keys. Keys that are not Marp directives (`title`, `author`, ...) are left alone by the inspection, unless one is a near miss of a directive (`pagiante`), which is a weak warning. Nested values and lists are left to the YAML support. Like everything else, this needs a deck: the file has to contain `marp: true` already.
 - **Image syntax**: in the alt text of an image in a deck (`![bg left:40% blur](photo.png)`), basic completion (Ctrl+Space) offers the keywords Marp reads there, and quick documentation (Ctrl+Q, F1 on macOS) and hovering explain the one under the caret, with the default Marp uses when you leave the argument out. Without `bg` in the alt text it offers `bg`, the sizes `w:`, `h:`, `width:`, `height:` and the filters (`blur`, `sepia`, ...). With `bg` it also offers `left`, `right`, `fit`, `contain`, `cover`, `auto`, `vertical` and `horizontal`, and leaves out `bg` and the keywords the alt text already has. Values are not completed: `w:` stops at the colon, and a filter or `left` is inserted bare, so Marp uses its default (`blur` is `blur:10px`). The popup opens by itself while you type, but only while every other word of the alt text is a keyword, so `![bg co` opens it and a description such as `![A photo of a cat]` does not. Ctrl+Space works in a description too. It is limited to Markdown text of a deck: code, HTML comments and the front matter are left alone, and so is an alt text that spans several lines. Inside the alt text the `bg` live template no longer expands on Tab, so typing `![bg` and pressing Tab does not turn it into a second image.
 - **Double-click** a slide to move the caret to its source line and focus the editor.
-- **Toolbar**: move the mouse over the editor or the preview and a small toolbar appears in the top-right corner. It toggles scroll sync and presenter notes, exports the deck (see [Export](#export)) and opens Settings | Tools | Marp. Turning scroll sync back on realigns the preview with the editor.
+- **Toolbar**: move the mouse over the editor or the preview and a small toolbar appears in the top-right corner. It toggles scroll sync and presenter notes, presents the deck (see [Present](#present)), exports the deck (see [Export](#export)) and opens Settings | Tools | Marp. Turning scroll sync back on realigns the preview with the editor.
 - **Links**: links to files inside the project open in the IDE. `http(s)` and `mailto` links open in the system browser. Everything else is ignored. The preview page itself never navigates away.
 - **Errors** (a theme that cannot be loaded, a render error, a `theme:` directive that names an unknown theme) show as a banner in the preview that you can dismiss.
 - **Theme CSS edits** are picked up while you type.
@@ -112,6 +113,16 @@ Export the deck that is open in the editor to HTML or PDF. Use File | Export | M
 - **PDF** has one page per slide, sized like the deck (16:9 by default, the `size` directive such as `size: 4:3` is followed), with backgrounds and local images, printed by the IDE's built-in browser. There is no outline and no presenter notes.
 - **Trust and HTML in slides**: the file contains what the preview renders. In an untrusted project raw HTML is off and custom themes are not loaded, so the export lacks them too. With HTML set to All in a trusted project, the deck's own HTML and scripts are in the exported HTML file, the same as `marp --html`. Only open exported decks you trust.
 - **PPTX and images** need Marp CLI (`marp deck.md --pptx`) and are not part of this plugin. Marp CLI is a fine second tool for anything the export does not cover.
+
+## Present
+
+Click Present Deck (the play button) in the preview toolbar, or run it from Find Action ("Present Deck", "Slideshow"). The deck opens in your system browser one slide at a time, starting at the slide the caret is in. It is not bound to a shortcut, assign one in Settings | Keymap if you want one. The action appears whenever the deck is open in the Marp editor (and the IDE has JCEF). If the preview page is not loaded yet, a notification asks you to show the preview and try again.
+
+- **Keys** in the browser: Right, Down, Page Down, Space and Enter go to the next slide, Left, Up, Page Up, Backspace and Shift+Space to the previous one, Home and End to the first and the last. F toggles full screen and Esc leaves it (the browser's own key). Links to another slide of the deck (`[back to the agenda](#2)`) work. Clicks do not change slides.
+- **A snapshot**: the page is the HTML export of the preview (see [Export](#export)) with a small script, so it shows the current text, including changes you have not saved, and the same themes, math library and HTML setting. It does not follow later edits: press Present Deck again to see them. Reloading the browser tab keeps the slide, because the slide number is in the address (`#3`).
+- **Files**: the page is written to a new file in the system's temporary folder (readable by you only, where the file system supports that) and deleted when the IDE exits. Relative images and theme `url()`s keep working because the page points at the deck's folder. That only works for a deck on the local file system.
+- **Trust and HTML in slides**: like the export. In an untrusted project raw HTML is off and custom themes are not loaded. With HTML set to All in a trusted project, the deck's own HTML and scripts run in the page, the same as `marp --html`.
+- **Not included**: presenter view, presenter notes, timer, remote control, slide counter and transitions. Use Marp CLI if you need them.
 
 ## Settings
 
@@ -166,6 +177,10 @@ If you used the Marp for VS Code extension:
 
 **Export to HTML or PDF is missing or does nothing.** The actions appear for a file that is open in the Marp editor: a Markdown file with `marp: true` (if you added it after opening the file, click the banner). They are hidden when the IDE has no JCEF, see the JCEF entry above. When a notification says the preview is not loaded yet, show the Split or Preview layout, wait for the slides and export again. An export fails with a message when the preview is closed or reloaded while it runs. An error in the deck (banner in the preview) can also stop an export: fix it and export again.
 
+**Present Deck opens a blank page, an error page or nothing.** The presentation is a file in the system's temporary folder, and a browser installed as a Snap or Flatpak package (Firefox on Ubuntu, for example) is sandboxed and cannot read it. Use a browser from a normal package or its tarball, set it as the default browser in your system, or use Export | Marp Deck to HTML next to the deck and open that file instead. When the notification says the preview is not loaded, show the Split or Preview layout, wait for the slides and try again. If the browser cannot be started at all, the IDE shows its own message.
+
+**Present Deck shows old text.** The page is a snapshot. Press Present Deck again, it opens a new tab with the current text.
+
 **Images are missing in the exported HTML.** The file keeps the image paths as written. Save it next to the deck (the dialog starts there), or keep the folder structure when you move it. A PDF has the images inside.
 
 **Images do not show.** Relative paths resolve from the Markdown file's folder. Only files inside the project (content roots or the deck's folder) are served. Remote images need https: plain http images are mixed content in Chromium and are upgraded or blocked.
@@ -190,6 +205,7 @@ If you used the Marp for VS Code extension:
 | Inline HTML modes off / default / all | yes | yes |
 | Restricted mode for untrusted projects | yes | yes |
 | Export to HTML and PDF | yes, no Node.js | yes |
+| Present in the browser | yes, one slide at a time, no presenter view | no, use the exported HTML file |
 | Export to PPTX and images | no, use Marp CLI | yes |
 | Directive completion and diagnostics | yes, in comments and the front matter | yes |
 | Toggle Marp feature command | not yet | yes |
@@ -205,6 +221,7 @@ The bundled Markdown plugin renders a document, not a deck. It has no notion of 
 - Twemoji images and KaTeX fonts are loaded from a CDN. Offline you lose emoji and KaTeX glyphs. MathJax works offline, so prefer it if you work without a network.
 - Export covers HTML and PDF only, and needs the preview to be loaded. PPTX and images are not supported, use Marp CLI for them. HTML files keep image paths as written and load Twemoji, KaTeX and web fonts from the network.
 - Speaker notes are not shown in the preview.
+- Present Deck shows a snapshot in the system browser with keyboard navigation and full screen. It has no presenter view, notes, timer or live reload, and a browser that is sandboxed (Snap, Flatpak) cannot open the temporary file.
 - JCEF is required. Without it the preview shows a message instead of the slides.
 - Remote Development (JetBrains Gateway thin client) is untested.
 

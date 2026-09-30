@@ -27,7 +27,7 @@ avoids internal, deprecated and experimental APIs.
 
 | Path | Owner / purpose |
 |---|---|
-| `webview/` | npm project: preview page, marp-core bundle (esbuild), vitest tests |
+| `webview/` | npm project: preview page, marp-core bundle (esbuild), vitest tests. `src/export-html.ts` is the standalone export document, `src/present.ts` the presentation CSS and the script that goes into it |
 | `cz.p3kj.marp.MarpDetector` | front-matter `marp: true` detection, and where the front matter starts and ends |
 | `cz.p3kj.marp.slides` | slide model: Markdown PSI -> blocks (`MarpSlideParser`), Marp's split rules (`MarpSlideSplitter`, `MarpHeadingDivider`), `MarpDeck` / `MarpSlide` |
 | `cz.p3kj.marp.structure` | slide outline for the Structure tool window and the File Structure popup |
@@ -36,8 +36,8 @@ avoids internal, deprecated and experimental APIs.
 | `cz.p3kj.marp.directives` | directives in comments and the front matter: catalog of the Marp directives, comment and front matter parser, highlighting and color page (comments), completion, documentation, theme navigation, inspection |
 | `cz.p3kj.marp.images` | image syntax in alt text: catalog of the Marp image keywords, alt text finder, completion (contributor and confidence), documentation |
 | `cz.p3kj.marp.editor` | file editor provider, split editor, preview file editor, preview toolbar actions (group `Marp.PreviewToolbar`) |
-| `cz.p3kj.marp.preview` | JCEF panel, JS bridge (state setters and export commands with their replies), resource request handler, PDF print settings |
-| `cz.p3kj.marp.export` | File \| Export \| Marp Deck to HTML / PDF, the toolbar popup, save dialog, progress and notifications |
+| `cz.p3kj.marp.preview` | JCEF panel, JS bridge (state setters and export commands with their replies), resource request handler, PDF print settings, `MarpPresentOptions` (the `present` argument of `exportHtml`) |
+| `cz.p3kj.marp.export` | File \| Export \| Marp Deck to HTML / PDF, the toolbar popup, save dialog, progress and notifications; Present Deck (`MarpPresentAction`, `MarpPresenter`, `MarpPresentFiles`) |
 | `cz.p3kj.marp.sync` | editor <-> preview scroll sync, caret -> active slide |
 | `cz.p3kj.marp.notifications` | "Marp deck detected, reopen with preview" banner |
 | `cz.p3kj.marp.settings` | project settings (`.idea/marp.xml`), settings page |
@@ -157,9 +157,10 @@ interface MarpBridge {
   /**
    * Renders the last `update` (markdown, options, current themes) with a separate export Marp instance and replies with
    * the complete standalone HTML document. `title` is used when the deck has no `title:` directive. Replies with an
-   * `error` when there was no update yet or marp-core threw.
+   * `error` when there was no update yet or marp-core threw. With `present` the document is a presentation instead (see
+   * Present): `baseHref` is emitted as `<base href>` (omitted: no base), `start` is the 0-based slide it starts at.
    */
-  exportHtml(arg: { id: number; title: string }): void
+  exportHtml(arg: { id: number; title: string; present?: { baseHref?: string; start: number } }): void
   /**
    * Renders a pending update right away (`if (renderPending) render()`), then replies after the next frame and once the
    * web fonts and the `<img>` elements of the slides have loaded or failed, at most 5 s later (printing does not wait for
@@ -584,7 +585,8 @@ Package `cz.p3kj.marp.export` (#12): File | Export | Marp Deck to HTML and Marp 
   CSP, so it holds exactly what the preview renders under the same effective settings: in an untrusted project HTML is off and
   no custom themes are loaded, and with `html: all` in a trusted project the deck's own HTML and scripts stay in the file, like
   Marp CLI `--html`. The only script the export adds is marp-core's helper. Reading the deck's files (images) is limited by
-  the same allowed-roots rule as the preview, because the images in a PDF come through the page.
+  the same allowed-roots rule as the preview, because the images in a PDF come through the page. Present adds a script
+  of its own to the HTML, see below.
 - Timeouts (`MarpPreviewPanel`): `exportHtml` 30 s, `flushRender` 10 s, `printToPDF` 120 s. They throw
   `MarpExportException(timedOut = true)`, not `TimeoutCancellationException`, which is a `CancellationException` and would
   look like the user cancelling. `MarpPageReplies.failAll` (page reload, crash, dispose) and every not-ready path set
@@ -594,6 +596,64 @@ Package `cz.p3kj.marp.export` (#12): File | Export | Marp Deck to HTML and Marp 
   `getSelectedEditorFlow` (experimental), `CefBrowser.print()` (system print dialog), a second or offscreen browser.
 - Out of scope: PPTX and PNG through Marp CLI, inlining or copying local images, the presenter template and notes in the
   exports, a PDF outline, export without a loaded preview, per-slide image export.
+
+## Present (Kotlin and webview)
+
+`Marp.Present` (#13), a button of the preview toolbar (`Marp.PreviewToolbar`, right before the `Marp.Export` popup, icon
+`AllIcons.Actions.Execute`, Find Action synonyms, no default shortcut). It shows the deck in the SYSTEM browser, one
+slide at a time, starting at the slide under the caret. It is the HTML export with a `present` argument, so there is no
+second browser, no server, no new bridge command and nothing changes in the preview page's CSP, navigation rules or
+allowed roots. Package `cz.p3kj.marp.export`, `MarpPresentAction` (`DumbAwareAction`, `BGT`, shown under the same
+condition as the export actions) and `MarpPresenter`.
+
+- Flow: `MarpPresenter.present` (EDT) needs the preview panel and, when `isPageReady` is false, shows the `export.notReady`
+  warning. It then computes the start slide (below) and, in the project scope under `withBackgroundProgress`, calls
+  `MarpPreviewFileEditor.renderNow()` (unsaved changes count), sends `exportHtml` with `MarpPresentOptions(baseHref, start)`
+  (same command, timeout and errors as the export), writes the reply with `MarpPresentFiles.write` on `Dispatchers.IO`
+  and opens the file with `BrowserUtil.browse(Path)` on `Dispatchers.EDT` (the thread of the export's Open action). There
+  is no success notification. Failures (`MarpExportException`, disk errors) are logged and shown with the `Marp Export`
+  notification group as `present.failed`, with the reason of `MarpExporter.reason`. `CancellationException` is rethrown.
+- Start slide: `MarpPresenter.withStartSlide` reads the deck like `MarpSlideNavigation.withDeck` (non-blocking read action,
+  `withDocumentsCommitted`, `finishOnUiThread`, so an uncommitted edit counts and the LIVE caret matches the deck) and
+  calls back with `MarpDeck.slideIndexAt(caret offset)`, 0 for a file that is not a Marp deck. It is not `withDeck`
+  itself because that skips the callback for a null deck. The start slide is EMBEDDED in the file, because a `#N`
+  fragment is dropped when a `file:` URL is opened on Windows and macOS.
+- Temp file (`MarpPresentFiles`, plain JDK): `Files.createTempFile("marp-present-", ".html")` (owner-only permissions on
+  POSIX), `deleteOnExit()`, UTF-8. A new file for every Present, so a tab that is still open keeps working; they are
+  deleted when the IDE exits (a crash leaves them in the temp folder). Not used: a file next to the deck (stray files in
+  VCS, overwrites), `FileUtil` temp helpers, the built-in web server (`localhost:63342`, not a plugin API),
+  `BrowserUtil.browse(File)` (obsolete), `browse(String)` with a fragment.
+- Base: the document gets `<base href="file:///<deck folder>/">` (`MarpPresentFiles.baseHref`, `Path.toUri()` with a
+  trailing `/` forced; folder from `VirtualFile.fileSystem.getNioPath`, no base when the deck is not on the local file
+  system), so relative images and theme `url()`s resolve from the temp folder as they do from the deck. The base is in
+  the presentation file only (`standaloneHtml` `baseHref`, emitted right after the charset, before the style), the plain
+  export is byte-identical to before. It only changes where relative URLs resolve to where the export lands by default,
+  and a `file:` page can already reference any file URL.
+- Presentation page (`webview/src/present.ts`, `exportDocument(..., present)`): `PRESENT_CSS` replaces `EXPORT_CSS`:
+  inside `@media screen` every `div.marpit > svg[data-marpit-svg]` is `position: fixed; inset: 0` at full size (the SVG
+  viewBox letterboxes and centers it) and only the one with `marp-present-active` is displayed, the others are
+  `display: none` (not `visibility`, a theme could override it). Printing keeps marp-core's print rules (one slide per
+  page). marp-core's helper script stays in, its elements re-fit through ResizeObserver when a slide becomes visible.
+- Script: `runPresentation(document, window, start)` is serialized into a `<script>` at the end of the body
+  (`presentScript`, `String(runPresentation)`), so it must not reference anything outside its own body, and a test
+  evaluates the serialized text on its own. It prefers a valid `#N` in the URL (a reload keeps the slide) and otherwise
+  uses the embedded `start`, clamped to the slide count. The hash follows the slide through `history.replaceState` with
+  an ABSOLUTE URL (a relative one would resolve against the base and leave the file), inside a try/catch.
+  Keys: next = ArrowRight, ArrowDown, PageDown, Space, Enter, previous = ArrowLeft, ArrowUp, PageUp, Backspace,
+  Shift+Space, Home, End, `f` / `F` toggle full screen (optional calls, rejected promises ignored, Esc is the browser's).
+  Keys with Ctrl, Meta or Alt, already prevented ones and keys in `input`, `textarea`, `select` or contenteditable are
+  left alone. Clicks on links whose `href` starts with `#` are taken over: with the base, a plain `#3` would navigate to
+  the deck's folder. The script finds the element (Marpit gives every section `id="N"`, headings have ids too) and shows
+  the slide that holds it. There is no click-to-advance: the click that focuses the browser window would skip the start
+  slide.
+- Security and trust: same content rules as the HTML export (untrusted project: HTML off and no custom themes; `html: all`
+  in a trusted project keeps the deck's scripts). The only script added is `runPresentation`, which does no network
+  access and no `fetch`.
+- Limits: browsers installed as Snap or Flatpak cannot read the temp folder (README, troubleshooting). Out of scope:
+  presenter view and notes, timers, remote control, click, touch and swipe navigation, on-screen controls, transitions, a
+  slide counter, live reload of the browser, a JCEF presentation window, deleting files before the IDE exits. Not used:
+  a second or offscreen JCEF browser (its own resource handler, CSP, navigation policy, focus and per-OS full screen),
+  `GraphicsDevice.setFullScreenWindow`.
 
 ## Threading and lifecycle rules
 
@@ -641,9 +701,13 @@ Package `cz.p3kj.marp.export` (#12): File | Export | Marp Deck to HTML and Marp 
 - Export: `MarpExportActionsTest` (both actions registered, in `FileExportGroup` and in the toolbar popup, hidden without a
   Marp editor, the preview found from a split editor). Headless tests have no JCEF page, so there is no end-to-end test of the
   save dialog, the HTML file or the PDF: see the manual checks in the pull request.
+- Present: `MarpPresentActionTest` (action registered, toolbar position, hidden without a Marp editor, start slide from
+  the caret through `MarpPresenter.withStartSlide`), `MarpPresentFilesTest` (base href, temp file), `MarpPresentOptionsTest`
+  (JSON). There is no end-to-end test of opening the browser.
 - Webview (`webview/test`, vitest with jsdom): the host bridge and message queue, marp-core plugins and render options,
   scroll sync, active slide, link and click handling, the unknown-theme warning and the string table, the standalone export
-  document (`export-html.test.ts`) and the `exportHtml` / `flushRender` commands with their replies (`preview.test.ts`).
+  document (`export-html.test.ts`), the `exportHtml` / `flushRender` commands with their replies (`preview.test.ts`) and the
+  presentation runtime (`present.test.ts`: keys, hash, start slide, anchor links, full screen, and the serialized script).
 - `./gradlew check` runs all of them plus `tsc --noEmit` and the NOTICE freshness check. `verifyPlugin` covers binary
   compatibility with the recommended IDEs and the next EAP.
 
