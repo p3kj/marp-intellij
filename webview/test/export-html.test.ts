@@ -18,6 +18,15 @@ describe('standaloneHtml', () => {
     expect(doc).toContain(`<style>section{color:red}\n${EXPORT_CSS}</style></head><body><div class="marpit"></div></body></html>`)
   })
 
+  it('stays byte-identical without base, screen css and script', () => {
+    expect(standaloneHtml({ title: 'Deck', ...parts })).toBe(
+      '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+        '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+        `<title>Deck</title><style>section{color:red}\n${EXPORT_CSS}</style></head>` +
+        '<body><div class="marpit"></div></body></html>\n',
+    )
+  })
+
   it('escapes the title', () => {
     const doc = standaloneHtml({ title: `<b>"A" & 'B'</b>`, ...parts })
     expect(doc).toContain('<title>&lt;b&gt;&quot;A&quot; &amp; &#39;B&#39;&lt;/b&gt;</title>')

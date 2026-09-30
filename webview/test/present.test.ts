@@ -108,6 +108,22 @@ describe('runPresentation', () => {
     expect(active()).toEqual([2])
   })
 
+  it('leaves Enter to a focused link or button, but still handles the other keys there', () => {
+    start(0)
+    const link = document.body.appendChild(document.createElement('a'))
+    link.setAttribute('href', 'https://example.com/')
+    const button = document.body.appendChild(document.createElement('button'))
+    const inner = button.appendChild(document.createElement('span'))
+    for (const target of [link, button, inner]) {
+      expect(key('Enter', {}, target).defaultPrevented).toBe(false)
+      expect(active()).toEqual([1])
+    }
+    expect(key('ArrowRight', {}, link).defaultPrevented).toBe(true)
+    expect(active()).toEqual([2])
+    expect(key('Enter').defaultPrevented).toBe(true)
+    expect(active()).toEqual([3])
+  })
+
   it('ignores keys it does not know and does not prevent them', () => {
     start(0)
     const event = key('a')

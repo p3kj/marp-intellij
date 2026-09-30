@@ -642,7 +642,7 @@ condition as the export actions) and `MarpPresenter`.
   Keys: next = ArrowRight, ArrowDown, PageDown, Space, Enter, previous = ArrowLeft, ArrowUp, PageUp, Backspace,
   Shift+Space, Home, End, `f` / `F` toggle full screen (optional calls, rejected promises ignored, Esc is the browser's).
   Keys with Ctrl, Meta or Alt, already prevented ones and keys in `input`, `textarea`, `select` or contenteditable are
-  left alone. Clicks on links whose `href` starts with `#` are taken over: with the base, a plain `#3` would navigate to
+  left alone, and so is Enter on a focused link or button (it activates it). Clicks on links whose `href` starts with `#` are taken over: with the base, a plain `#3` would navigate to
   the deck's folder. The script finds the element (Marpit gives every section `id="N"`, headings have ids too) and shows
   the slide that holds it. There is no click-to-advance: the click that focuses the browser window would skip the start
   slide.

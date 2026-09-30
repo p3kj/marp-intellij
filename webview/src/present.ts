@@ -22,7 +22,7 @@ export const PRESENT_CSS =
  * helper functions. Shows one slide at a time (`svg[data-marpit-svg]` of `div.marpit`), starting at the `#N` of the URL
  * when that is a valid 1-based slide number and otherwise at `start` (0-based, clamped). The hash follows the slide, so
  * a reload stays where it was. Keys: next (ArrowRight, ArrowDown, PageDown, Space, Enter), previous (ArrowLeft,
- * ArrowUp, PageUp, Backspace, Shift+Space), Home, End and F for full screen. Links to `#...` inside the deck show the
+ * ArrowUp, PageUp, Backspace, Shift+Space), Home, End and F for full screen. Enter is left to a focused link or button. Links to `#...` inside the deck show the
  * slide that holds the target. Returns a function that removes the listeners (tests only), a no-op without slides.
  */
 export function runPresentation(doc: Document, win: Window, start: number): () => void {
@@ -69,10 +69,14 @@ export function runPresentation(doc: Document, win: Window, start: number): () =
     if (target && target.closest && target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return
     let handled = true
     switch (event.key) {
+      case 'Enter':
+        // Enter activates a focused link or button, so it is theirs.
+        if (target && target.closest && target.closest('a, button')) return
+        show(current + 1)
+        break
       case 'ArrowRight':
       case 'ArrowDown':
       case 'PageDown':
-      case 'Enter':
         show(current + 1)
         break
       case ' ':

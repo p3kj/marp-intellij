@@ -11,7 +11,8 @@ class MarpPresentFilesTest : TestCase() {
 
     override fun tearDown() {
         try {
-            created.forEach { Files.deleteIfExists(it) }
+            // Children were added after their parents.
+            created.asReversed().forEach { Files.deleteIfExists(it) }
         } finally {
             super.tearDown()
         }
@@ -24,6 +25,23 @@ class MarpPresentFilesTest : TestCase() {
         assertTrue(href, href.startsWith("file:"))
         assertTrue(href, href.endsWith("/"))
         assertFalse("no double slash at the end: $href", href.endsWith("//"))
+        assertEquals(directory, Path.of(java.net.URI(href)))
+    }
+
+    fun testBaseHrefEncodesCharactersThatAreSpecialInAUrl() {
+        // `?` is not allowed in Windows file names.
+        if (System.getProperty("os.name").startsWith("Windows")) return
+        val directory = Files.createTempDirectory("marp base ").resolve("a#b?c%d ü")
+        created.add(directory.parent)
+        Files.createDirectory(directory)
+        created.add(directory)
+        val href = MarpPresentFiles.baseHref(directory)
+        assertFalse("no raw #: $href", href.contains('#'))
+        assertFalse("no raw ?: $href", href.contains('?'))
+        assertTrue(href, href.contains("%23"))
+        assertTrue(href, href.contains("%3F"))
+        assertTrue(href, href.contains("%25"))
+        assertTrue(href, href.endsWith("/"))
         assertEquals(directory, Path.of(java.net.URI(href)))
     }
 
