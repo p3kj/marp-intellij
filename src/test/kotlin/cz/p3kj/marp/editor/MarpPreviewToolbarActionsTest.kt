@@ -1,5 +1,6 @@
 package cz.p3kj.marp.editor
 
+import com.intellij.openapi.actionSystem.ActionGroup
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -59,12 +60,13 @@ class MarpPreviewToolbarActionsTest : MarpLightTestCase() {
 
     fun testGroupHoldsTheToolbarActions() {
         val ids = toolbarIds()
-        assertEquals(listOf("Marp.ToggleScrollSync", "Marp.TogglePresenterNotes", "Marp.OpenSettings"), ids)
+        assertEquals(listOf("Marp.ToggleScrollSync", "Marp.TogglePresenterNotes", "Marp.Export", "Marp.OpenSettings"), ids)
         for (id in ids) {
             val action = actions.getAction(id)
             assertTrue("$id must be DumbAware", action is DumbAware)
-            assertEquals(MarpBundle.message("action.$id.text"), action.templatePresentation.text)
-            assertEquals(MarpBundle.message("action.$id.description"), action.templatePresentation.description)
+            val kind = if (action is ActionGroup) "group" else "action"
+            assertEquals(MarpBundle.message("$kind.$id.text"), action.templatePresentation.text)
+            assertEquals(MarpBundle.message("$kind.$id.description"), action.templatePresentation.description)
             assertNotNull("$id needs an icon", action.templatePresentation.icon)
         }
     }

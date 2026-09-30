@@ -94,9 +94,24 @@
         <completion.contributor language="any" order="first" implementationClass="cz.p3kj.marp.images.MarpImageCompletionContributor"/>
         <completion.confidence language="any" order="first" implementationClass="cz.p3kj.marp.images.MarpImageCompletionConfidence"/>
         <platform.backend.documentation.targetProvider implementation="cz.p3kj.marp.images.MarpImageDocumentationTargetProvider"/>
+
+        <!-- Result and failure notes of the deck export -->
+        <notificationGroup id="Marp Export" displayType="BALLOON" bundle="messages.MarpBundle" key="notification.group.export"/>
     </extensions>
 
     <actions>
+        <!-- Export to HTML and PDF: File | Export and, as a popup, the preview toolbar. Only shown while a Marp deck with a preview is in the editor. -->
+        <action id="Marp.ExportHtml" class="cz.p3kj.marp.export.MarpExportHtmlAction">
+            <add-to-group group-id="FileExportGroup" anchor="last"/>
+        </action>
+        <action id="Marp.ExportPdf" class="cz.p3kj.marp.export.MarpExportPdfAction">
+            <add-to-group group-id="FileExportGroup" anchor="last"/>
+        </action>
+        <group id="Marp.Export" class="cz.p3kj.marp.export.MarpExportGroup" popup="true" icon="AllIcons.ToolbarDecorator.Export">
+            <reference ref="Marp.ExportHtml"/>
+            <reference ref="Marp.ExportPdf"/>
+        </group>
+
         <!-- Shown in the floating toolbar of the Marp editor, see MarpSplitEditor.createRightToolbarActionGroup. The synonyms make the toggles findable by "marp" in Find Action. -->
         <group id="Marp.PreviewToolbar">
             <action id="Marp.ToggleScrollSync"
@@ -109,6 +124,7 @@
                     icon="AllIcons.General.Note">
                 <synonym key="action.Marp.TogglePresenterNotes.synonym"/>
             </action>
+            <reference ref="Marp.Export"/>
             <separator/>
             <action id="Marp.OpenSettings"
                     class="cz.p3kj.marp.editor.MarpOpenSettingsAction"
