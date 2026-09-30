@@ -1,5 +1,6 @@
 package cz.p3kj.marp.themes
 
+import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.ide.trustedProjects.TrustedProjects
 import com.intellij.ide.trustedProjects.TrustedProjectsListener
 import com.intellij.openapi.Disposable
@@ -12,6 +13,7 @@ import com.intellij.openapi.editor.event.DocumentEvent
 import com.intellij.openapi.editor.event.DocumentListener
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFileManager
@@ -20,6 +22,7 @@ import com.intellij.openapi.vfs.newvfs.events.VFileCreateEvent
 import com.intellij.openapi.vfs.newvfs.events.VFileEvent
 import com.intellij.openapi.vfs.newvfs.events.VFileMoveEvent
 import com.intellij.openapi.vfs.newvfs.events.VFilePropertyChangeEvent
+import com.intellij.psi.PsiManager
 import com.intellij.util.io.HttpRequests
 import cz.p3kj.marp.MarpBundle
 import cz.p3kj.marp.settings.MarpSettings
@@ -36,12 +39,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.intellij.plugins.markdown.lang.psi.impl.MarkdownFile
 import java.io.IOException
 import java.io.InputStream
 import java.nio.charset.Charset
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
@@ -67,7 +72,9 @@ data class MarpThemeSet(val themes: List<MarpThemeCss>, val errors: List<String>
  * project loads no custom theme at all. Folders are searched by [MarpThemeFolder]. URLs are downloaded in parallel
  * (CSS or plain text only, at most [MAX_DOWNLOAD_BYTES]); failures are cached for [FAILED_DOWNLOAD_TTL_MS]. The
  * resolved set is cached until a watched file, a theme document, the `.marprc`, the settings or the project trust
- * change; then [MarpThemeListener.TOPIC] is published (coalesced) and subscribers call [loadThemes] again.
+ * change; then [MarpThemeListener.TOPIC] is published (coalesced) and subscribers call [loadThemes] again. The open
+ * Markdown files are highlighted again after every publish and after a load that an inspection started
+ * ([themeNamesForInspection]), because the unknown-theme warnings depend on the set.
  */
 @Service(Service.Level.PROJECT)
 class MarpThemeService(private val project: Project, private val cs: CoroutineScope) : Disposable {
@@ -162,7 +169,11 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
             cs.launch { loadThemes() }
             return emptyList()
         }
-        // The names of one set are read once, completion asks for them on every keystroke.
+        return namesOf(set)
+    }
+
+    /** The names of one set are read once, completion asks for them on every keystroke. */
+    private fun namesOf(set: MarpThemeSet): List<String> {
         names?.let { if (it.first === set) return it.second }
         val result = set.themes.mapNotNull { MarpThemeNames.nameOf(it.css) }.distinct()
         names = set to result
@@ -171,6 +182,49 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
 
     @Volatile
     private var names: Pair<MarpThemeSet, List<String>>? = null
+
+    private val inspectionLoad = AtomicBoolean()
+
+    /**
+     * The custom theme names for the unknown-theme inspection, never suspending and never blocking, or `null` when an
+     * unknown name cannot be told from a theme that did not load: nothing is cached yet (loading starts, and the open
+     * Markdown files are highlighted again when it is done), the project is untrusted, or the set has any error.
+     */
+    fun themeNamesForInspection(): Set<String>? {
+        if (!trustedProvider()) return null
+        val set = cached
+        if (set == null) {
+            if (inspectionLoad.compareAndSet(false, true)) {
+                cs.launch {
+                    try {
+                        loadThemes()
+                    } finally {
+                        inspectionLoad.set(false)
+                    }
+                    restartMarkdownHighlighting()
+                }
+            }
+            return null
+        }
+        return if (set.errors.isEmpty()) namesOf(set).toSet() else null
+    }
+
+    /**
+     * Runs the inspections of the open Markdown files again: what they report depends on the theme set, which changes
+     * without any edit of the file. Only a re-run, it loads nothing that is not loading already, so it cannot loop.
+     */
+    internal suspend fun restartMarkdownHighlighting() {
+        val files = readAction {
+            if (project.isDisposed) emptyList()
+            else {
+                val psiManager = PsiManager.getInstance(project)
+                FileEditorManager.getInstance(project).openFiles.mapNotNull { psiManager.findFile(it) as? MarkdownFile }
+            }
+        }
+        if (files.isEmpty()) return
+        val daemon = DaemonCodeAnalyzer.getInstance(project)
+        files.forEach { daemon.restart(it, "Marp themes changed") }
+    }
 
     private fun trustChanged(changed: Project) {
         if (changed != project) return
@@ -189,6 +243,7 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
             publishJob = cs.launch {
                 if (delayMs > 0) delay(delayMs)
                 project.messageBus.syncPublisher(MarpThemeListener.TOPIC).themesChanged()
+                restartMarkdownHighlighting()
             }
         }
     }
@@ -321,7 +376,7 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
         }
     }
 
-    private val projectDir: Path? get() = projectDirProvider()
+    internal val projectDir: Path? get() = projectDirProvider()
 
     /** Unsaved editor content wins over the disk content. Null when the file cannot be read. */
     private suspend fun readText(path: Path): String? {

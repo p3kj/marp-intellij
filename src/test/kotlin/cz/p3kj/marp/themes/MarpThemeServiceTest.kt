@@ -101,6 +101,32 @@ class MarpThemeServiceTest : MarpLightTestCase() {
         assertSame(service.cachedThemeNames(), service.cachedThemeNames())
     }
 
+    fun testThemeNamesForTheInspection() {
+        write("a.css", "/* @theme alpha */")
+        write("b.css", "/* @theme beta */")
+        settings(false, "a.css", "b.css")
+        // Nothing is cached yet: unknown, and the themes start loading.
+        assertNull(service.themeNamesForInspection())
+        load()
+        assertEquals(setOf("alpha", "beta"), service.themeNamesForInspection())
+    }
+
+    fun testNoThemeNamesForTheInspectionWhenTheSetHasAnError() {
+        write("a.css", "/* @theme alpha */")
+        settings(false, "a.css", "missing.css")
+        load()
+        assertNull(service.themeNamesForInspection())
+    }
+
+    fun testNoThemeNamesForTheInspectionInAnUntrustedProject() {
+        write("a.css", "/* @theme alpha */")
+        settings(false, "a.css")
+        load()
+        assertNotNull(service.themeNamesForInspection())
+        trusted = false
+        assertNull(service.themeNamesForInspection())
+    }
+
     fun testFolderExpansionIsRecursiveAndSorted() {
         write("t/b.css", "b")
         write("t/a.css", "a")
