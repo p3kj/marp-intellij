@@ -1,6 +1,7 @@
 import { Marp } from '@marp-team/marp-core'
 import { htmlOption, mathOption } from './marp-factory'
-import type { RenderOptions, ThemeInput } from './types'
+import { PRESENT_CSS, presentScript } from './present'
+import type { PresentOptions, RenderOptions, ThemeInput } from './types'
 
 /**
  * Only used when the exported file is opened on a screen: a grey page with the slides stacked and centered. Printing it
@@ -42,17 +43,27 @@ export interface StandaloneInput {
   css: string
   /** marp-core's HTML. */
   html: string
+  /** Emitted as `<base href>` before the styles, so that relative URLs (images, `url()` in the CSS) resolve against it. */
+  baseHref?: string | undefined
+  /** The `@media screen` rules that come after marp-core's CSS. Default: `EXPORT_CSS`. */
+  screenCss?: string | undefined
+  /** JavaScript for a `<script>` at the end of the body. */
+  script?: string | undefined
 }
 
 /** A complete HTML document around a rendered deck. */
-export function standaloneHtml({ title, lang, css, html }: StandaloneInput): string {
+export function standaloneHtml({ title, lang, css, html, baseHref, screenCss, script }: StandaloneInput): string {
   // `</style` would end the element early. A backslash before the slash is a valid escape in CSS strings and harmless elsewhere.
-  const safeCss = `${css}\n${EXPORT_CSS}`.replace(/<\/(style)/gi, '<\\/$1')
+  const safeCss = `${css}\n${screenCss ?? EXPORT_CSS}`.replace(/<\/(style)/gi, '<\\/$1')
+  // Same for `</script`, in JavaScript strings, regular expressions and comments.
+  const safeScript = script ? `<script>${script.replace(/<\/(script)/gi, '<\\/$1')}</script>` : ''
   return (
     '<!DOCTYPE html>' +
     `<html${lang ? ` lang="${escapeHtml(lang)}"` : ''}><head><meta charset="utf-8">` +
+    // First after the charset: the `url()`s of the style below resolve against it.
+    (baseHref ? `<base href="${escapeHtml(baseHref)}">` : '') +
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-    `<title>${escapeHtml(title)}</title><style>${safeCss}</style></head><body>${html}</body></html>\n`
+    `<title>${escapeHtml(title)}</title><style>${safeCss}</style></head><body>${html}${safeScript}</body></html>\n`
   )
 }
 
@@ -68,9 +79,16 @@ function globalString(marp: Marp, name: string): string | undefined {
 
 /**
  * Renders `markdown` with an export Marp instance into a standalone HTML document. The title is the `title:` directive
- * or, without one, `fallbackTitle`; `lang:` becomes the `lang` attribute. Throws what marp-core throws.
+ * or, without one, `fallbackTitle`; `lang:` becomes the `lang` attribute. With `present` the document is a presentation
+ * instead: a `<base>`, one slide at a time (`PRESENT_CSS`) and the script of `present.ts`. Throws what marp-core throws.
  */
-export function exportDocument(markdown: string, options: RenderOptions, themes: ThemeInput[], fallbackTitle: string): string {
+export function exportDocument(
+  markdown: string,
+  options: RenderOptions,
+  themes: ThemeInput[],
+  fallbackTitle: string,
+  present?: PresentOptions,
+): string {
   const marp = createExportMarp(options, themes)
   const { html, css } = marp.render(markdown)
   return standaloneHtml({
@@ -78,5 +96,6 @@ export function exportDocument(markdown: string, options: RenderOptions, themes:
     lang: globalString(marp, 'lang'),
     css,
     html,
+    ...(present ? { baseHref: present.baseHref, screenCss: PRESENT_CSS, script: presentScript(present.start) } : {}),
   })
 }

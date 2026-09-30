@@ -193,14 +193,14 @@ const bridge: MarpBridge = {
     html.style.setProperty('--ide-fg', foreground)
   },
 
-  exportHtml({ id, title }) {
+  exportHtml({ id, title, present }) {
     const arg = lastUpdate
     if (!arg) {
       host.post({ type: 'reply', id, error: 'There is nothing to export yet' })
       return
     }
     try {
-      host.post({ type: 'reply', id, html: exportDocument(arg.markdown, arg.options, themes, title) })
+      host.post({ type: 'reply', id, html: exportDocument(arg.markdown, arg.options, themes, title, present) })
     } catch (e) {
       host.post({ type: 'reply', id, error: e instanceof Error ? e.message : String(e) })
     }

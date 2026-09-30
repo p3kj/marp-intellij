@@ -117,6 +117,25 @@ describe('export commands', () => {
     expect(slides()).toHaveLength(2)
   })
 
+  it('exportHtml with present answers with the presentation of the same deck', async () => {
+    bridge.setThemes({ themes, errors: [] })
+    await render('---\ntheme: cmdtheme\n---\n\n# Present me\n\n---\n\n# Second\n')
+    bridge.exportHtml({ id: 13, title: 'deck-file', present: { baseHref: 'file:///work/talk/', start: 1 } })
+    const [reply] = replies(13)
+    expect(replies(13)).toHaveLength(1)
+    expect(reply.error).toBeUndefined()
+    expect(reply.html).toContain('<meta charset="utf-8"><base href="file:///work/talk/">')
+    expect(reply.html).toContain('<title>deck-file</title>')
+    expect(reply.html).toContain('Present me')
+    expect(reply.html).toContain('#654321')
+    expect(reply.html).toContain('marp-present-active')
+    expect(reply.html).toMatch(/\(document, window, 1\);<\/script><\/body>/)
+    // Without present the same command still answers with the plain export.
+    bridge.exportHtml({ id: 14, title: 'deck-file' })
+    expect(replies(14)[0].html).not.toContain('<base href')
+    expect(replies(14)[0].html).not.toContain('marp-present-active')
+  })
+
   it('exportHtml uses the render options of the last update', async () => {
     await render('# T\n\n<b class="raw">raw</b>\n', { html: 'all' })
     bridge.exportHtml({ id: 11, title: 't' })

@@ -27,6 +27,14 @@ export interface PreviewStrings {
   emptyDeck: string
 }
 
+/** Turns the `exportHtml` document into a presentation: one slide at a time, keyboard navigation, full screen. */
+export interface PresentOptions {
+  /** `<base href>` of the file (a `file:` URL of the deck's folder), so relative images and theme `url()`s still resolve. */
+  baseHref?: string
+  /** 0-based slide to start at, used when the URL has no valid `#N` hash. Clamped to the slide count. */
+  start: number
+}
+
 export interface MarpBridge {
   setStrings(arg: PreviewStrings): void
   setThemes(arg: { themes: ThemeInput[]; errors: string[] }): void
@@ -36,9 +44,10 @@ export interface MarpBridge {
   setIdeTheme(arg: { dark: boolean; background: string; foreground: string }): void
   /**
    * Command, not a state setter: renders the last `update` with an export Marp instance and replies with the complete
-   * standalone HTML document (`html`), or with an `error`. `title` is the fallback when the deck has no `title:`.
+   * standalone HTML document (`html`), or with an `error`. `title` is the fallback when the deck has no `title:`. With
+   * `present` the document is the presentation variant (see `PresentOptions`).
    */
-  exportHtml(arg: { id: number; title: string }): void
+  exportHtml(arg: { id: number; title: string; present?: PresentOptions }): void
   /** Command: renders a pending update right now, then replies once the frame is done and the fonts and images have loaded (at most 5 s), `error` when the render failed. */
   flushRender(arg: { id: number }): void
 }

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
 import { createExportMarp, EXPORT_CSS, exportDocument, standaloneHtml } from '../src/export-html'
+import { PRESENT_CSS, presentScript } from '../src/present'
 import type { RenderOptions } from '../src/types'
 
 const options: RenderOptions = { html: 'default', math: 'off' }
@@ -28,6 +29,25 @@ describe('standaloneHtml', () => {
     expect(standaloneHtml({ title: 't', lang: '', ...parts })).toContain('<html><head>')
     expect(standaloneHtml({ title: 't', lang: 'cs', ...parts })).toContain('<html lang="cs"><head>')
     expect(standaloneHtml({ title: 't', lang: 'x"><script>', ...parts })).toContain('<html lang="x&quot;&gt;&lt;script&gt;"><head>')
+  })
+
+  it('adds a base after the charset, other screen css and a script only when asked to', () => {
+    const doc = standaloneHtml({ title: 'Deck', ...parts, baseHref: 'file:///d/', screenCss: '@media screen{x{}}', script: 'run()' })
+    expect(doc).toContain('<head><meta charset="utf-8"><base href="file:///d/"><meta name="viewport"')
+    expect(doc).toContain('<style>section{color:red}\n@media screen{x{}}</style>')
+    expect(doc).not.toContain(EXPORT_CSS)
+    expect(doc.endsWith('<div class="marpit"></div><script>run()</script></body></html>\n')).toBe(true)
+    expect(standaloneHtml({ title: 'Deck', ...parts, baseHref: '' })).not.toContain('<base href')
+    expect(standaloneHtml({ title: 'Deck', ...parts })).not.toContain('<script')
+  })
+
+  it('escapes the base href and cannot be closed early by a </script in the script', () => {
+    const doc = standaloneHtml({ title: 't', ...parts, baseHref: 'file:///a&b/"x"/', script: 'a="</script><b>";/* </SCRIPT */' })
+    expect(doc).toContain('<base href="file:///a&amp;b/&quot;x&quot;/">')
+    const parsed = new DOMParser().parseFromString(doc, 'text/html')
+    expect(parsed.querySelector('base')?.getAttribute('href')).toBe('file:///a&b/"x"/')
+    expect(parsed.querySelectorAll('script')).toHaveLength(1)
+    expect(parsed.querySelector('script')?.textContent).toBe('a="<\\/script><b>";/* <\\/SCRIPT */')
   })
 
   it('cannot be closed early by a </style in the css', () => {
@@ -114,5 +134,52 @@ describe('exportDocument', () => {
   it('keeps the size directive in the page rule that the PDF export relies on', () => {
     expect(exportDocument('---\nsize: 4:3\n---\n\n# T\n', options, [], 'f')).toMatch(/@page\s*\{\s*size:\s*960px 720px/)
     expect(exportDocument(deck, options, [], 'f')).toMatch(/@page\s*\{\s*size:\s*1280px 720px/)
+  })
+
+  it('has no base, no script of its own and the export css without present', () => {
+    const doc = exportDocument(deck, options, [], 'f')
+    expect(doc).not.toContain('<base href')
+    expect(doc).toContain(EXPORT_CSS)
+    expect(doc).not.toContain(PRESENT_CSS)
+    // Only marp-core's helper script, which comes with the rendered slides.
+    expect(doc.match(/<script>/g)).toHaveLength(1)
+  })
+
+  describe('as a presentation', () => {
+    const present = { baseHref: 'file:///d/', start: 1 }
+    const doc = exportDocument(deck, options, [], 'f', present)
+
+    it('sets the base right after the charset, before the styles', () => {
+      expect(doc).toContain('<meta charset="utf-8"><base href="file:///d/">')
+      expect(doc.indexOf('<base')).toBeLessThan(doc.indexOf('<style>'))
+    })
+
+    it('uses the presentation css instead of the export css', () => {
+      expect(doc).toContain(PRESENT_CSS)
+      expect(doc).not.toContain(EXPORT_CSS)
+      expect(doc).toMatch(/@page\s*\{\s*size:\s*1280px 720px/)
+    })
+
+    it('ends with the presentation script, after the slides and the helper script', () => {
+      const script = presentScript(1)
+      expect(doc.endsWith(`<script>${script}</script></body></html>\n`)).toBe(true)
+      expect(doc.match(/<script>/g)).toHaveLength(2)
+      expect(doc.match(/data-marpit-svg=""/g)).toHaveLength(2)
+    })
+
+    it('leaves out the base when the deck has no folder', () => {
+      expect(exportDocument(deck, options, [], 'f', { start: 0 })).not.toContain('<base href')
+    })
+
+    it('still takes the title and language from the deck', () => {
+      const titled = exportDocument('---\ntitle: Talk\nlang: cs\n---\n\n# T\n', options, [], 'f', present)
+      expect(titled).toContain('<html lang="cs">')
+      expect(titled).toContain('<title>Talk</title>')
+    })
+
+    it('runs as a document: the script finds the slides of the rendered html', () => {
+      const parsed = new DOMParser().parseFromString(doc, 'text/html')
+      expect(parsed.querySelectorAll('div.marpit > svg[data-marpit-svg]')).toHaveLength(2)
+    })
   })
 })
