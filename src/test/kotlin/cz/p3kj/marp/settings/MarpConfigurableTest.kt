@@ -1,11 +1,16 @@
 package cz.p3kj.marp.settings
 
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.util.ui.UIUtil
+import cz.p3kj.marp.MarpBundle
 import cz.p3kj.marp.MarpLightTestCase
+import javax.swing.JCheckBox
+import javax.swing.JComponent
 
 class MarpConfigurableTest : MarpLightTestCase() {
 
     private lateinit var configurable: MarpConfigurable
+    private lateinit var component: JComponent
 
     override fun setUp() {
         super.setUp()
@@ -14,14 +19,17 @@ class MarpConfigurableTest : MarpLightTestCase() {
             themes.addAll(listOf("a.css", "https://example.com/t.css"))
         }
         configurable = MarpConfigurable(project)
-        configurable.createComponent()
+        component = configurable.createComponent()!!
     }
 
     override fun tearDown() {
         try {
             configurable.disposeUIResources()
             MarpSettings.getInstance(project).update { themes.clear() }
-            MarpAppSettings.getInstance().update { marpCliPath = null }
+            MarpAppSettings.getInstance().update {
+                marpCliPath = null
+                presentWithCli = true
+            }
         } finally {
             super.tearDown()
         }
@@ -135,5 +143,37 @@ class MarpConfigurableTest : MarpLightTestCase() {
     fun testMarpCliPathIsEmptyByDefault() {
         assertNull(MarpAppSettings.AppState().marpCliPath)
         assertEquals("", MarpAppSettings.getInstance().marpCliPath)
+    }
+
+    fun testPresentWithCliIsOnByDefault() {
+        assertTrue(MarpAppSettings.AppState().presentWithCli)
+        assertTrue(MarpAppSettings.getInstance().presentWithCli)
+        assertFalse(configurable.isModified())
+    }
+
+    private fun presentCheckBox(): JCheckBox =
+        UIUtil.findComponentsOfType(component, JCheckBox::class.java).single { it.text == MarpBundle.message("settings.marpCli.present") }
+
+    fun testPresentWithCliIsAnIdeSettingThatAppliesAndResets() {
+        val appSettings = MarpAppSettings.getInstance()
+        val checkBox = presentCheckBox()
+        assertTrue(checkBox.isSelected)
+
+        checkBox.isSelected = false
+        assertTrue(configurable.isModified())
+        configurable.apply()
+        assertFalse(appSettings.presentWithCli)
+        assertFalse(configurable.isModified())
+
+        checkBox.isSelected = true
+        assertTrue(configurable.isModified())
+        configurable.reset()
+        assertFalse("reset drops the unsaved change", checkBox.isSelected)
+        assertFalse(configurable.isModified())
+
+        appSettings.update { presentWithCli = true }
+        configurable.reset()
+        assertTrue(checkBox.isSelected)
+        assertFalse(configurable.isModified())
     }
 }

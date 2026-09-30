@@ -6,6 +6,7 @@ import com.intellij.ide.BrowserUtil
 import com.intellij.ide.actions.RevealFileAction
 import com.intellij.ide.trustedProjects.TrustedProjects
 import com.intellij.notification.NotificationType
+import com.intellij.openapi.application.EDT
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
@@ -30,12 +31,13 @@ import java.nio.file.Path
 private val LOG = logger<MarpCliExporter>()
 
 /**
- * Exports the deck to PPTX or images with Marp CLI, see the Export section of `docs/ARCHITECTURE.md`. The preview page
- * is not involved: the CLI reads the deck and the theme files from disk, renders them with its own marp-core and, for
- * PPTX and images, a headless browser. The themes, HTML mode, math library and local file access of the project are
- * handed over through a temporary config file, so the result follows the settings like the preview does.
+ * Exports the deck to PPTX or images with Marp CLI, see the Export section of `docs/ARCHITECTURE.md`, and lets it write
+ * the presentation of Present Deck, see [present]. The preview page is not involved: the CLI reads the deck and the
+ * theme files from disk, renders them with its own marp-core and, for PPTX and images, a headless browser. The themes,
+ * HTML mode, math library and local file access of the project are handed over through a temporary config file, so the
+ * result follows the settings like the preview does.
  *
- * Only trusted projects are exported: the CLI is an external program that reads the files of the project (on Windows
+ * Only trusted projects are exported or presented: the CLI is an external program that reads the files of the project (on Windows
  * `marp.cmd` even runs through `cmd.exe`, which parses `%`, `&` and `^` in the file names of a repository). That is also
  * what allows the lookup to use a `node_modules/.bin/marp` that came with the project, see [MarpCliLocator].
  *
@@ -51,6 +53,9 @@ internal object MarpCliExporter {
 
     /** The base directory of the project, where the search for a project-local Marp CLI stops. Replaced in tests. */
     internal var projectBasePath: (Project) -> String? = { it.basePath }
+
+    /** Opens a presentation in the system browser: the EDT is entered here, `BrowserUtil` may show a dialog. Replaced in tests. */
+    internal var browser: suspend (Path) -> Unit = { withContext(Dispatchers.EDT) { BrowserUtil.browse(it) } }
 
     /** Notifications are HTML, file names, paths and messages are not. */
     private fun html(text: String): String = StringUtil.escapeXmlEntities(text)
@@ -94,6 +99,58 @@ internal object MarpCliExporter {
         }
     }
 
+    /**
+     * Present Deck through Marp CLI: lets the CLI write [deck] as a page of its `bespoke` template to a temporary file
+     * under a progress, adds the base and the start slide ([MarpPresentFiles.cliPresentation], [start] is zero-based) and
+     * opens it in the system browser. The caller has checked that the project is trusted and found [executable], see
+     * `MarpPresenter.cliExecutable`. There is no success notification. A CLI that cannot be started is notified as in the
+     * export, with a link to the settings and without a fallback, so that a broken CLI stays visible; a failed run says
+     * why. Failures are notified, never thrown.
+     */
+    internal suspend fun present(project: Project, deck: Path, executable: Path, name: String, start: Int) {
+        try {
+            val page = withBackgroundProgress(project, MarpBundle.message("present.progress", name)) {
+                presentation(project, deck, executable, name, start)
+            }
+            if (page != null) browser(page)
+        }
+        catch (e: CancellationException) {
+            throw e
+        }
+        catch (e: Exception) {
+            LOG.warn("Cannot present $deck", e)
+            MarpExporter.notify(project, NotificationType.ERROR, MarpBundle.message("present.failed", html(name), html(e.message ?: e.javaClass.simpleName)))
+        }
+    }
+
+    /** The page of the presentation of [deck], `null` after telling the user why there is none. The file is removed when there is none. */
+    private suspend fun presentation(project: Project, deck: Path, executable: Path, name: String, start: Int): Path? {
+        // Created here and overwritten by the CLI, so that it is an owner-only file of the JDK's temp folder like the built-in page.
+        val target = withContext(Dispatchers.IO) { MarpPresentFiles.newFile() }
+        var ready = false
+        try {
+            val result = render(project, deck, executable, present = true) { MarpCliArgs.presentArguments(deck, target, it) } ?: return null
+            val produced = result.exitCode == 0 && withContext(Dispatchers.IO) { Files.isRegularFile(target) && Files.size(target) > 0 }
+            if (!produced) {
+                LOG.warn("Marp CLI did not present $deck (exit code ${result.exitCode})\n${result.output}")
+                failed(project, name, result, present = true)
+                return null
+            }
+            withContext(Dispatchers.IO) {
+                val page = Files.readString(target)
+                val folder = deck.toAbsolutePath().parent
+                val fixed = if (folder == null) page else MarpPresentFiles.cliPresentation(page, MarpPresentFiles.baseHref(folder), start)
+                if (fixed == page) LOG.warn("The presentation of $deck has no <head> tag, it starts at the first slide and relative files may be missing")
+                else Files.writeString(target, fixed)
+            }
+            ready = true
+            return target
+        }
+        finally {
+            if (!ready) withContext(Dispatchers.IO + NonCancellable) { Files.deleteIfExists(target) }
+        }
+    }
+
     private suspend fun convert(project: Project, deck: Path, format: MarpCliFormat, target: Path) {
         val executable = when (val location = locate(project, deck)) {
             is MarpCliLocation.Located -> location.executable
@@ -103,7 +160,7 @@ internal object MarpCliExporter {
                 return
             }
         }
-        val result = render(project, deck, executable) { MarpCliArgs.arguments(format, deck, target, it) } ?: return
+        val result = render(project, deck, executable, present = false) { MarpCliArgs.arguments(format, deck, target, it) } ?: return
         val produced = result.exitCode == 0 && Files.isRegularFile(if (format.isImages) firstImage(target, format) else target)
         if (produced) {
             finished(project, format, target)
@@ -126,12 +183,12 @@ internal object MarpCliExporter {
     /**
      * Runs the CLI on [deck] with the config of the project (themes, HTML mode, math, see [MarpCliArgs.config]) and the
      * [arguments] for it, which get the path of that config. The result, or `null` after telling the user that the CLI
-     * cannot be started. The temporary folder
+     * cannot be started. [present] adds the keys of the presentation to the config. The temporary folder
      * with the config and the copies of themes from a URL is the working directory and is removed at the end; the files
      * the arguments name elsewhere are the caller's.
      */
     private suspend fun render(
-        project: Project, deck: Path, executable: Path, arguments: (config: Path) -> List<String>,
+        project: Project, deck: Path, executable: Path, present: Boolean, arguments: (config: Path) -> List<String>,
     ): MarpCliResult? {
         val themes = MarpThemeService.getInstance(project).loadThemes().themes
         val settings = MarpSettings.getInstance(project)
@@ -150,6 +207,7 @@ internal object MarpCliExporter {
                     html = MarpPreviewFileEditor.effectiveHtmlMode(settings.html, trusted = true),
                     math = settings.math,
                     allowLocalFiles = true,
+                    present = present,
                 )
                 Files.writeString(config, json)
                 // Every input is an absolute path and Marp CLI resolves the images from the deck file, so the working
@@ -198,12 +256,13 @@ internal object MarpCliExporter {
         }
     }
 
-    private fun failed(project: Project, name: String, result: MarpCliResult) {
+    /** Tells why the CLI did not produce [name]: the messages are `export.cli.*`, or `present.cli.*` for [present]. */
+    private fun failed(project: Project, name: String, result: MarpCliResult, present: Boolean = false) {
         val tail = MarpCliArgs.outputTail(result.output)
         val message = when {
-            result.exitCode == null -> MarpBundle.message("export.cli.timeout", html(name), TIMEOUT_MINUTES.toString())
-            tail.isNotEmpty() -> MarpBundle.message("export.cli.failed", html(name), html(tail).replace("\n", "<br>"))
-            else -> MarpBundle.message("export.cli.failed.noOutput", html(name), result.exitCode.toString())
+            result.exitCode == null -> MarpBundle.message(if (present) "present.cli.timeout" else "export.cli.timeout", html(name), TIMEOUT_MINUTES.toString())
+            tail.isNotEmpty() -> MarpBundle.message(if (present) "present.cli.failed" else "export.cli.failed", html(name), html(tail).replace("\n", "<br>"))
+            else -> MarpBundle.message(if (present) "present.cli.failed.noOutput" else "export.cli.failed.noOutput", html(name), result.exitCode.toString())
         }
         MarpExporter.notify(project, NotificationType.ERROR, message)
     }

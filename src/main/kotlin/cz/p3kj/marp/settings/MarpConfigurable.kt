@@ -47,7 +47,7 @@ import javax.swing.event.DocumentEvent
 
 /**
  * Settings | Tools | Marp. Themes, `.marprc`, HTML and math are project settings ([MarpSettings]); presenter notes,
- * scroll sync and the Marp CLI path are IDE-wide preferences ([MarpAppSettings]). The CLI path stays out of the project
+ * scroll sync, the Marp CLI path and whether Present Deck uses it are IDE-wide preferences ([MarpAppSettings]). The CLI path stays out of the project
  * settings on purpose: a path in a cloned repository's `.idea/marp.xml` would let the repository pick what runs.
  */
 class MarpConfigurable(private val project: Project) : BoundConfigurable(MarpBundle.message("settings.displayName")) {
@@ -67,6 +67,7 @@ class MarpConfigurable(private val project: Project) : BoundConfigurable(MarpBun
     private var scrollSync = true
     private var presenterNotes = false
     private var marpCliPath = ""
+    private var presentWithCli = true
 
     private val projectDir: Path? get() = project.basePath?.let { Path.of(it) }
 
@@ -148,6 +149,11 @@ class MarpConfigurable(private val project: Project) : BoundConfigurable(MarpBun
                     button(MarpBundle.message("settings.marpCli.test")) { cliResult.text = testCli(cliField.text) }
                 }.rowComment(MarpBundle.message("settings.marpCli.comment"), MAX_LINE_LENGTH_WORD_WRAP)
                 row { cell(cliResult) }
+                row {
+                    checkBox(MarpBundle.message("settings.marpCli.present"))
+                        .bindSelected(::presentWithCli)
+                        .comment(MarpBundle.message("settings.marpCli.present.comment"), MAX_LINE_LENGTH_WORD_WRAP)
+                }
             }
         }
     }
@@ -208,6 +214,7 @@ class MarpConfigurable(private val project: Project) : BoundConfigurable(MarpBun
             scrollSync = this@MarpConfigurable.scrollSync
             presenterNotes = this@MarpConfigurable.presenterNotes
             marpCliPath = this@MarpConfigurable.marpCliPath.trim().ifEmpty { null }
+            presentWithCli = this@MarpConfigurable.presentWithCli
         }
     }
 
@@ -220,6 +227,7 @@ class MarpConfigurable(private val project: Project) : BoundConfigurable(MarpBun
         scrollSync = appSettings.scrollSync
         presenterNotes = appSettings.presenterNotes
         marpCliPath = appSettings.marpCliPath
+        presentWithCli = appSettings.presentWithCli
     }
 
     private fun htmlLabel(mode: MarpHtmlMode): String = when (mode) {
