@@ -21,51 +21,78 @@ import cz.p3kj.marp.themes.MarpThemeService
 
 /**
  * Completes directive names (`_pa` gives `_paginate`) and values (`paginate: ` offers `true`, `hold`, ...) in HTML
- * comments of Marp decks.
+ * comments and in the front matter of Marp decks. The front matter also offers `marp`, and does not offer a key that
+ * the front matter already has (a repeated key makes Marp reject the whole front matter).
  *
  * The comment is looked up in the original Markdown tree, not at [CompletionParameters.position]: with the XML module
  * the IDE parses a Markdown file a second time as HTML (template data), so the caret element is usually an HTML comment
- * of the completion copy. That is why this contributor is registered for every language.
+ * of the completion copy. That is why this contributor is registered for every language. The same registration is what
+ * reaches the front matter: with the YAML plugin the Markdown plugin injects YAML there, the caret is then in an injected
+ * file, and [MarpFrontMatter.hostOf] maps it back to the Markdown file. The other completion of the front matter (the
+ * keys of the Markdown plugin's front matter schema, such as `title`) stays, only the values of a Marp key are ours alone.
  */
 class MarpDirectiveCompletionContributor : CompletionContributor(), DumbAware {
 
     override fun fillCompletionVariants(parameters: CompletionParameters, result: CompletionResultSet) {
         if (parameters.completionType != CompletionType.BASIC) return
-        val file = parameters.originalFile
+        val (file, offset) = MarpFrontMatter.hostOf(parameters.originalFile, parameters.offset)
         if (!MarpDirectiveComments.isMarpDeck(file)) return
-        val context = MarpDirectiveCompletion.contextAt(file, parameters.offset) ?: return
+        val text = MarpFrontMatter.text(file) ?: return
+        val frontMatterSpot = MarpFrontMatter.completionSpot(text, offset)
+        if (frontMatterSpot != null) {
+            fillFrontMatter(frontMatterSpot, file, text, offset, result)
+            return
+        }
+        val context = MarpDirectiveCompletion.contextAt(file, offset) ?: return
         when (val spot = context.spot ?: return) {
             is MarpCompletionSpot.Key -> {
-                addKeys(result.withPrefixMatcher(spot.prefix), spot.prefix)
+                addKeys(result.withPrefixMatcher(spot.prefix), spot.prefix, MarpDirectiveCatalog.ALL)
                 // Where a directive is being written, plain word completion would only add noise.
                 if (context.directiveIsLikely) result.stopHere()
             }
-            is MarpCompletionSpot.Value -> {
-                val directive = (MarpDirectiveCatalog.resolve(spot.key) as? MarpDirectiveKey.Known)?.directive ?: return
-                val values = MarpDirectiveCompletion.values(directive, file)
-                if (values.isEmpty()) return
-                val prefixed = result.withPrefixMatcher(spot.prefix)
-                // Keep the order of the list: the common values come first.
-                values.forEachIndexed { index, value ->
-                    prefixed.addElement(PrioritizedLookupElement.withPriority(LookupElementBuilder.create(value), (values.size - index).toDouble()))
-                }
-                result.stopHere()
-            }
+            is MarpCompletionSpot.Value -> addValues(result, spot, MarpDirectiveCatalog.resolve(spot.key), file)
         }
     }
 
+    /** The front matter: no `stopHere()` for keys, so the other front matter keys stay. */
+    private fun fillFrontMatter(spot: MarpCompletionSpot, file: PsiFile, text: CharSequence, offset: Int, result: CompletionResultSet) {
+        when (spot) {
+            is MarpCompletionSpot.Key -> {
+                val taken = MarpFrontMatter.keysOutsideLine(text, offset)
+                addKeys(result.withPrefixMatcher(spot.prefix), spot.prefix, MarpDirectiveCatalog.FRONT_MATTER_ONLY + MarpDirectiveCatalog.ALL, taken)
+            }
+            is MarpCompletionSpot.Value -> addValues(result, spot, MarpDirectiveCatalog.resolveInFrontMatter(spot.key), file)
+        }
+    }
+
+    /** The values of the directive [key] resolves to, in the order of the list: the common values come first. */
+    private fun addValues(result: CompletionResultSet, spot: MarpCompletionSpot.Value, key: MarpDirectiveKey, file: PsiFile) {
+        val directive = (key as? MarpDirectiveKey.Known)?.directive ?: return
+        val values = MarpDirectiveCompletion.values(directive, file)
+        if (values.isEmpty()) return
+        val prefixed = result.withPrefixMatcher(spot.prefix)
+        values.forEachIndexed { index, value ->
+            prefixed.addElement(PrioritizedLookupElement.withPriority(LookupElementBuilder.create(value), (values.size - index).toDouble()))
+        }
+        result.stopHere()
+    }
+
     /**
-     * Every global and local name, and the `_` form of the local ones. The matcher treats `_` as a word break, so
-     * `foot` would also match `_footer`: the two forms are only offered together for an empty prefix.
+     * Every name of [directives] and the `_` form of the local ones, except the names in [exclude]. The matcher treats
+     * `_` as a word break, so `foot` would also match `_footer`: the two forms are only offered together for an empty
+     * prefix.
      */
-    private fun addKeys(result: CompletionResultSet, prefix: String) {
+    private fun addKeys(result: CompletionResultSet, prefix: String, directives: List<MarpDirective>, exclude: Set<String> = emptySet()) {
         val spotOnly = prefix.startsWith("_")
         val plainOnly = prefix.isNotEmpty() && !spotOnly
-        for (directive in MarpDirectiveCatalog.ALL) {
-            val type = MarpBundle.message(if (directive.scope == MarpDirectiveScope.GLOBAL) "completion.type.global" else "completion.type.local")
-            if (!spotOnly) result.addElement(PrioritizedLookupElement.withPriority(key(directive.name, directive, type), 2.0))
-            if (!plainOnly && directive.scope == MarpDirectiveScope.LOCAL) {
-                result.addElement(PrioritizedLookupElement.withPriority(key("_" + directive.name, directive, MarpBundle.message("completion.type.spot")), 1.0))
+        for (directive in directives) {
+            val type = MarpDirectiveDocs.typeText(directive)
+            if (!spotOnly && directive.name !in exclude) {
+                result.addElement(PrioritizedLookupElement.withPriority(key(directive.name, directive, type), 2.0))
+            }
+            val spotName = "_" + directive.name
+            if (!plainOnly && directive.scope == MarpDirectiveScope.LOCAL && spotName !in exclude) {
+                result.addElement(PrioritizedLookupElement.withPriority(key(spotName, directive, MarpBundle.message("completion.type.spot")), 1.0))
             }
         }
     }
@@ -96,25 +123,41 @@ class MarpDirectiveCompletionContributor : CompletionContributor(), DumbAware {
 }
 
 /**
- * Decides where the completion popup opens by itself while typing in a comment of a Marp deck. It opens where a
- * directive is being written: after `key: ` of a directive with known values, after `_` (no sentence starts with it),
- * and on any line of a comment that already holds a directive. Everywhere else in a comment it stays closed, so typing
- * a presenter note never pops up directive names. Outside comments and outside Marp decks the default applies.
+ * Decides where the completion popup opens by itself while typing in a Marp deck.
+ *
+ * In a comment it opens where a directive is being written: after `key: ` of a directive with known values, after `_`
+ * (no sentence starts with it), and on any line of a comment that already holds a directive. Everywhere else in a
+ * comment it stays closed, so typing a presenter note never pops up directive names.
+ *
+ * In the front matter it opens for every key and for the values of a directive that has some. Other values are left to
+ * the YAML support, which is asked when the caret is in the injected YAML file and gets mapped back to the Markdown
+ * file here. Outside comments, the front matter and Marp decks the default applies.
  */
 class MarpDirectiveCompletionConfidence : CompletionConfidence() {
 
     override fun shouldSkipAutopopup(editor: Editor, contextElement: PsiElement, psiFile: PsiFile, offset: Int): ThreeState {
-        if (!MarpDirectiveComments.isMarpDeck(psiFile)) return ThreeState.UNSURE
-        val context = MarpDirectiveCompletion.contextAt(psiFile, offset) ?: return ThreeState.UNSURE
+        val (file, hostOffset) = MarpFrontMatter.hostOf(psiFile, offset)
+        if (!MarpDirectiveComments.isMarpDeck(file)) return ThreeState.UNSURE
+        val text = MarpFrontMatter.text(file) ?: return ThreeState.UNSURE
+        val frontMatterSpot = MarpFrontMatter.completionSpot(text, hostOffset)
+        if (frontMatterSpot != null) return frontMatterConfidence(frontMatterSpot)
+        val context = MarpDirectiveCompletion.contextAt(file, hostOffset) ?: return ThreeState.UNSURE
         val open = when (val spot = context.spot) {
             null -> false
-            is MarpCompletionSpot.Value -> {
-                val directive = (MarpDirectiveCatalog.resolve(spot.key) as? MarpDirectiveKey.Known)?.directive
-                directive != null && MarpDirectiveCompletion.hasValues(directive)
-            }
+            is MarpCompletionSpot.Value -> valuesFollow(MarpDirectiveCatalog.resolve(spot.key))
             is MarpCompletionSpot.Key -> context.directiveIsLikely
         }
         return if (open) ThreeState.NO else ThreeState.YES
+    }
+
+    private fun frontMatterConfidence(spot: MarpCompletionSpot): ThreeState = when (spot) {
+        is MarpCompletionSpot.Key -> ThreeState.NO
+        is MarpCompletionSpot.Value -> if (valuesFollow(MarpDirectiveCatalog.resolveInFrontMatter(spot.key))) ThreeState.NO else ThreeState.UNSURE
+    }
+
+    private fun valuesFollow(key: MarpDirectiveKey): Boolean {
+        val directive = (key as? MarpDirectiveKey.Known)?.directive ?: return false
+        return MarpDirectiveCompletion.hasValues(directive)
     }
 }
 

@@ -32,6 +32,8 @@ dependencies {
         // Content module of the platform that holds the spellchecker API (BundledDictionaryProvider).
         bundledModule("intellij.spellchecker")
         testFramework(TestFrameworkType.Platform)
+        // The Markdown plugin injects YAML into the front matter when this plugin is there, like in the IDE.
+        testBundledPlugin("org.jetbrains.plugins.yaml")
     }
 }
 
