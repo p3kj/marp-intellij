@@ -1,0 +1,22 @@
+<html>
+<body>
+Reports a <code>theme</code> directive of a Marp deck that names a theme which is neither built into Marp (<code>default</code>,
+<code>gaia</code>, <code>uncover</code>) nor one of your custom themes. Marp then falls back to the default theme without a hint.
+<pre><code>---
+marp: true
+theme: sketch
+---</code></pre>
+<p>The same check applies to <code>theme</code> in a directive comment. Theme names are case-sensitive.</p>
+<p>Quick fixes (Alt+Enter):</p>
+<ul>
+    <li>Add a theme CSS file or folder to Settings | Tools | Marp.</li>
+    <li>Create a <code>.marprc.yml</code> with a <code>themeSet</code>, or open the one that the project already has. Only offered while
+        "Also use themeSet from .marprc.yml" is on.</li>
+    <li>Open Settings | Tools | Marp.</li>
+</ul>
+<p>The name of a theme is the <code>/* @theme name */</code> comment at the top of its CSS file.</p>
+<p>The inspection stays quiet when it cannot be sure that the theme is missing: while the themes are still loading, in an untrusted
+project (custom themes are not loaded there), and while any theme source has a problem, such as a missing file, a failed download or a
+broken <code>.marprc</code>. The preview names those problems.</p>
+</body>
+</html>

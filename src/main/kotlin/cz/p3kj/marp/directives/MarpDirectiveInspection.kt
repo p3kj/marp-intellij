@@ -19,7 +19,7 @@ import org.intellij.plugins.markdown.lang.psi.impl.MarkdownFile
  *
  * A comment that has no valid directive at all is a presenter note to Marp, so it is left alone unless a key is a
  * near miss of a directive, as in `Class: lead` (a weak warning, since it may well be a note). Comments of other tools (`prettier-ignore`, `markdownlint-disable`)
- * are skipped. Unknown theme names are not reported, the preview warns about them.
+ * are skipped. Unknown theme names are reported by [MarpUnknownThemeInspection], which depends on the loaded themes.
  *
  * The front matter holds the metadata of other tools too (`title`, `author`, ...), so an unknown key there is only a weak
  * warning when it is a near miss of a directive with a name of at least 5 characters or that differs in case only, and
