@@ -32,6 +32,7 @@ avoids internal, deprecated and experimental APIs.
 | `cz.p3kj.marp.slides` | slide model: Markdown PSI -> blocks (`MarpSlideParser`), Marp's split rules (`MarpSlideSplitter`, `MarpHeadingDivider`), `MarpDeck` / `MarpSlide` |
 | `cz.p3kj.marp.structure` | slide outline for the Structure tool window and the File Structure popup |
 | `cz.p3kj.marp.navigation` | slide navigation: Next / Previous / Go to Slide actions, "Slide 3 / 12" status bar widget, slide number inlay hints |
+| `cz.p3kj.marp.folding` | one fold region per slide of a Marp deck |
 | `cz.p3kj.marp.directives` | directives in comments and the front matter: catalog of the Marp directives, comment and front matter parser, highlighting and color page (comments), completion, documentation, theme navigation, inspection |
 | `cz.p3kj.marp.editor` | file editor provider, split editor, preview file editor, preview toolbar actions (group `Marp.PreviewToolbar`) |
 | `cz.p3kj.marp.preview` | JCEF panel, JS bridge, resource request handler |
@@ -221,8 +222,8 @@ string:
 
 `MarpDeck` (package `cz.p3kj.marp.slides`) is the Kotlin side's view of a deck: a list of `MarpSlide`s that partition the
 whole text (`startOffset` / `endOffset`, the front matter belongs to slide 1, a `---` line belongs to the slide it
-starts), the headings of each slide, and `slideIndexAt(offset)`. Features that need slides use it: the Structure view
-and slide navigation today, folding later.
+starts), the headings of each slide, and `slideIndexAt(offset)`. Features that need slides use it: the Structure view,
+slide navigation and slide folding.
 
 - `MarpSlideParser.deck(MarkdownFile)` (cached per PSI modification, call in a read action) walks the Markdown plugin's
   PSI for the blocks that matter: top-level thematic breaks, headings at any depth, HTML comments (block and inline,
@@ -296,6 +297,36 @@ included. Moving the caret is all they do, scroll sync then makes the preview fo
   outside Marp decks. There is no settings preview file (`inlayProviders/marp.slideNumbers/preview.md`), the platform
   shows the description alone. Chosen over a line marker (icons only) and `EditorLinePainter` (paints on the EDT, would
   need the deck there).
+
+## Slide folding (Kotlin)
+
+Package `cz.p3kj.marp.folding` (#10). `MarpSlideFoldingBuilder` is a `FoldingBuilderEx` (`lang.foldingBuilder`, language
+Markdown, `DumbAware`) that returns one region per slide of a Marp deck and nothing for other files
+(`MarpDirectiveComments.isMarpDeck`). The slides come from `MarpSlideParser.deck`, so they are the ones of the preview,
+`headingDivider` included. No settings, regions are never collapsed by default.
+
+- `folds(deck, document)` (pure, tested) maps a slide to a region. The visible first line of a slide is the closing
+  front matter line (slide 1), the `---` line, or the heading line of a `headingDivider` slide (`bodyOffset - 1` for the
+  first two, `startOffset` for the last). The region starts at the end of that line and ends after the last non-blank
+  character of the slide, so trailing blank lines stay outside and the region never reaches the next `---` or heading.
+  A slide with nothing after its first line gets no region.
+- The placeholder is `Slide 3: Agenda` (`folding.slide.titled`) or `Slide 3` (`folding.slide.untitled`), so a collapsed
+  slide reads `---[Slide 3: Agenda]`. The title is the first heading of the slide unless that heading is the visible
+  first line, and is shortened to 60 characters. The number is passed as a string so that 1000 is not "1,000".
+  Descriptors carry their own placeholder text, `getPlaceholderText(ASTNode)` is not used.
+- Descriptors hang on the file node (like the Markdown plugin's TOC regions), so the fold state is not restored for
+  slides after the file is closed and reopened.
+- Registered with `order="first"`. `LanguageFolding` wraps all builders of a language in a composite that keeps the
+  first of two identical ranges, and `FoldingModelImpl.createFoldRegion` refuses a region that strictly overlaps an
+  existing one (nested and adjacent regions are fine). The Markdown plugin folds a heading up to the next heading of
+  the same or a higher level, which often runs across a `---` line, so a slide region can never avoid every overlap and
+  has to be created first. Dropped are the Markdown heading regions that cross a slide boundary (they would fold parts
+  of two slides) and, rarely, a list or block quote that a `headingDivider` heading splits. The front matter region ends
+  where the first slide region starts, block regions never cross a top-level `---`. While typing, a still valid earlier
+  Markdown region can make the platform refuse a new conflicting slide region until the next full rebuild (reopening
+  the file).
+- Not used: `CodeFoldingManager.buildInitialFoldings` (deprecated), `FoldingDescriptor.getCachedPlaceholderText`
+  (internal), `CustomFoldingBuilder` (the Markdown plugin already handles custom region comments).
 
 ## Directive comments and front matter (Kotlin)
 
@@ -458,7 +489,7 @@ The front matter is covered in the "Front matter" bullet at the end of this sect
   theme service including trust, `.marprc` confinement and download limits), plus plain unit tests for logic that does
   not need the platform: `MarpDetector`, `MarpSlideSplitter` and `MarpHeadingDivider` (slide splitting, tricky cases by
   hand-built blocks; `MarpSlideParserTest` and `MarpStructureViewTest` cover the PSI adapter and the tree), the slide navigation
-  (actions, Go to Slide with a replaced test input dialog, status bar widget, inlay hints called through a recording sink), `MarpBridgeState`, `MarpScrollEchoGuard`, `MarpLinkPolicy` (and request
+  (actions, Go to Slide with a replaced test input dialog, status bar widget, inlay hints called through a recording sink), slide folding (regions from the builder, and the real fold model after the initial folding pass next to the Markdown regions), `MarpBridgeState`, `MarpScrollEchoGuard`, `MarpLinkPolicy` (and request
   routing), `MarpResourcePaths`, `MarpJcefStartup`, the `.marprc` parser, `MarpThemePaths`, `MarpThemeFolder`,
   `MarpThemeWatch`, `MarpThemeNames` and the theme URL validation of the settings page. The directive features have plain
   unit tests for the catalog and the comment parser, and light platform tests for highlighting, completion (including
