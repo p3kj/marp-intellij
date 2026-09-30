@@ -21,9 +21,11 @@ import org.intellij.plugins.markdown.lang.psi.impl.MarkdownHeader
  * in [MarpSlideSplitter]. The front matter is located by [MarpDetector.findFrontMatter], not by the PSI, so that it
  * follows the same rules as deck detection.
  *
- * One place where the Markdown plugin is not CommonMark: it builds a setext heading from any single line above `---` or
- * `===`, not only from a paragraph line. `# Title` and `---` directly above a `---` are an ATX heading and a thematic
- * break for markdown-it, so those setext nodes are read as what markdown-it makes of them, see [Misread].
+ * Around `---` and `===` the Markdown plugin is not CommonMark, and the parser corrects it (see [Misread] and
+ * [setextUnderline]): the plugin builds a setext heading from any single line above the underline, not only from a
+ * paragraph line, so `# Title`, `---` or a one-line HTML comment directly above `---` is a setext heading for it and a
+ * heading, break or comment plus a break for markdown-it. And it leaves a paragraph of several lines above `---` as a
+ * paragraph and a break, where markdown-it makes a setext heading. The gaps that remain are listed in docs/ARCHITECTURE.md.
  */
 object MarpSlideParser {
 
@@ -53,6 +55,8 @@ object MarpSlideParser {
 
     private fun collectTopLevel(fileNode: ASTNode, skipBefore: Int, out: MutableList<MarpBlock>) {
         var offset = 0
+        // The node with the `---` line that turns the paragraph before it into a heading, that line is not a break.
+        var underline: ASTNode? = null
         for (child in fileNode.getChildren(null)) {
             val start = offset
             offset += child.textLength
@@ -60,9 +64,15 @@ object MarpSlideParser {
             if (start < skipBefore) continue
             val type = child.elementType
             when {
+                child === underline && type == MarkdownTokenTypes.HORIZONTAL_RULE -> Unit
+                type == MarkdownElementTypes.PARAGRAPH && setextUnderline(child) != null -> {
+                    underline = setextUnderline(child)
+                    out += MarpBlock.Heading(start, 2, paragraphText(child))
+                    collectNested(child, start, out)
+                }
                 type == MarkdownTokenTypes.HORIZONTAL_RULE -> out += MarpBlock.Break(start)
                 type in HEADER_TYPES -> {
-                    headerBlocks(child, start, out)
+                    headerBlocks(child, start, out, ruleIsUnderline = child === underline)
                     collectNested(child, start, out)
                 }
                 type == MarkdownElementTypes.HTML_BLOCK && isComment(child) -> out += MarpBlock.Comment(start, child.text)
@@ -103,6 +113,12 @@ object MarpSlideParser {
 
         /** An ATX heading (`# Title`) above the underline: markdown-it reads that heading, then the underline itself. */
         data class Atx(val level: Int) : Misread
+
+        /**
+         * A one-line HTML comment or `<style>` element above the underline: an HTML block for markdown-it, hidden in the
+         * slide, then the underline itself. Comments in it are still found by [collectNested].
+         */
+        data object Hidden : Misread
     }
 
     private val THEMATIC_BREAK = Regex("^ {0,3}([-*_])(?:[ \\t]*\\1){2,}[ \\t]*$")
@@ -110,36 +126,81 @@ object MarpSlideParser {
     private val ATX_LEADING_MARKER = Regex("^\\s*#{1,6}")
     private val ATX_CLOSING_MARKER = Regex("(?:^|[ \\t])#+[ \\t]*$")
 
+    /** An HTML block that starts and ends on the line: `<!-- ... -->` (type 2) or `<style ...>...</style>` (type 1). */
+    private val HIDDEN_HTML = Regex("^ {0,3}(?:<!--.*-->|<style(?=[\\s>]|$).*</style>)", RegexOption.IGNORE_CASE)
+
     /** `null` for an ATX heading and for a real setext heading: one whose content is a paragraph, or several lines. */
     private fun misread(setext: ASTNode): Misread? {
         val line = setext.findChildByType(MarkdownTokenTypes.SETEXT_CONTENT)?.text ?: return null
         if ('\n' in line) return null
+        if (HIDDEN_HTML.containsMatchIn(line)) return Misread.Hidden
         if (THEMATIC_BREAK.matches(line)) return Misread.Rule
         return ATX_OPENING.find(line)?.let { Misread.Atx(it.groupValues[1].length) }
     }
 
     /**
      * The blocks of a top-level heading node. A real heading is one block. A misread setext node is split as markdown-it
-     * reads it: a break or an ATX heading first, and for `---` the underline is a thematic break of its own, which is a
-     * slide separator (`===` is only text).
+     * reads it: a break, an ATX heading or nothing (a hidden HTML block) first, then the underline. `---` is a thematic
+     * break of its own, a slide separator, `===` is a paragraph. [ruleIsUnderline]: the rule line of the node underlines the
+     * paragraph before it, so it is not a break.
      */
-    private fun headerBlocks(node: ASTNode, start: Int, out: MutableList<MarpBlock>) {
-        out += heading(node, start) ?: MarpBlock.Break(start)
-        if (node.elementType != MarkdownElementTypes.SETEXT_2 || misread(node) == null) return
-        val underline = node.findChildByType(MarkdownTokenTypes.SETEXT_2) ?: return
-        out += MarpBlock.Break(start + underline.startOffsetInParent)
+    private fun headerBlocks(node: ASTNode, start: Int, out: MutableList<MarpBlock>, ruleIsUnderline: Boolean) {
+        val misread = misread(node)
+        val heading = heading(node, start, misread)
+        if (heading != null) out += heading else if (misread is Misread.Rule && !ruleIsUnderline) out += MarpBlock.Break(start)
+        if (misread == null) return
+        val equals = node.elementType == MarkdownElementTypes.SETEXT_1
+        val underline = node.findChildByType(if (equals) MarkdownTokenTypes.SETEXT_1 else MarkdownTokenTypes.SETEXT_2) ?: return
+        // The underline token starts after its indentation, a block starts at the line.
+        val underlineStart = start + node.text.lastIndexOf('\n', underline.startOffsetInParent) + 1
+        out += if (equals) MarpBlock.Content(underlineStart) else MarpBlock.Break(underlineStart)
     }
 
-    /** The heading of [node] with the level and text markdown-it gives it, `null` when it is a thematic break instead. */
-    private fun heading(node: ASTNode, start: Int): MarpBlock.Heading? = when (val misread = misread(node)) {
+    /** The heading of [node] with the level and text markdown-it gives it, `null` when it is a break or hidden HTML instead. */
+    private fun heading(node: ASTNode, start: Int, misread: Misread? = misread(node)): MarpBlock.Heading? = when (misread) {
         null -> MarpBlock.Heading(start, (node.psi as MarkdownHeader).level, headingText(node))
-        Misread.Rule -> null
+        Misread.Rule, Misread.Hidden -> null
         is Misread.Atx -> MarpBlock.Heading(start, misread.level, atxText(headingText(node)))
     }
 
     /** Drops the `#` markers (opening, and the optional closing sequence) that a setext node keeps in its content text. */
     private fun atxText(text: String): String =
         text.replaceFirst(ATX_LEADING_MARKER, "").replace(ATX_CLOSING_MARKER, "")
+
+    /** `-` characters only, up to three spaces of indentation: not `- - -` or `-- -` (thematic breaks), `***` or `___`. */
+    private val SETEXT_UNDERLINE = Regex("^ {0,3}-+[ \\t]*$")
+
+    /**
+     * The node with the `---` line that makes the top-level [paragraph] a setext heading for markdown-it, `null` if there
+     * is none. The plugin builds a setext node from a one-line paragraph only and leaves a longer one as a paragraph
+     * followed by a thematic break; when another `---` follows, it reads that one as the content of a setext node
+     * ([Misread.Rule]) instead. The underline must be on the very next line: one line break between the paragraph and
+     * it (a blank line makes two). Lazy lines of quotes and lists are inside those blocks in the PSI, so a top-level
+     * paragraph is one for markdown-it too.
+     */
+    private fun setextUnderline(paragraph: ASTNode): ASTNode? {
+        var next = paragraph.treeNext
+        var lineBreaks = 0
+        while (next != null && (next.elementType == TokenType.WHITE_SPACE || next.elementType == MarkdownTokenTypes.EOL)) {
+            lineBreaks += next.text.count { it == '\n' }
+            next = next.treeNext
+        }
+        if (next == null || lineBreaks != 1) return null
+        val line = when (next.elementType) {
+            MarkdownTokenTypes.HORIZONTAL_RULE -> next.text
+            MarkdownElementTypes.SETEXT_1, MarkdownElementTypes.SETEXT_2 ->
+                if (misread(next) == Misread.Rule) next.findChildByType(MarkdownTokenTypes.SETEXT_CONTENT)?.text else null
+            else -> null
+        }
+        return next.takeIf { line != null && SETEXT_UNDERLINE.matches(line) }
+    }
+
+    /** The text of a paragraph without inline markup, like [headingText]. The lines are joined by the whitespace collapse of the splitter. */
+    private fun paragraphText(paragraph: ASTNode): String {
+        val text = StringBuilder()
+        for (child in paragraph.getChildren(null)) appendInlineText(child, text)
+        return text.toString()
+    }
 
     private fun isComment(node: ASTNode): Boolean = node.text.trimStart().startsWith("<!--")
 

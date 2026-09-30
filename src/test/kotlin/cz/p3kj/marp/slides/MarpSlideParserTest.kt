@@ -89,7 +89,10 @@ class MarpSlideParserTest : MarpLightTestCase() {
     fun testATitleWithMarkupAboveABreakKeepsTheTitleClean() {
         assertEquals(listOf("Bold title", "Link text"), titles("$front# **Bold** title\n---\n# [Link](x) text\n"))
         assertEquals(listOf("snake_case", "B"), titles("$front# snake_case\n---\n# B\n"))
-        assertEquals(listOf("#hashtag"), titles("$front# #hashtag\n"))
+        assertEquals(listOf("#hashtag", "B"), titles("$front# #hashtag\n---\n# B\n"))
+        // Not ATX headings (no space after the markers, seven markers): real setext headings, one slide.
+        assertEquals(listOf("#hashtag"), titles("$front#hashtag\n---\n# B\n"))
+        assertEquals(listOf("####### A"), titles("$front####### A\n---\n# B\n"))
     }
 
     fun testABreakDirectlyAboveABreakIsTwoBreaks() {
@@ -114,7 +117,7 @@ class MarpSlideParserTest : MarpLightTestCase() {
         assertEquals(1, deck("$front\ntext\n---\n\nB\n").slides.size)
     }
 
-    fun testATxHeadingAboveASetextEqualsLineHasTheLevelOfTheAtxLine() {
+    fun testAtxHeadingAboveASetextEqualsLineHasTheLevelOfTheAtxLine() {
         val one = deck("$front# A\n===\n\ntext\n")
         assertEquals(1, one.slides.size)
         assertEquals(listOf(MarpHeading(1, "A", front.length)), one.slides[0].headings)
@@ -147,6 +150,76 @@ class MarpSlideParserTest : MarpLightTestCase() {
     fun testABreakAboveAnEqualsLineIsABreak() {
         // markdown-it: a rule, then the paragraph "===".
         assertEquals(listOf("A", "-"), titles("$front# A\n\n---\n===\n\ntext\n"))
+    }
+
+    fun testCommentOrStyleDirectlyAboveABreakIsNotAHeading() {
+        // Marp: an HTML block, then a break. The plugin says a setext heading, which merged the two slides.
+        assertEquals(listOf("A", "B"), titles("$front# A\n\n<!-- c -->\n---\n# B\n"))
+        assertEquals(listOf("A", "B"), titles("$front# A\n\ntext\n<!-- c -->\n---\n# B\n"))
+        assertEquals(listOf("A", "B"), titles("$front# A\n\n<style>a{}</style>\n---\n# B\n"))
+        assertEquals(listOf("A", "B"), titles("$front# A\n\n<!-- c --> text\n---\n# B\n"))
+        // The directive comment is still a comment of the deck.
+        assertEquals(listOf("A", "B"), titles("$front# A\n\n<!-- _class: x -->\n---\n# B\n"))
+        assertEquals(setOf(1, 2), deck("$front# A\n\n<!-- headingDivider: 2 -->\n---\n\ntext\n").headingDivider)
+        // It is no phantom heading either: with a divider nothing splits at it.
+        val divider = "---\nmarp: true\nheadingDivider: 2\n---\n"
+        assertEquals(listOf("A", "-"), titles("$divider# A\n\n<!-- c -->\n---\ntext\n"))
+        // A quote keeps its comment and its rule to itself.
+        assertEquals(1, deck("$front> <!-- c -->\n> ---\n\n# B\n").slides.size)
+    }
+
+    fun testAnEqualsLineAfterABreakOrACommentIsVisibleText() {
+        val divider = "---\nmarp: true\nheadingDivider: 2\n---\n"
+        // Marp: rule, paragraph "===", then a divider heading with something visible before it: 3 slides.
+        assertEquals(listOf("-", "-", "B"), titles("${divider}text\n\n---\n===\n## B\n"))
+        assertEquals(listOf("-", "B"), titles("${divider}<!-- c -->\n===\n## B\n"))
+    }
+
+    fun testABreakUnderlineWithIndentationStartsTheSlideAtTheLine() {
+        val text = "$front# A\n   ---\n# B\n"
+        assertEquals(listOf("A", "B"), titles(text))
+        assertEquals(text.indexOf("   ---"), deck(text).slides[1].startOffset)
+    }
+
+    // A paragraph of several lines above `---`: the plugin reads a paragraph and a break, markdown-it a setext heading.
+
+    fun testParagraphOfSeveralLinesAboveABreakIsAHeading() {
+        val text = "$front# A\n\ntext\nmore text\n---\n# B\n"
+        val deck = deck(text)
+        assertEquals(1, deck.slides.size)
+        val headings = deck.slides[0].headings
+        assertEquals(listOf(1, 2, 1), headings.map { it.level })
+        assertEquals(listOf("A", "text more text", "B"), headings.map { it.text })
+        assertEquals(text.indexOf("text\nmore"), headings[1].offset)
+        assertEquals(listOf("text more"), titles("$front\ntext\nmore\n---\n# B\n"))
+        val front = "$front# A\n\n"
+        assertEquals(1, deck("${front}text\nmore\n   ---  \n# B\n").slides.size)
+        assertEquals(listOf("A", "B"), deck("${front}text\nmore\n    ---\n# B\n").slides.single().headings.map { it.text })
+        val marked = deck("${front}*text*\n`more`\n---\n# B\n")
+        assertEquals(1, marked.slides.size)
+        assertEquals(listOf("A", "text more", "B"), marked.slides.single().headings.map { it.text })
+    }
+
+    fun testParagraphOfSeveralLinesAboveABreakDoesNotHideTheNextBreak() {
+        assertEquals(listOf("A", "B"), titles("$front# A\n\ntext\nmore\n---\n---\n# B\n"))
+        assertEquals(listOf("A", "-", "B"), titles("$front# A\n\ntext\nmore\n---\n---\n---\n# B\n"))
+        assertEquals(listOf("A"), titles("$front# A\n\ntext\nmore\n---\n===\n# B\n"))
+    }
+
+    fun testLinesThatAreNoSetextUnderlineStillBreak() {
+        val prefix = "$front# A\n\n"
+        for (rest in listOf(
+            "text\nmore\n- - -\n# B\n", "text\nmore\n-- -\n# B\n", "text\nmore\n***\n# B\n", "text\nmore\n___\n# B\n",
+            "text\nmore\n\n---\n# B\n", "> quote\nlazy\n---\n# B\n", "- item\nlazy\n---\n# B\n",
+            "- item\n  more\n---\n# B\n", "text\n- item\n---\n# B\n",
+        )) {
+            assertEquals(rest, listOf("A", "B"), titles(prefix + rest))
+        }
+    }
+
+    fun testHeadingDividerLevelOfAParagraphHeading() {
+        val divider = "---\nmarp: true\nheadingDivider: 2\n---\n"
+        assertEquals(listOf("-", "text more"), titles("${divider}x\n\ntext\nmore\n---\ntail\n"))
     }
 
     fun testBreaksInBlockquotesAndListsDoNotSplit() {

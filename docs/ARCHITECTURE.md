@@ -299,17 +299,22 @@ slide navigation and slide folding.
   markers, inline HTML and comments, images left out, links reduced to their text), not from
   `MarkdownHeader.buildVisibleText` (`@ApiStatus.Experimental`). Only `MarkdownFile`, `MarkdownHeader.level` and the
   element and token type constants are used from the Markdown plugin.
-- The one place where the Markdown plugin's parser (JetBrains/markdown) is not CommonMark: it builds `SETEXT_1` /
-  `SETEXT_2` from ANY single line above `===` / `---`, not only from a paragraph line, while markdown-it (Marpit) reads
-  an ATX heading or a thematic break there. `# A` directly above `---` is an `h1` and a break for Marp (the plugin says
-  one `h2`), and `---` directly above `---` is two breaks (the plugin says one heading titled "---"). `MarpSlideParser`
-  therefore reads a setext node whose content is a single line as what markdown-it makes of it: a content line that is
-  a thematic break becomes a `Break`, one that starts an ATX heading becomes a `Heading` with the level of the `#`
-  markers and the text without the markers (also the closing ones), and for `---` the underline is a `Break` of its own
-  (`===` is only text). Inside blockquotes and lists the same correction gives the heading its real level, or no
-  heading, but no break, because Marpit splits at top-level `hr` only. Real setext headings (a paragraph line above the
-  underline) are unchanged. Not covered: a paragraph of several lines above `---`, which the plugin already reads as a
-  paragraph and a rule (a break) while Marp makes a setext heading of it; that misread is still open.
+- Where the Markdown plugin's parser (JetBrains/markdown) is not CommonMark around `---` and `===`, `MarpSlideParser`
+  corrects it so that the slides are those of markdown-it (Marpit). The parser builds `SETEXT_1` / `SETEXT_2` from ANY
+  single line above the underline, not only from a paragraph line. A setext node with a single content line is
+  therefore read as what markdown-it makes of the line: a thematic break (`---` above `---`) becomes a `Break`; an ATX
+  line (`# A` above `---`) becomes a `Heading` with the level of the `#` markers and the text without them (also the
+  closing ones); a one-line HTML comment or `<style>` element (a presenter note right above `---`) is hidden HTML, not a
+  heading, and its comment still reaches the directives. For `---` the underline is then a `Break` of its own, for
+  `===` it is visible text. The other way round, the parser leaves a paragraph of several lines above `---` as a
+  paragraph and a rule (or, when another `---` follows, as a setext node holding the first `---`), where markdown-it
+  makes an `h2` of it: a top-level `PARAGRAPH` followed by exactly one line break and a `-` only line (up to three spaces
+  of indentation, no spaces inside, so not `- - -`, `***` or `___`) is a level-2 `Heading` and that line is not a break.
+  Inside blockquotes and lists the setext correction gives the heading its real level, or no heading, but never a
+  break, because Marpit splits at top-level `hr` only. Real setext headings (one paragraph line above the underline) are
+  unchanged. Open gaps: the PSI lets `2. item` interrupt a paragraph, so `text\n2. item\n---` is one slide in Marp and
+  two in the plugin; and a paragraph of two or more lines above `===` stays a paragraph in the PSI (an `h1` in Marp),
+  which only matters for titles and `headingDivider: 1`.
 - `MarpSlideSplitter.split` (pure, unit-tested) mirrors Marpit's `markdown/slide.js` (split at every top-level `hr`)
   and `markdown/heading_divider.js` (a hidden `hr` before headings of the `headingDivider` levels, only when something
   visible precedes it, so a real `---` followed by a divider heading leaves an empty slide between them). This has to

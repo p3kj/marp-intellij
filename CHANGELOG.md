@@ -35,7 +35,7 @@
 - Slide navigation in Marp decks: "Slide 3 / 12" in the status bar (click to go to a slide), Next / Previous Slide (Ctrl+Alt+PageDown / Ctrl+Alt+PageUp, Cmd+Opt on macOS) and Go to Slide in the Navigate menu, and slide numbers as inlay hints at each slide start (Settings | Editor | Inlay Hints)
 - Slides of a Marp deck fold in the editor, one region per slide with "Slide 3: Agenda" as the folded text. Respects `headingDivider`; slides are expanded by default
 - Reorder slides: Code | Move Slide Up / Move Slide Down (Find Action: "Marp: Move Slide Up") move the slide under the caret before the previous or after the next slide, and Move Statement Up / Down (Ctrl+Shift+Up / Down, Cmd+Shift+Up / Down on macOS) moves the whole slide when the caret is on its `---` line. The front matter stays first, a slide's own directives and notes move with it, the caret follows the slide and a move is one undo step. Not available in decks with `headingDivider`. The actions have no default shortcut, assign one in Settings | Keymap
-- Slides are counted like Marp when a `# heading` or another `---` sits directly above a `---` separator, with no blank line in between (status bar, navigation, folding, Structure view and slide moves)
+- Slides are counted like Marp when a `# heading`, another `---`, a one-line HTML comment (a presenter note) or a `<style>` line sits directly above a `---` separator, and a paragraph of several lines directly above `---` is a heading, not a separator (status bar, navigation, folding, Structure view and slide moves)
 - Local image support, including `![bg](...)` backgrounds
 - Math rendering with MathJax (works offline) or KaTeX
 - Setting for inline HTML in slides: off, default or all
