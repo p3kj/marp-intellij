@@ -34,6 +34,7 @@ avoids internal, deprecated and experimental APIs.
 | `cz.p3kj.marp.navigation` | slide navigation: Next / Previous / Go to Slide actions, "Slide 3 / 12" status bar widget, slide number inlay hints |
 | `cz.p3kj.marp.folding` | one fold region per slide of a Marp deck |
 | `cz.p3kj.marp.directives` | directives in comments and the front matter: catalog of the Marp directives, comment and front matter parser, highlighting and color page (comments), completion, documentation, theme navigation, inspection |
+| `cz.p3kj.marp.images` | image syntax in alt text: catalog of the Marp image keywords, alt text finder, completion (contributor and confidence), documentation |
 | `cz.p3kj.marp.editor` | file editor provider, split editor, preview file editor, preview toolbar actions (group `Marp.PreviewToolbar`) |
 | `cz.p3kj.marp.preview` | JCEF panel, JS bridge, resource request handler |
 | `cz.p3kj.marp.sync` | editor <-> preview scroll sync, caret -> active slide |
@@ -461,6 +462,41 @@ The front matter is covered in the "Front matter" bullet at the end of this sect
     duplicate keys and YAML syntax errors (the YAML plugin reports them), completion popup docs. Unknown theme names in the
     front matter are reported by `MarpUnknownThemeInspection`, like in comments.
 
+## Image syntax (Kotlin)
+
+Package `cz.p3kj.marp.images` (#11): completion and hover docs for the keywords in the alt text of `![...](...)`. Limited
+to Marp decks (`MarpDirectiveComments.isMarpDeck`), all `DumbAware`.
+
+- `MarpImageKeywordCatalog` is the one source of facts, from the Marpit 3.2.3 files `lib/markdown/image/parse.js`,
+  `lib/markdown/background_image/parse.js` and `advanced.js` (marp-core 4.4.0 adds no image keyword). Marpit splits the
+  alt text at whitespace and matches every word on its own, so the order does not matter. Any image takes `w:`/`width:`,
+  `h:`/`height:` and the ten CSS filters (with `:arg` and the defaults in the catalog); only an alt text with the word
+  `bg` also takes `fit`, `contain`, `cover`, `auto`, `N%`, `left`/`right` (with `:N%`), `vertical` and `horizontal`
+  (`backgroundOnly`). `resolve(word)` maps a word such as `left:40%` to its keyword. Documentation is in the bundle
+  (`image.doc.<name>`).
+- `MarpImageSyntax.altSpot(text, caret)` is pure and works on the text of the line, not on PSI: while `![b` is typed the
+  Markdown tree has no image element (just `!`, `[` and text), and `![b]` alone may parse as a reference link. From the
+  caret it scans back to a `[` preceded by `!` and stops with `null` at a line break, a `]` or a `[` without `!`. The alt
+  text ends at the first `]` or the line end. Escaped brackets and alt text over several lines are not handled.
+- `spotAt(file, offset)` adds the file checks: `MarpFrontMatter.hostOf` for injected files, deck detection, the front
+  matter (`MarpDetector.findFrontMatter`, reject before its `endOffset`), and a walk up from the `[` in the Markdown tree
+  of the file (`node.findLeafElementAt`, not `PsiFile.findElementAt`, see the directive section) that rejects
+  `CODE_FENCE`, `CODE_BLOCK`, `CODE_SPAN`, `HTML_BLOCK` and `HTML_TAG`.
+- Completion is a `CompletionContributor` and a `CompletionConfidence` for `language="any"`, like the directive ones. It
+  offers the keywords for the word before the caret, without `bg` when the alt text has it and only the ones without
+  `backgroundOnly` when it does not, minus the keywords already present. Priority follows the catalog order. There is no
+  insert handler: the lookup string of `w`/`h`/`width`/`height` ends in `:`, the others are bare. Percentages are
+  documented but not offered. The contributor calls `stopHere()` only when the alt text holds nothing but keywords
+  (`optionsLikely`), so Ctrl+Space in a description still gets the other completions.
+- The confidence returns `NO` (open the popup) while `optionsLikely`, which is true for the first word, `YES` (skip) in
+  an alt text with another word, and `UNSURE` outside alt text. No scheduling by typed characters: the popup opens as a
+  letter is typed, and the platform's default of matching the case of the first letter keeps `![Diagram` quiet.
+- Documentation is a `DocumentationTargetProvider` like the directive one; it resolves the whole word around the offset
+  (the offset at the end of the word counts) and reuses `MarpDirectiveDocs`' section table (`docSection`).
+- The `MARP_DECK` live template context is false inside alt text (`MarpTemplateContextType`), otherwise the `bg` template
+  would expand on Tab in `![bg`.
+- Out of scope: inspections for unknown keywords or bad values, completion of values, the colour image `![bg](red)`.
+
 ## Threading and lifecycle rules
 
 - No blocking work on the EDT; document text read in read actions; file I/O and HTTP on `Dispatchers.IO`.
@@ -498,7 +534,8 @@ The front matter is covered in the "Front matter" bullet at the end of this sect
   routing), `MarpResourcePaths`, `MarpJcefStartup`, the `.marprc` parser, `MarpThemePaths`, `MarpThemeFolder`,
   `MarpThemeWatch`, `MarpThemeNames` and the theme URL validation of the settings page. The directive features have plain
   unit tests for the catalog and the comment parser, and light platform tests for highlighting, completion (including
-  the automatic popup with `CompletionAutoPopupTester`), documentation and the inspection.
+  the automatic popup with `CompletionAutoPopupTester`), documentation and the inspection. The image syntax has a plain unit test for the catalog and the alt text finder and
+  light platform tests for completion, the automatic popup and documentation.
 - Webview (`webview/test`, vitest with jsdom): the host bridge and message queue, marp-core plugins and render options,
   scroll sync, active slide, link and click handling, the unknown-theme warning and the string table.
 - `./gradlew check` runs all of them plus `tsc --noEmit` and the NOTICE freshness check. `verifyPlugin` covers binary

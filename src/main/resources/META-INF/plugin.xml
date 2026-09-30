@@ -12,6 +12,7 @@
             <li><b>Scroll sync</b> in both directions, the slide under the caret is highlighted, double-click a slide to jump to its source line. Toolbar toggles for scroll sync and presenter notes.</li>
             <li><b>Custom themes</b> from CSS files, folders or URLs (the same entries as <code>markdown.marp.themes</code> in VS Code), plus automatic pickup of <code>themeSet</code> from <code>.marprc.yml</code>. Theme edits show up live.</li>
             <li><b>Directives</b> in HTML comments and in the front matter: completion, hover docs and an inspection (unknown names, <code>_theme</code>, invalid <code>paginate</code>, <code>math</code> and <code>headingDivider</code> values), and highlighting in comments. Unknown theme names are reported with quick fixes to add a theme.</li>
+            <li><b>Image syntax</b>: completion and hover docs for the Marp keywords in the alt text of images (<code>bg</code>, <code>left:40%</code>, <code>w:400</code>, <code>sepia</code>, ...).</li>
             <li><b>Local images</b> with relative paths, <code>![bg](...)</code> backgrounds, fitting headers, Twemoji.</li>
             <li><b>Math</b> with MathJax (works offline) or KaTeX.</li>
             <li><b>Inline HTML</b> in slides: off, Marp's safe allow list, or all. Untrusted projects render without HTML and without remote themes.</li>
