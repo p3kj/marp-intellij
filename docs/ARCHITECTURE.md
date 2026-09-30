@@ -28,10 +28,10 @@ avoids internal, deprecated and experimental APIs.
 | Path | Owner / purpose |
 |---|---|
 | `webview/` | npm project: preview page, marp-core bundle (esbuild), vitest tests |
-| `cz.p3kj.marp.MarpDetector` | front-matter `marp: true` detection, and where the front matter ends |
+| `cz.p3kj.marp.MarpDetector` | front-matter `marp: true` detection, and where the front matter starts and ends |
 | `cz.p3kj.marp.slides` | slide model: Markdown PSI -> blocks (`MarpSlideParser`), Marp's split rules (`MarpSlideSplitter`, `MarpHeadingDivider`), `MarpDeck` / `MarpSlide` |
 | `cz.p3kj.marp.structure` | slide outline for the Structure tool window and the File Structure popup |
-| `cz.p3kj.marp.directives` | directive comments: catalog of the Marp directives, comment parser, highlighting and color page, completion, documentation, inspection |
+| `cz.p3kj.marp.directives` | directives in comments and the front matter: catalog of the Marp directives, comment and front matter parser, highlighting and color page (comments), completion, documentation, inspection |
 | `cz.p3kj.marp.editor` | file editor provider, split editor, preview file editor, preview toolbar actions (group `Marp.PreviewToolbar`) |
 | `cz.p3kj.marp.preview` | JCEF panel, JS bridge, resource request handler |
 | `cz.p3kj.marp.sync` | editor <-> preview scroll sync, caret -> active slide |
@@ -251,10 +251,11 @@ today, slide navigation and folding later.
   highlights the slide in the preview. The tree follows the caret through `getCurrentEditorElement`. It does not
   implement `ExpandInfoProvider` (experimental).
 
-## Directive comments (Kotlin)
+## Directive comments and front matter (Kotlin)
 
 Package `cz.p3kj.marp.directives`. Every feature is limited to Marp decks: `MarpDirectiveComments.isMarpDeck(file)`
 (front matter `marp: true`, cached per PSI modification) is checked first, and other Markdown files are untouched.
+The front matter is covered in the "Front matter" bullet at the end of this section, everything else is about comments.
 
 - `MarpDirectiveCatalog` is the one source of directive facts, taken from Marpit 3.2 and marp-core 4.4 (the versions in
   `webview/node_modules`): the 16 directives with scope (global or local), origin (Marpit or marp-core), value
@@ -262,8 +263,10 @@ Package `cz.p3kj.marp.directives`. Every feature is limited to Marp decks: `Marp
   small edit distance), and `isValid(directive, rawValue, value)`. Marpit recognises `theme`, `style`, `headingDivider`
   and `lang` as global and the `background*` family, `class`, `color`, `footer`, `header` and `paginate` as local (each
   local one also as `_name` for one slide); marp-core adds the globals `size` and `math`. A global with an underscore
-  (`_theme`) is recognised by nothing, so Marp ignores it. The front matter support (#6) reuses the catalog and the
-  bundle documentation keys (`directive.doc.<name>`).
+  (`_theme`) is recognised by nothing, so Marp ignores it. The front matter reuses the catalog, the value checks and the
+  bundle documentation keys (`directive.doc.<name>`). The `marp` key is the one thing that is not in `ALL`: it comes from
+  Marp for VS Code (origin `MARP_VSCODE`), exists only in the front matter, and lives in `MarpDirectiveCatalog.MARP` and
+  `FRONT_MATTER_ONLY`, so comments do not know it (`resolveInFrontMatter` adds it).
 - A comment is a directive comment to Marp when its YAML is a mapping with at least one recognised key, otherwise a
   presenter note. Magic comments of other tools (`prettier-ignore`, `markdownlint-...`, `lint disable ...`, as in
   Marpit's `comment.js`) are neither, and `<!-- fit -->` inside a heading is marp-core's fitting header.
@@ -302,6 +305,44 @@ Package `cz.p3kj.marp.directives`. Every feature is limited to Marp decks: `Marp
   written with `_`, and invalid `paginate`, `math` and `headingDivider` values (inline values only). A comment that Marp
   reads as a note is only reported, as a weak warning, when a key is a near miss of a directive (`Class: lead`), so `Note: text` stays
   quiet. Unknown theme names are not checked, the preview page warns about them.
+- Front matter (#6) reuses the code above on the front matter TEXT, not on a schema and not on the front matter PSI:
+  - Located by `MarpDetector.findFrontMatter` (the rule that decides whether the file is a deck, and that the slide model
+    uses; `FrontMatter.bodyStart` is the offset in the original text, byte order mark included), then read by
+    `MarpFrontMatter.parse` with the same line reader as comments (`MarpDirectiveComments.readEntries`, ranges are document
+    offsets). `MarpFrontMatter.completionSpot` and `keysOutsideLine` do the caret work. The rules differ from the Markdown
+    plugin's, which needs opening and closing lines of exactly `---+` (closing may be `...+`); marp-vscode's rule, which
+    `MarpDetector` follows, allows white space after the opening fence and an indented or trailing-text closing fence, so
+    following it keeps the features right in both cases.
+  - Differences from comments: `marp` is a known key (`resolveInFrontMatter`), `size` and `math` are read with loose YAML
+    like the Marpit directives (not yet confirmed against Marp itself), only unindented lines are keys
+    (nested YAML and lists belong to the entry above and get no completion), and a key that the front matter already has
+    is not offered again (a repeated key makes YAML reject the whole front matter).
+  - YAML injection: with the YAML plugin (bundled in IntelliJ IDEA) the Markdown plugin parses `FRONT_MATTER_HEADER` and
+    injects YAML into it. Completion, completion confidence and documentation are then called with the injected YAML
+    file and injected offsets (hover asks the injected file first, then the host), and without the YAML plugin the caret is
+    in Markdown PSI. Every entry point therefore maps (file, offset) to the Markdown file with
+    `InjectedLanguageManager` (`MarpFrontMatter.hostOf`, the identity for a host file) and then works on the text. Tests load
+    the YAML plugin (`testBundledPlugin`), so the fixture hands out the injected file like the IDE.
+  - Completion does not call `stopHere()` for keys, so the other front matter keys (the Markdown plugin's schema adds
+    `title`, `layout`, ...) stay and ours rank first by priority. Values of a Marp key are ours alone. The confidence
+    opens the popup for every key and for values of directives that have some, and leaves everything else to YAML.
+  - Documentation: the provider is registered `order="first"`, because the YAML support has targets of its own in the
+    injected file and this provider is empty except on Marp keys.
+  - Inspection: the Markdown `PsiFile` is visited like an element (only `MarkdownFile`: the HTML root of the same view
+    provider is visited too and would report everything twice), and all problems are registered on the file with document
+    offsets (file-relative equals document offset, as `LossyEncodingInspection` does). Unknown keys are the metadata of
+    other tools (`title`, `author`, ...) and only a near miss of a directive gets a weak warning; a front matter that is
+    not a mapping is left to the YAML plugin.
+  - Rejected: a JSON schema for the front matter. The Markdown plugin's `FrontMatterHeaderJsonSchemaFileProvider`
+    (`@ApiStatus.Internal`) maps every front matter to its generic schema, so a second Marp schema would compete with a
+    provider that cannot be replaced, would need the JSON and YAML plugins as dependencies, could not express loose YAML
+    (`paginate: true # c` is not `true`), `_theme`, "did you mean" or custom theme names, and would be a second source of
+    truth next to the catalog. Not used either: `MarkdownFrontMatterHeader` and its content class
+    (`@ApiStatus.Experimental`), anything in `org.intellij.plugins.markdown.frontmatter` (internal), the YAML PSI classes
+    (no compile dependency on the YAML plugin), `InjectedLanguageManager.injectedToHost(..., boolean)`, and
+    `LENIENT_INSPECTIONS`.
+  - Out of scope: marp-cli metadata keys, TOML front matter (`+++`), highlighting in the front matter (YAML colors it),
+    duplicate keys and YAML syntax errors (the YAML plugin reports them), unknown theme names, completion popup docs.
 
 ## Threading and lifecycle rules
 

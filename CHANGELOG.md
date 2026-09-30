@@ -25,6 +25,7 @@
 - Completion of directive names in comments (global, local and the `_` form for one slide) and of values: `paginate`, `math`, `size`, `headingDivider`, `class`, background options and built-in and custom theme names
 - Quick documentation and hover docs for directives
 - Marp directive inspection: unknown directives (with a "did you mean"), global directives written with `_` such as `_theme`, invalid `paginate`, `math` and `headingDivider` values
+- Completion, hover docs and the Marp directive inspection in the front matter of Marp decks: directive names and values, theme names, `marp`, and values Marp ignores or misreads (in the front matter `size` and `math` also take the whole rest of the line)
 - Local image support, including `![bg](...)` backgrounds
 - Math rendering with MathJax (works offline) or KaTeX
 - Setting for inline HTML in slides: off, default or all

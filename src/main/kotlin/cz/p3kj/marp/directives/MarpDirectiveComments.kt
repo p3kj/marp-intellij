@@ -180,8 +180,8 @@ object MarpDirectiveComments {
 
     /**
      * The directives (`_` form included) that are parsed with loose YAML: in a comment the Marpit directives, marp-core's
-     * own `size` and `math` are not. In the front matter `size` and `math` are read the same way, which needs
-     * confirming against Marp (see notes-for-later). `marp` and unknown keys are plain YAML everywhere.
+     * own `size` and `math` are not. In the front matter `size` and `math` are read the same way, which is not yet
+     * confirmed against Marp itself. `marp` and unknown keys are plain YAML everywhere.
      */
     private fun isLooseKey(key: String, frontMatter: Boolean): Boolean {
         val directive = MarpDirectiveCatalog.find(key.removePrefix("_")) ?: return false

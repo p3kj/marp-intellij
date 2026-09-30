@@ -66,7 +66,7 @@ For a bigger example open the `samples/` folder of this repository as a project.
 - Two-way scroll sync, highlight of the slide under the caret, double-click a slide to jump to its source line
 - Slide outline in the Structure tool window and the File Structure popup (Ctrl+F12 / Cmd+F12), with each slide's headings; click a slide to jump to it
 - File | New | Marp Presentation starter deck, and live templates `slide`, `lead`, `bg` and `notes` (type the abbreviation and press Tab)
-- Directive comments: highlighting, completion, hover docs and an inspection for unknown directives, `_theme` and invalid values
+- Directives in comments and in the front matter: completion, hover docs and an inspection for unknown directives, `_theme` and invalid values, and highlighting in comments
 - Custom themes from files, folders and URLs, and automatic pickup of `themeSet` from `.marprc.yml`
 - Theme CSS edits show up live, before the file is saved
 - Local images with relative paths, including `![bg](...)` backgrounds
@@ -87,6 +87,7 @@ A Markdown file is treated as a Marp deck when its front matter contains `marp: 
 - **The caret** highlights the slide it is in.
 - **Structure view** (Structure tool window, Ctrl+F12 / Cmd+F12): one node per slide, named after its first heading, with the other headings of the slide nested below it. Slides follow the same rules as the preview, including `headingDivider`. Clicking a node moves the caret there, so the preview highlights that slide and, with scroll sync on, scrolls to it. Other Markdown files keep the regular heading outline.
 - **Directive comments**: in an HTML comment of a deck, directive names and values are highlighted, and comments that Marp shows as presenter notes get their own color (Settings | Editor | Color Scheme | Marp). Basic completion (Ctrl+Space) offers directive names, the `_` form that applies to one slide, and values such as `paginate: hold`, `size: 4:3`, `class: lead` and theme names, including your custom themes. Quick documentation (Ctrl+Q, F1 on macOS) and hovering explain a directive. The Marp directive inspection warns about unknown directives ("did you mean `_class`?"), global directives written with an underscore such as `_theme` (Marp ignores them), and values Marp ignores or misreads for `paginate`, `math` and `headingDivider`. Comments that are only presenter notes, like `<!-- Note: say hello -->`, are left alone. Flow style (`<!-- { class: lead } -->`) is read as a note, use one `key: value` per line.
+- **Front matter**: the same completion, documentation and inspection work on the top-level keys of the front matter of a deck, which also offers `marp` and does not offer a key that is already there (a repeated key makes Marp ignore the whole front matter). The keys of the Markdown plugin's front matter schema, such as `title`, keep working next to the Marp keys. Keys that are not Marp directives (`title`, `author`, ...) are left alone by the inspection, unless one is a near miss of a directive (`pagiante`), which is a weak warning. Nested values and lists are left to the YAML support. Like everything else, this needs a deck: the file has to contain `marp: true` already.
 - **Double-click** a slide to move the caret to its source line and focus the editor.
 - **Toolbar**: move the mouse over the editor or the preview and a small toolbar appears in the top-right corner. It toggles scroll sync and presenter notes and opens Settings | Tools | Marp. Turning scroll sync back on realigns the preview with the editor.
 - **Links**: links to files inside the project open in the IDE. `http(s)` and `mailto` links open in the system browser. Everything else is ignored. The preview page itself never navigates away.
@@ -168,7 +169,7 @@ If you used the Marp for VS Code extension:
 | Inline HTML modes off / default / all | yes | yes |
 | Restricted mode for untrusted projects | yes | yes |
 | Export to PDF, PPTX, HTML, images | not yet | yes |
-| Directive completion and diagnostics | yes in comments, front matter not yet | yes |
+| Directive completion and diagnostics | yes, in comments and the front matter | yes |
 | Toggle Marp feature command | not yet | yes |
 
 Both use marp-core for rendering, so a deck looks the same in both editors. The rendering engine is bundled, so the preview needs no Node.js.
@@ -182,7 +183,6 @@ The bundled Markdown plugin renders a document, not a deck. It has no notion of 
 - Twemoji images and KaTeX fonts are loaded from a CDN. Offline you lose emoji and KaTeX glyphs. MathJax works offline, so prefer it if you work without a network.
 - Export is not available yet.
 - Speaker notes are not shown in the preview.
-- Directive completion and inspections work in HTML comments, not yet in the front matter.
 - JCEF is required. Without it the preview shows a message instead of the slides.
 - Remote Development (JetBrains Gateway thin client) is untested.
 
@@ -190,7 +190,6 @@ The bundled Markdown plugin renders a document, not a deck. It has no notion of 
 
 - Export through Marp CLI (HTML, PDF, PPTX, images)
 - Presenter notes in the preview
-- Front matter completion and validation
 - Toggle Marp action
 - PDF export through JCEF, without Node.js
 
