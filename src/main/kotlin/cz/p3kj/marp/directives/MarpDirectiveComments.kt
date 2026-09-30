@@ -289,6 +289,27 @@ object MarpDirectiveComments {
         return null
     }
 
+    /**
+     * The directive entries of the front matter or the directive comment that contains [offset] of [file], and the
+     * offset in the coordinates of those entries (a document offset for the front matter, an offset into the comment
+     * text for a comment). `null` when [file] is not a Marp deck or the offset is in neither. With the YAML plugin the
+     * front matter is an injected file: [offset] may belong to it, it is mapped to the Markdown file first
+     * ([MarpFrontMatter.hostOf]). The end of the front matter body counts as inside.
+     */
+    fun entriesAt(file: PsiFile, offset: Int): Pair<List<MarpDirectiveEntry>, Int>? {
+        val (host, hostOffset) = MarpFrontMatter.hostOf(file, offset)
+        if (!isMarpDeck(host)) return null
+        val text = MarpFrontMatter.text(host) ?: return null
+        val frontMatter = MarpFrontMatter.parse(text)
+        if (frontMatter != null && hostOffset >= frontMatter.bodyRange.startOffset && hostOffset <= frontMatter.bodyRange.endOffset) {
+            return frontMatter.entries to hostOffset
+        }
+        val markdown = markdownFile(host) ?: return null
+        val element = commentElementAt(markdown, hostOffset) ?: return null
+        val comment = parse(element.text) ?: return null
+        return comment.entries to hostOffset - element.textRange.startOffset
+    }
+
     /** `<!-- fit -->` inside a heading: marp-core's fitting header, neither a directive nor a presenter note. */
     fun isFitComment(element: PsiElement, comment: MarpParsedComment): Boolean =
         comment.body == "fit" && PsiTreeUtil.getParentOfType(element, MarkdownHeader::class.java) != null

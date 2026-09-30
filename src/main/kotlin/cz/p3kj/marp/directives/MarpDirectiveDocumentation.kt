@@ -24,17 +24,8 @@ import cz.p3kj.marp.MarpBundle
 class MarpDirectiveDocumentationTargetProvider : DocumentationTargetProvider, DumbAware {
 
     override fun documentationTargets(file: PsiFile, offset: Int): List<DocumentationTarget> {
-        val (host, hostOffset) = MarpFrontMatter.hostOf(file, offset)
-        if (!MarpDirectiveComments.isMarpDeck(host)) return emptyList()
-        val text = MarpFrontMatter.text(host) ?: return emptyList()
-        val frontMatter = MarpFrontMatter.parse(text)
-        if (frontMatter != null && hostOffset >= frontMatter.bodyRange.startOffset && hostOffset <= frontMatter.bodyRange.endOffset) {
-            return targetOf(frontMatter.entries, hostOffset)
-        }
-        val markdown = MarpDirectiveComments.markdownFile(host) ?: return emptyList()
-        val element = MarpDirectiveComments.commentElementAt(markdown, hostOffset) ?: return emptyList()
-        val comment = MarpDirectiveComments.parse(element.text) ?: return emptyList()
-        return targetOf(comment.entries, offset = hostOffset - element.textRange.startOffset)
+        val (entries, at) = MarpDirectiveComments.entriesAt(file, offset) ?: return emptyList()
+        return targetOf(entries, at)
     }
 
     /** The documentation of the key at [offset] (in the coordinates of the entries), if it is a directive. */
