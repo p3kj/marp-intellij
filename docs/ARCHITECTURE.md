@@ -803,21 +803,33 @@ template: on-screen controls, presenter view (`p`), overview (`o`), full screen 
    page, owner-only), created BEFORE the run and overwritten by the CLI. It is not in the temporary CLI folder, which is
    deleted right after the run. It is deleted again when the run fails or is cancelled.
 3. Post-processing (pure, `MarpPresentFiles.cliPresentation(html, baseHref, start)`): right after the first `<head>` tag
-   (`<head(\s[^>]*)?>`, case-insensitive, so `<header>` never matches) a `<base href="{deck folder}/">` (escaped for an
-   attribute) and one script are inserted. The script sets `#N` (start + 1) with `history.replaceState` and an ABSOLUTE
-   URL when the address has no hash (a relative `#N` would resolve against the base), and a capture-phase click listener
-   sends `a[href^="#"]` to `location.hash` (with a base, a plain `#3` link would leave the page; bespoke's `hashchange`
-   does the rest). bespoke reads `#N` (1-based) from `location.hash` at startup, then writes `#N` itself, so a reload keeps
+   (`<head(\s[^>]*)?>`, case-insensitive, so `<header>` never matches) and the `<meta charset>` that follows it at once (it
+   has to stay among the first 1024 bytes) a `<base href="{deck folder}/">` (escaped for an attribute) and one script are
+   inserted. The script, in this order:
+   (a) a `MutationObserver` on the document that rewrites every `iframe[src^="?"]` to `location.href` without query and
+   fragment + its `src`. Reason: with a base, the `iframe src="?view=next"` that bespoke 4.5.1 adds for the next slide of
+   the presenter view (relative, unlike the presenter and overview addresses, which bespoke builds from `location`) would
+   resolve to the folder of the deck. The new `src` does not start with `?`, so it cannot loop, and the rewrite does not
+   depend on the version of the CLI;
+   (b) a capture-phase click listener that sends `a[href^="#"]` to `location.hash` (with a base, a plain `#3` link would
+   leave the page; bespoke's `hashchange` does the rest);
+   (c) `#N` (start + 1) with `history.replaceState` and an ABSOLUTE URL (a relative `#N` would resolve against the base) when
+   the address has no hash and no query (a query means a view of the template: next, presenter, overview), and
+   `location.hash = "#N"` when the browser refuses `replaceState` for the `file:` URL (a, b come first so that this cannot
+   cost them). bespoke reads `#N` (1-based) from `location.hash` at startup, then writes `#N` itself, so a reload keeps
    the slide. The start slide is in the file and not in the URL because `file:` URLs lose the fragment on Windows and
    macOS (#13). No `<head>` found: the page is opened unchanged (logged), it starts at slide 1 and relative files may be
    missing.
 4. Images and themes: marp-cli writes no `<base>` for HTML (it sets one only for PDF, PPTX and images), so relative image
    URLs and relative `url()` in theme CSS (inlined into `<style>`) would break in the temporary folder. The base makes
    them resolve from the deck folder like the built-in page and the CLI's own PDF. Absolute, remote and data URLs are unaffected.
-5. When (`MarpPresenter.present`, `cliExecutable`): the `presentWithCli` app setting (default on) AND the project is trusted
+5. When (`MarpPresenter.present`, `cliLocation`): the `presentWithCli` app setting (default on) AND the project is trusted
    (`MarpCliExporter.trustedProvider`, the CLI is an external program that reads the project) AND the deck is on the
    local file system (`getNioPath != null`) AND `MarpCliExporter.locate` is `Located` (the export's lookup order). Anything
-   else uses the built-in page silently (`LOG.info`, no `export.cli.*` warning). The setting exists because the built-in
+   else uses the built-in page silently (`LOG.info` that says where it looked, no warning), with one exception: a
+   `marpCliPath` that is set but wrong (`Missing.configured != null`) is the export's `export.cli.missingPath` warning with
+   the settings link (`MarpCliExporter.notifyMissing`) and nothing is presented, because the user asked for that CLI. Not
+   finding one when nothing is configured stays silent. The setting exists because the built-in
    page shows unsaved text without saving, needs no Node.js and matches the preview.
 6. Saving: the CLI reads from disk, so when the CLI is possible by the checks that need no I/O (setting, trust, local
    deck), `present()` (EDT, from `actionPerformed`) calls `FileDocumentManager.saveAllDocuments()` before
@@ -832,6 +844,10 @@ template: on-screen controls, presenter view (`p`), overview (`o`), full screen 
    so a broken install stays visible. Exit code != 0, an empty file or the timeout show the escaped output tail as
    `present.cli.failed`, `present.cli.failed.noOutput` or `present.cli.timeout`. Other exceptions are logged and shown as
    `present.failed` (name and message escaped, notifications are HTML). `CancellationException` is rethrown.
+
+Manual checks that no fake CLI can replace (real Marp CLI, Linux, Windows and macOS): the start slide, `p` presenter view in
+step with the presentation window and its next slide pane showing the next slide (not the folder of the deck), `o`
+overview, relative images and theme `url()`s, KaTeX, reload keeps the slide, cancel during the render.
 
 Not used: the `baseUrl` config key (typed as internal, "for Marp team tools", may change), `--html`, `--watch`, `--server`
 and `--preview`, `BrowserUtil.browse(String)` with a fragment, `BrowserUtil.browse(File)` (obsolete), writing next to the
@@ -890,8 +906,8 @@ would follow the internals of one CLI version).
   the caret through `MarpPresenter.withStartSlide`), `MarpPresentFilesTest` (base href, temp file, `cliPresentation`),
   `MarpPresentOptionsTest` (JSON). The Marp CLI path is tested with shell scripts that stand in for the CLI
   (`MarpCliExporterTest`, skipped on Windows): arguments, config, the page that is opened (a replaced `browser`), failures,
-  cancel, `MarpPresenter.cliExecutable`, and `MarpPresenter.present` on a split editor for a deck on disk (saves first,
-  start slide, fallback to the built-in page); `MarpCliCommandTest` and `MarpConfigurableTest` cover the config keys and the
+  cancel, `MarpPresenter.cliLocation`, and `MarpPresenter.present` on a split editor for a deck on disk (saves first,
+  start slide, fallback to the built-in page, the warning for a wrong path); `MarpCliCommandTest` and `MarpConfigurableTest` cover the config keys and the
   setting. There is no end-to-end test of opening a real browser and none with the real Marp CLI.
 - Slide overview: `MarpPreviewToolbarActionsTest` (the toggle is registered in the toolbar group, per editor, hidden
   without a Marp editor) and `MarpBridgeStateTest` (`setOverview` replayed last). Headless tests have no JCEF page, so the

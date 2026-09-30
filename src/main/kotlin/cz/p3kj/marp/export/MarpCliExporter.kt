@@ -103,7 +103,7 @@ internal object MarpCliExporter {
      * Present Deck through Marp CLI: lets the CLI write [deck] as a page of its `bespoke` template to a temporary file
      * under a progress, adds the base and the start slide ([MarpPresentFiles.cliPresentation], [start] is zero-based) and
      * opens it in the system browser. The caller has checked that the project is trusted and found [executable], see
-     * `MarpPresenter.cliExecutable`. There is no success notification. A CLI that cannot be started is notified as in the
+     * `MarpPresenter.cliLocation`. There is no success notification. A CLI that cannot be started is notified as in the
      * export, with a link to the settings and without a fallback, so that a broken CLI stays visible; a failed run says
      * why. Failures are notified, never thrown.
      */
@@ -155,8 +155,7 @@ internal object MarpCliExporter {
         val executable = when (val location = locate(project, deck)) {
             is MarpCliLocation.Located -> location.executable
             is MarpCliLocation.Missing -> {
-                val message = location.configured?.let { MarpBundle.message("export.cli.missingPath", html(it)) } ?: MarpBundle.message("export.cli.notFound")
-                MarpExporter.notifyWithSettings(project, NotificationType.WARNING, message)
+                notifyMissing(project, location)
                 return
             }
         }
@@ -169,6 +168,12 @@ internal object MarpCliExporter {
             LOG.warn("Marp CLI did not export $deck (exit code ${result.exitCode})\n${result.output}")
             failed(project, target.fileName.toString(), result)
         }
+    }
+
+    /** A warning with a link to the settings: the path that is set is wrong, or there is no Marp CLI to find. */
+    internal fun notifyMissing(project: Project, location: MarpCliLocation.Missing) {
+        val message = location.configured?.let { MarpBundle.message("export.cli.missingPath", html(it)) } ?: MarpBundle.message("export.cli.notFound")
+        MarpExporter.notifyWithSettings(project, NotificationType.WARNING, message)
     }
 
     /**

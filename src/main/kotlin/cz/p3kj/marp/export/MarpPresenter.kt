@@ -55,7 +55,7 @@ class MarpPresentAction : DumbAwareAction() {
 
 /**
  * Two ways to present, see the Present section of `docs/ARCHITECTURE.md`. With Marp CLI (the `presentWithCli` setting,
- * a trusted project, a deck on the local file system and a CLI that is found, see [cliExecutable]) the CLI writes its own
+ * a trusted project, a deck on the local file system and a CLI that is found, see [cliLocation]) the CLI writes its own
  * presentation, the `bespoke` template, which [MarpCliExporter.present] opens. Otherwise, and whenever any of that is not
  * so, it is the HTML export of the live preview page with the `present` option: a self-contained HTML file with a script
  * that shows one slide at a time, written to a temporary file. Either way the file is opened with `BrowserUtil`. There is
@@ -70,7 +70,9 @@ internal object MarpPresenter {
      *
      * The CLI reads the deck from disk, so the open files are saved first when it may be used (the setting, a trusted
      * project, a local deck). Whether it is found is only known off the EDT; when it is not, the built-in page presents
-     * the text of the editor and the check that the preview page is loaded, which only that page needs, is made then.
+     * the text of the editor and the check that the preview page is loaded, which only that page needs, is made then. The
+     * exception is a path in the settings that is wrong: that is a warning with a link to the settings and nothing is
+     * presented, like the export, because the user asked for that CLI. Not finding one by itself is not worth a message.
      */
     fun present(project: Project, split: MarpSplitEditor): CancellablePromise<*>? {
         val preview = split.preview
@@ -83,12 +85,21 @@ internal object MarpPresenter {
         return withStartSlide(project, split.textEditor.editor) { start ->
             MarpProjectScope.getInstance(project).scope.launch {
                 if (cliDeck != null) {
-                    val executable = cliExecutable(project, cliDeck)
-                    if (executable != null) {
-                        MarpCliExporter.present(project, cliDeck, executable, markdown.name, start)
-                        return@launch
+                    when (val location = cliLocation(project, cliDeck)) {
+                        is MarpCliLocation.Located -> {
+                            MarpCliExporter.present(project, cliDeck, location.executable, markdown.name, start)
+                            return@launch
+                        }
+                        is MarpCliLocation.Missing -> if (location.configured != null) {
+                            MarpCliExporter.notifyMissing(project, location)
+                            return@launch
+                        }
+                        null -> {}
                     }
-                    LOG.info("No Marp CLI for ${markdown.path}, presenting with the built-in page")
+                    LOG.info(
+                        "No Marp CLI for ${markdown.path} (looked in node_modules/.bin from its folder up to ${MarpCliExporter.projectBasePath(project)}, " +
+                            "then on the PATH), presenting with the built-in page",
+                    )
                     if (!withContext(Dispatchers.EDT) { requirePage(project, panel) }) return@launch
                 }
                 run(project, preview, panel, start)
@@ -104,13 +115,14 @@ internal object MarpPresenter {
     }
 
     /**
-     * The Marp CLI to present [deck] with, `null` when the built-in page is to be used: the setting is off, the project is
-     * not trusted, or nothing is found (the lookup of [MarpCliExporter.locate]). A CLI that is found but cannot be started
-     * is not a reason to fall back, that is reported. Off the EDT.
+     * Where the Marp CLI to present [deck] with is (the lookup of [MarpCliExporter.locate]), `null` when it is not looked
+     * for: the setting is off or the project is not trusted, the built-in page is used then. Nothing found is
+     * [MarpCliLocation.Missing], see [present] for what it means. A CLI that is found but cannot be started is not a
+     * reason to fall back, that is reported. Off the EDT.
      */
-    internal suspend fun cliExecutable(project: Project, deck: Path): Path? {
+    internal suspend fun cliLocation(project: Project, deck: Path): MarpCliLocation? {
         if (!MarpAppSettings.getInstance().presentWithCli || !MarpCliExporter.trustedProvider(project)) return null
-        return (MarpCliExporter.locate(project, deck) as? MarpCliLocation.Located)?.executable
+        return MarpCliExporter.locate(project, deck)
     }
 
     /**

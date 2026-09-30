@@ -140,7 +140,7 @@ Click Present Deck (the play button) in the preview toolbar, or run it from Find
 There are two presentations, and the plugin picks one each time:
 
 - **Marp CLI's own presentation** when all of this holds: "Present decks with Marp CLI" in Settings | Tools | Marp is on (it is by default), the project is trusted, the deck is a local file and Marp CLI is found (the same lookup as the [export](#pptx-and-images-with-marp-cli): the path in the settings, `node_modules/.bin/marp` of the project, `marp` on the PATH).
-- **The built-in page** in every other case: the setting is off, the project is not trusted, the deck is not a local file, or Marp CLI is not found. It says nothing about that and just shows the built-in page. If Marp CLI is found but cannot be started, Present Deck does not fall back: a notification with a link to the settings tells you, so a broken install is not hidden.
+- **The built-in page** in every other case: the setting is off, the project is not trusted, the deck is not a local file, or Marp CLI is not found. It says nothing about that and just shows the built-in page. If the path in the settings is wrong, or Marp CLI is found but cannot be started, Present Deck does not fall back: a notification with a link to the settings tells you (the same warning as the export), so a broken install is not hidden.
 
 ### With Marp CLI
 
@@ -229,7 +229,7 @@ If you used the Marp for VS Code extension:
 
 **Present Deck shows old text.** The page is a snapshot. Press Present Deck again, it opens a new tab with the current text.
 
-**Present Deck does not show the presenter view, or looks plainer than Marp's presentation.** That is the built-in page. Marp's own presentation needs the setting "Present decks with Marp CLI" on, a trusted project, a deck that is a local file and a Marp CLI that is found (press Test in Settings | Tools | Marp, and see the Marp CLI entries above). The plugin does not say why it used the built-in page. If Marp CLI is found but does not start, or fails, a notification says so.
+**Present Deck does not show the presenter view, or looks plainer than Marp's presentation.** That is the built-in page. Marp's own presentation needs the setting "Present decks with Marp CLI" on, a trusted project, a deck that is a local file and a Marp CLI that is found (press Test in Settings | Tools | Marp, and see the Marp CLI entries above). The plugin does not say why it used the built-in page, only when the path in the settings is wrong, or Marp CLI is found but does not start or fails, a notification says so.
 
 **Images are missing in the exported HTML.** The file keeps the image paths as written. Save it next to the deck (the dialog starts there), or keep the folder structure when you move it. A PDF has the images inside.
 

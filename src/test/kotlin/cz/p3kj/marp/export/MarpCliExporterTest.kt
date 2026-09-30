@@ -10,6 +10,7 @@ import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.testFramework.PlatformTestUtil
+import com.intellij.util.EnvironmentUtil
 import com.intellij.util.ui.UIUtil
 import cz.p3kj.marp.MarpBundle
 import cz.p3kj.marp.MarpLightTestCase
@@ -382,9 +383,10 @@ class MarpCliExporterTest : MarpLightTestCase() {
 
         assertEquals(listOf(target), opened.toList())
         val page = Files.readString(target)
-        assertTrue(page, page.startsWith("<!DOCTYPE html><html lang=\"en\"><head><base href=\"${MarpPresentFiles.baseHref(work)}\"><script>"))
-        assertTrue(page, page.contains("+\"#3\");"))
-        assertTrue(page, page.endsWith("</script><meta charset=\"UTF-8\"></head><body></body></html>"))
+        // After the charset, which has to stay among the first bytes of the file.
+        assertTrue(page, page.startsWith("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><base href=\"${MarpPresentFiles.baseHref(work)}\"><script>"))
+        assertTrue(page, page.contains("+\"#3\")"))
+        assertTrue(page, page.endsWith("</script></head><body></body></html>"))
         assertTrue("a successful presentation says nothing: $notifications", notifications.isEmpty())
     }
 
@@ -496,7 +498,9 @@ class MarpCliExporterTest : MarpLightTestCase() {
 
     // Which CLI Present Deck uses ------------------------------------------------------------------------------------
 
-    private fun cliExecutable(): Path? = runBlocking(Dispatchers.Default) { MarpPresenter.cliExecutable(project, deck) }
+    private fun cliLocation(): MarpCliLocation? = runBlocking(Dispatchers.Default) { MarpPresenter.cliLocation(project, deck) }
+
+    private fun cliExecutable(): Path? = (cliLocation() as? MarpCliLocation.Located)?.executable
 
     fun testTheConfiguredCliIsUsedToPresent() {
         if (SystemInfo.isWindows) return
@@ -527,10 +531,22 @@ class MarpCliExporterTest : MarpLightTestCase() {
         assertTrue("and nothing was said: $notifications", notifications.isEmpty())
     }
 
-    fun testAMissingCliPresentsWithoutItAndSaysNothing() {
-        MarpAppSettings.getInstance().update { marpCliPath = work.resolve("gone").resolve("marp").toString() }
-        assertNull(cliExecutable())
+    fun testAMissingCliIsMissingAndTheLookupSaysNothing() {
+        val gone = work.resolve("gone").resolve("marp")
+        MarpAppSettings.getInstance().update { marpCliPath = gone.toString() }
+        assertEquals("a path that is set and wrong is told apart from no CLI at all", MarpCliLocation.Missing(gone.toString()), cliLocation())
         assertTrue(notifications.isEmpty())
+    }
+
+    fun testTheSettingAndTheTrustDecideBeforeAnythingIsLookedFor() {
+        MarpAppSettings.getInstance().update {
+            marpCliPath = work.resolve("gone").resolve("marp").toString()
+            presentWithCli = false
+        }
+        assertNull(cliLocation())
+        MarpAppSettings.getInstance().update { presentWithCli = true }
+        MarpCliExporter.trustedProvider = { false }
+        assertNull(cliLocation())
     }
 
     // The action ------------------------------------------------------------------------------------------------------
@@ -574,7 +590,7 @@ class MarpCliExporterTest : MarpLightTestCase() {
         assertTrue(recorded("args").contains(deck.toString()))
         val page = Files.readString(opened.single())
         assertTrue(page, page.contains("<base href=\"${MarpPresentFiles.baseHref(work)}\">"))
-        assertTrue(page, page.contains("+\"#2\");"))
+        assertTrue(page, page.contains("+\"#2\")"))
         assertTrue(notifications.isEmpty())
     }
 
@@ -596,9 +612,29 @@ class MarpCliExporterTest : MarpLightTestCase() {
         assertTrue(opened.isEmpty())
     }
 
-    fun testPresentDeckFallsBackToTheBuiltInPageWhenNoCliIsFound() {
+    fun testPresentDeckWarnsAboutAWrongCliPathAndDoesNotFallBack() {
         if (SystemInfo.isWindows) return
-        MarpAppSettings.getInstance().update { marpCliPath = work.resolve("gone").resolve("marp").toString() }
+        val gone = work.resolve("gone").resolve("marp")
+        MarpAppSettings.getInstance().update { marpCliPath = gone.toString() }
+        val split = localSplitEditor() ?: return
+        if (split.preview.panel!!.isPageReady) return
+
+        val promise = MarpPresenter.present(project, split)
+        assertNotNull(promise)
+        PlatformTestUtil.waitForPromise(promise!!)
+        waitFor("the warning") { notifications.isNotEmpty() }
+        // The user asked for that CLI: the same warning as the export, with the settings, and no built-in page (which would say export.notReady).
+        val notification = onePlainNotification()
+        assertEquals(NotificationType.WARNING, notification.type)
+        assertEquals(MarpBundle.message("export.cli.missingPath", gone.toString()), notification.content)
+        assertEquals(listOf(MarpBundle.message("export.cli.openSettings")), notification.actions.map { it.templateText })
+        assertTrue(opened.isEmpty())
+    }
+
+    fun testPresentDeckFallsBackToTheBuiltInPageWhenNoCliIsFoundAtAll() {
+        if (SystemInfo.isWindows) return
+        // Nothing is configured and the project has no install: only a marp on the PATH of this machine could be found.
+        if (MarpCliLocator.findExecutable("marp", EnvironmentUtil.getValue("PATH"), null) != null) return
         val split = localSplitEditor() ?: return
         if (split.preview.panel!!.isPageReady) return
 

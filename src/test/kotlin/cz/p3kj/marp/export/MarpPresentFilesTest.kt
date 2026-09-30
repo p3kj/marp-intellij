@@ -99,34 +99,66 @@ class MarpPresentFilesTest : TestCase() {
         assertEquals(setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE), view.readAttributes().permissions())
     }
 
-    fun testTheBaseAndTheScriptComeRightAfterTheHeadTag() {
+    fun testTheBaseAndTheScriptComeRightAfterTheHeadTagAndItsCharset() {
         val html = MarpPresentFiles.cliPresentation(page, "file:///work/talk/", 2)
-        assertTrue(html, html.startsWith("<!DOCTYPE html><html lang=\"en\"><head><base href=\"file:///work/talk/\"><script>"))
-        assertTrue(html, html.contains("</script><meta charset=\"UTF-8\"><title>Deck</title></head><body><header>H</header></body></html>"))
+        // The charset stays first, it has to be among the first 1024 bytes.
+        assertTrue(html, html.startsWith("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><base href=\"file:///work/talk/\"><script>"))
+        assertTrue(html, html.contains("</script><title>Deck</title></head><body><header>H</header></body></html>"))
         assertEquals("one base", 1, Regex("<base ").findAll(html).count())
         assertEquals("one script", 1, Regex("<script>").findAll(html).count())
     }
 
     fun testTheSlideIsOneBasedInTheAbsoluteAddress() {
-        assertTrue(scriptOf(MarpPresentFiles.cliPresentation(page, "file:///w/", 2)).contains("+\"#3\");"))
-        assertTrue(scriptOf(MarpPresentFiles.cliPresentation(page, "file:///w/", 0)).contains("+\"#1\");"))
-        assertTrue(scriptOf(MarpPresentFiles.cliPresentation(page, "file:///w/", -1)).contains("+\"#1\");"))
+        assertTrue(scriptOf(MarpPresentFiles.cliPresentation(page, "file:///w/", 2)).contains("+\"#3\")"))
+        assertTrue(scriptOf(MarpPresentFiles.cliPresentation(page, "file:///w/", 0)).contains("+\"#1\")"))
+        assertTrue(scriptOf(MarpPresentFiles.cliPresentation(page, "file:///w/", -1)).contains("+\"#1\")"))
         val script = scriptOf(MarpPresentFiles.cliPresentation(page, "file:///w/", 4))
         // An address the template or the user already set (a reload keeps the slide) wins, and it is absolute: the base would move a relative one.
-        assertTrue(script, script.startsWith("if(!location.hash)history.replaceState(null,\"\",location.href.split(\"#\")[0]+\"#5\");"))
+        // A browser that refuses replaceState for a file: URL gets the slide by assignment, which cannot leave the page.
+        assertTrue(
+            script,
+            script.endsWith(
+                "if(!location.hash&&!location.search){try{history.replaceState(null,\"\",location.href.split(\"#\")[0]+\"#5\")}" +
+                    "catch(e){location.hash=\"#5\"}}",
+            ),
+        )
+    }
+
+    fun testTheNextSlideOfThePresenterViewKeepsItsQueryAddress() {
+        // The template adds <iframe src="?view=next"> when it starts: against the base that is the folder of the deck.
+        val script = scriptOf(MarpPresentFiles.cliPresentation(page, "file:///w/", 0))
+        assertTrue(script, script.startsWith("new MutationObserver(function(){document.querySelectorAll('iframe[src^=\"?\"]').forEach(function(f){"))
+        assertTrue(script, script.contains("f.src=location.href.split(/[?#]/)[0]+f.getAttribute(\"src\")"))
+        assertTrue(script, script.contains(".observe(document.documentElement,{childList:true,subtree:true});"))
+        // The new src is a full address, so it does not match the selector again. The observer does not depend on replaceState succeeding.
+        assertTrue(script.indexOf("MutationObserver") < script.indexOf("replaceState"))
     }
 
     fun testLinksToASlideAreFollowedByHand() {
         val script = scriptOf(MarpPresentFiles.cliPresentation(page, "file:///w/", 0))
         assertTrue(script, script.contains("closest('a[href^=\"#\"]')"))
         assertTrue(script, script.contains("e.preventDefault();location.hash=a.getAttribute(\"href\")"))
-        assertTrue("in the capture phase, before the template", script.endsWith("},true);"))
+        assertTrue("in the capture phase, before the template", script.contains("location.hash=a.getAttribute(\"href\")}},true);"))
+        assertTrue("before replaceState, which a browser may refuse", script.indexOf("addEventListener") < script.indexOf("replaceState"))
     }
 
     fun testTheHeadTagMayHaveAttributesAndAnyCase() {
         val html = MarpPresentFiles.cliPresentation("<html><HEAD lang=\"x\"><meta></HEAD><body></body></html>", "file:///w/", 0)
         assertTrue(html, html.startsWith("<html><HEAD lang=\"x\"><base href=\"file:///w/\"><script>"))
         assertTrue(html, html.endsWith("</script><meta></HEAD><body></body></html>"))
+    }
+
+    fun testTheCharsetIsOnlyKeptFirstWhenItFollowsTheHeadTagAtOnce() {
+        val spaced = MarpPresentFiles.cliPresentation("<head>\n  <META CHARSET='utf-8'>\n<title>T</title></head>", "file:///w/", 0)
+        assertTrue(spaced, spaced.startsWith("<head>\n  <META CHARSET='utf-8'><base href="))
+        assertTrue(spaced, spaced.endsWith("</script>\n<title>T</title></head>"))
+
+        val later = MarpPresentFiles.cliPresentation("<head><title>T</title><meta charset=\"UTF-8\"></head>", "file:///w/", 0)
+        assertTrue(later, later.startsWith("<head><base href="))
+        assertTrue(later, later.endsWith("</script><title>T</title><meta charset=\"UTF-8\"></head>"))
+
+        val other = MarpPresentFiles.cliPresentation("<head><meta name=\"viewport\" content=\"width=device-width\"></head>", "file:///w/", 0)
+        assertTrue(other, other.startsWith("<head><base href="))
     }
 
     fun testAHeaderElementIsNotTheHead() {
