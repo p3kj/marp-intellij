@@ -23,6 +23,7 @@ class MarpThemeServiceTest : MarpLightTestCase() {
     private lateinit var service: MarpThemeService
     private val fetched = CopyOnWriteArrayList<String>()
     private var trusted = true
+    @Volatile
     private var now = 0L
 
     override fun setUp() {
@@ -237,15 +238,16 @@ class MarpThemeServiceTest : MarpLightTestCase() {
         assertEquals(1, load().errors.size)
         assertEquals(1, fetched.size)
 
-        editTheme(local)
+        // The clock moves before the edit: an edit publishes a change, and the prefetch that follows reads the clock.
         now += MarpThemeService.FAILED_DOWNLOAD_TTL_MS - 1
+        editTheme(local)
         val again = load()
         assertEquals(1, again.errors.size)
         assertTrue(again.errors[0], again.errors[0].contains("boom"))
         assertEquals("the failure is served from the cache", 1, fetched.size)
 
-        editTheme(local)
         now += 1
+        editTheme(local)
         assertEquals(1, load().errors.size)
         assertEquals("retried once the failure expired", 2, fetched.size)
 
