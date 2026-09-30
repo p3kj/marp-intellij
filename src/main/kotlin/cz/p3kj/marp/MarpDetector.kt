@@ -54,10 +54,12 @@ object MarpDetector {
         Pattern.compile("$LINE_START(marp$JS_WS*: +)([^$JS_LT]*)$JS_WS*$LINE_END")
 
     /**
-     * The front matter of a document: [body] is group 2 of marp-vscode's front matter expression, [endOffset] the offset
-     * in the original text just past the line of the closing fence (after its line break, or the text length at the end).
+     * The front matter of a document: [body] is group 2 of marp-vscode's front matter expression, [bodyStart] the offset
+     * in the original text where it starts (the line after the opening fence, after a byte order mark if there is one,
+     * so the body ends at `bodyStart + body.length` in the original text), [endOffset] the offset in the
+     * original text just past the line of the closing fence (after its line break, or the text length at the end).
      */
-    data class FrontMatter(val body: String, val endOffset: Int)
+    data class FrontMatter(val body: String, val endOffset: Int, val bodyStart: Int)
 
     /** The front matter body, see [findFrontMatter]. */
     fun detectFrontMatter(markdown: CharSequence): String? = findFrontMatter(markdown)?.body
@@ -92,7 +94,7 @@ object MarpDetector {
         while (true) {
             val fence = skipWhitespace(text, lineStart)
             if (fence + 3 <= length && isFenceChar(text[fence]) && isFenceChar(text[fence + 1]) && isFenceChar(text[fence + 2])) {
-                return FrontMatter(text.subSequence(bodyStart, lineStart).toString(), endOfLine(markdown, fence + shift))
+                return FrontMatter(text.subSequence(bodyStart, lineStart).toString(), endOfLine(markdown, fence + shift), bodyStart + shift)
             }
             var terminator = fence
             while (terminator < length && !isLineTerminator(text[terminator])) terminator++

@@ -55,19 +55,30 @@ object MarpDirectiveDocs {
 
     private const val MARPIT_URL = "https://marpit.marp.app/directives"
     private const val MARP_CORE_URL = "https://github.com/marp-team/marp-core#readme"
+    private const val MARP_VSCODE_URL = "https://github.com/marp-team/marp-vscode"
+
+    /** Where the directive applies, in a word: global, local, or front matter for the keys that only the front matter has. */
+    fun typeText(directive: MarpDirective): String = MarpBundle.message(
+        when {
+            directive.origin == MarpDirectiveOrigin.MARP_VSCODE -> "completion.type.frontMatter"
+            directive.scope == MarpDirectiveScope.GLOBAL -> "completion.type.global"
+            else -> "completion.type.local"
+        },
+    )
 
     /** A short line for the hint: the name and where the directive applies. */
-    fun hint(directive: MarpDirective): String {
-        val scope = MarpBundle.message(if (directive.scope == MarpDirectiveScope.GLOBAL) "completion.type.global" else "completion.type.local")
-        return MarpBundle.message("directive.doc.hint", directive.name, scope)
-    }
+    fun hint(directive: MarpDirective): String = MarpBundle.message("directive.doc.hint", directive.name, typeText(directive))
 
     /** The documentation popup: the name, the description and scope, then the values and who defines the directive. */
     fun html(directive: MarpDirective): String = buildString {
         append(DocumentationMarkup.DEFINITION_START).append(directive.name).append(DocumentationMarkup.DEFINITION_END)
         append(DocumentationMarkup.CONTENT_START)
         append("<p>").append(MarpBundle.message(directive.docKey)).append("</p>")
-        val scope = if (directive.scope == MarpDirectiveScope.GLOBAL) "directive.doc.scope.global" else "directive.doc.scope.local"
+        val scope = when {
+            directive.origin == MarpDirectiveOrigin.MARP_VSCODE -> "directive.doc.scope.frontMatter"
+            directive.scope == MarpDirectiveScope.GLOBAL -> "directive.doc.scope.global"
+            else -> "directive.doc.scope.local"
+        }
         append("<p>").append(MarpBundle.message(scope)).append("</p>")
         append(DocumentationMarkup.CONTENT_END)
         append(DocumentationMarkup.SECTIONS_START)
@@ -78,6 +89,7 @@ object MarpDirectiveDocs {
         val (originKey, url) = when (directive.origin) {
             MarpDirectiveOrigin.MARPIT -> "directive.doc.origin.marpit" to MARPIT_URL
             MarpDirectiveOrigin.MARP_CORE -> "directive.doc.origin.core" to MARP_CORE_URL
+            MarpDirectiveOrigin.MARP_VSCODE -> "directive.doc.origin.vscode" to MARP_VSCODE_URL
         }
         section(MarpBundle.message("directive.doc.origin"), "<a href=\"$url\">${MarpBundle.message(originKey)}</a>")
         append(DocumentationMarkup.SECTIONS_END)

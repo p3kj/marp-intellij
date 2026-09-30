@@ -190,6 +190,31 @@ class MarpDetectorTest {
     }
 
     @Test
+    fun frontMatterBodyStartsAfterTheOpeningFenceLine() {
+        val text = "---\nmarp: true\n---\n# Hi"
+        val frontMatter = MarpDetector.findFrontMatter(text)!!
+        assertEquals(4, frontMatter.bodyStart)
+        assertEquals("marp: true\n", text.substring(frontMatter.bodyStart, frontMatter.bodyStart + frontMatter.body.length))
+
+        val crlf = "---\r\nmarp: true\r\n---\r\n# Hi"
+        val crlfFrontMatter = MarpDetector.findFrontMatter(crlf)!!
+        assertEquals(5, crlfFrontMatter.bodyStart)
+        assertEquals(crlfFrontMatter.body, crlf.substring(5, 5 + crlfFrontMatter.body.length))
+
+        // Trailing white space after the opening dashes and a longer fence.
+        val padded = "----  \nmarp: true\n----\n"
+        assertEquals(padded.indexOf("marp"), MarpDetector.findFrontMatter(padded)!!.bodyStart)
+    }
+
+    @Test
+    fun frontMatterBodyStartCountsTheByteOrderMark() {
+        val text = "\uFEFF---\nmarp: true\n---\n# Hi"
+        val frontMatter = MarpDetector.findFrontMatter(text)!!
+        assertEquals(5, frontMatter.bodyStart)
+        assertEquals("marp: true\n", text.substring(frontMatter.bodyStart, frontMatter.bodyStart + frontMatter.body.length))
+    }
+
+    @Test
     fun frontMatterEndCountsTheByteOrderMark() {
         val text = "\uFEFF---\nmarp: true\n---\n# Hi"
         assertEquals(text.indexOf("# Hi"), frontMatterEnd(text))

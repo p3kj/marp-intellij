@@ -14,7 +14,7 @@ import org.intellij.plugins.markdown.lang.MarkdownTokenTypes
 import org.intellij.plugins.markdown.lang.psi.impl.MarkdownFile
 import org.intellij.plugins.markdown.lang.psi.impl.MarkdownHeader
 
-/** One `key: value` line of a directive comment. Ranges are offsets into the parsed comment text. */
+/** One `key: value` line of a directive comment or of the front matter. Ranges are offsets into the parsed text. */
 data class MarpDirectiveEntry(
     val key: String,
     val keyRange: TextRange,
@@ -27,10 +27,9 @@ data class MarpDirectiveEntry(
     val value: String,
     /** Where [rawValue] is in the text, `null` when the value is empty (no text after the colon). */
     val valueRange: TextRange?,
-) {
-    /** What [key] means, resolved once when the entry is created. */
-    val resolved: MarpDirectiveKey = MarpDirectiveCatalog.resolve(key)
-}
+    /** What [key] means, resolved once when the entry is created (the front matter also knows `marp`). */
+    val resolved: MarpDirectiveKey = MarpDirectiveCatalog.resolve(key),
+)
 
 /**
  * A parsed HTML comment. [range] covers `<!-- ... -->`, [bodyRange] and [body] the text between the markers without
@@ -83,7 +82,8 @@ sealed interface MarpCompletionSpot {
  * a line that continues a value that is already complete.
  *
  * The first half of this object works on text and is independent of the IDE, the second half finds comments in the
- * Markdown PSI. Comments are only interpreted in Marp decks ([isMarpDeck]).
+ * Markdown PSI. Comments are only interpreted in Marp decks ([isMarpDeck]). The line reader ([readEntries]) and the
+ * completion spot of a line ([spotInLine]) are shared with the front matter, see [MarpFrontMatter].
  */
 object MarpDirectiveComments {
 
@@ -127,8 +127,14 @@ object MarpDirectiveComments {
      * indented lines and `- item` lines continue the previous entry (a block scalar or sequence); a line that is
      * neither a key line nor a continuation means the body is prose. So does what YAML rejects: a value that starts
      * with `*`, a repeated key, and an indented line after a value that is already complete (see the class comment).
+     * The ranges are offsets into [text], so the body of the front matter of a document gives document offsets.
+     *
+     * With [frontMatter] the body is the front matter of a deck: `marp` is a known key, and `size` and `math` are
+     * read with loose YAML like the Marpit directives ([isLooseKey]).
      */
-    private fun readEntries(text: CharSequence, bodyStart: Int, bodyEnd: Int): Pair<List<MarpDirectiveEntry>, Boolean> {
+    internal fun readEntries(
+        text: CharSequence, bodyStart: Int, bodyEnd: Int, frontMatter: Boolean = false,
+    ): Pair<List<MarpDirectiveEntry>, Boolean> {
         val entries = ArrayList<MarpDirectiveEntry>()
         val keys = HashSet<String>()
         var lineStart = bodyStart
@@ -144,10 +150,10 @@ object MarpDirectiveComments {
                 isSequenceItem(trimmed) -> if (entries.isEmpty()) return entries to false
                 line[0] == ' ' || line[0] == '\t' -> {
                     val previous = entries.lastOrNull() ?: return entries to false
-                    if (isCompleteScalar(previous)) return entries to false
+                    if (isCompleteScalar(previous, frontMatter)) return entries to false
                 }
                 else -> {
-                    val entry = readKeyLine(line, lineStart) ?: return entries to false
+                    val entry = readKeyLine(line, lineStart, frontMatter) ?: return entries to false
                     if (entry.rawValue.startsWith("*") || !keys.add(entry.key)) return entries to false
                     entries += entry
                 }
@@ -164,31 +170,41 @@ object MarpDirectiveComments {
      * error: a closed quoted scalar, or a value of a Marpit directive that loose YAML quotes as a whole. Block scalars,
      * flow collections, an unclosed quote and plain scalars of other keys can continue on the next lines.
      */
-    private fun isCompleteScalar(entry: MarpDirectiveEntry): Boolean {
+    private fun isCompleteScalar(entry: MarpDirectiveEntry, frontMatter: Boolean): Boolean {
         val raw = entry.rawValue
         if (raw.isEmpty()) return false
         val first = raw[0]
-        if (isLooseKey(entry.key) && first !in MarpHeadingDivider.YAML_SPECIAL_START) return true
+        if (isLooseKey(entry.key, frontMatter) && first !in MarpHeadingDivider.YAML_SPECIAL_START) return true
         return (first == '"' || first == '\'') && raw.length >= 2 && raw.last() == first
     }
 
-    /** The Marpit directives (`_` form included) are parsed with loose YAML, marp-core's own `size` and `math` are not. */
-    private fun isLooseKey(key: String): Boolean =
-        MarpDirectiveCatalog.find(key.removePrefix("_"))?.origin == MarpDirectiveOrigin.MARPIT
+    /**
+     * The directives (`_` form included) that are parsed with loose YAML: in a comment the Marpit directives, marp-core's
+     * own `size` and `math` are not. In the front matter `size` and `math` are read the same way, which needs
+     * confirming against Marp (see notes-for-later). `marp` and unknown keys are plain YAML everywhere.
+     */
+    private fun isLooseKey(key: String, frontMatter: Boolean): Boolean {
+        val directive = MarpDirectiveCatalog.find(key.removePrefix("_")) ?: return false
+        return frontMatter || directive.origin == MarpDirectiveOrigin.MARPIT
+    }
 
-    private fun readKeyLine(line: String, lineOffset: Int): MarpDirectiveEntry? {
+    private fun readKeyLine(line: String, lineOffset: Int, frontMatter: Boolean): MarpDirectiveEntry? {
         val match = KEY_LINE.find(line) ?: return null
         val keyGroup = match.groups[2]!!
         val key = keyGroup.value
         val afterColon = match.range.last + 1
         var valueStart = afterColon
         while (valueStart < line.length && (line[valueStart] == ' ' || line[valueStart] == '\t')) valueStart++
-        val rawValue = rawValueOf(line.substring(valueStart), isLooseKey(key))
+        val rawValue = rawValueOf(line.substring(valueStart), isLooseKey(key, frontMatter))
         val keyRange = TextRange(lineOffset + keyGroup.range.first, lineOffset + keyGroup.range.last + 1)
-        if (rawValue.isEmpty()) return MarpDirectiveEntry(key, keyRange, "", "", null)
+        val resolved = if (frontMatter) MarpDirectiveCatalog.resolveInFrontMatter(key) else MarpDirectiveCatalog.resolve(key)
+        if (rawValue.isEmpty()) return MarpDirectiveEntry(key, keyRange, "", "", null, resolved)
         val valueRange = TextRange(lineOffset + valueStart, lineOffset + valueStart + rawValue.length)
-        return MarpDirectiveEntry(key, keyRange, rawValue, MarpHeadingDivider.unquote(rawValue), valueRange)
+        return MarpDirectiveEntry(key, keyRange, rawValue, MarpHeadingDivider.unquote(rawValue), valueRange, resolved)
     }
+
+    /** The key of a `key: value` line ([KEY_LINE]), quotes removed, or `null` when [line] is not a key line. */
+    internal fun keyOfLine(line: String): String? = KEY_LINE.find(line)?.groups?.get(2)?.value
 
     /**
      * The value at the end of a key line, without trailing white space. With [loose] (a Marpit directive) a value that
@@ -224,7 +240,14 @@ object MarpDirectiveComments {
         if (caret < afterMarker) return null
         var lineStart = caret
         while (lineStart > afterMarker && text[lineStart - 1] != '\n') lineStart--
-        val prefix = text.substring(lineStart, caret).trimStart()
+        return spotInLine(text.substring(lineStart, caret).trimStart())
+    }
+
+    /**
+     * The completion spot at the end of [prefix], the text of a line from its first non-blank character to the caret:
+     * a key (`_pa`), the value of a key (`paginate: h`), or `null` for anything else.
+     */
+    internal fun spotInLine(prefix: String): MarpCompletionSpot? {
         if (KEY_PREFIX.matches(prefix)) return MarpCompletionSpot.Key(prefix)
         val value = VALUE_PREFIX.matchEntire(prefix) ?: return null
         return MarpCompletionSpot.Value(value.groupValues[2], value.groupValues[3])

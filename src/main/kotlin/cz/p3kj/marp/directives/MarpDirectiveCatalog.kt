@@ -5,8 +5,11 @@ import cz.p3kj.marp.slides.MarpHeadingDivider
 /** Where a directive applies: the whole deck ([GLOBAL], the last value wins) or from a slide on ([LOCAL]). */
 enum class MarpDirectiveScope { GLOBAL, LOCAL }
 
-/** Who defines a directive: Marpit (the framework) or marp-core (the engine on top of it). */
-enum class MarpDirectiveOrigin { MARPIT, MARP_CORE }
+/**
+ * Who defines a directive: Marpit (the framework), marp-core (the engine on top of it), or Marp for VS Code, whose
+ * `marp` key marks a file as a deck and which this plugin follows.
+ */
+enum class MarpDirectiveOrigin { MARPIT, MARP_CORE, MARP_VSCODE }
 
 /** How the value of a directive is checked, see [MarpDirectiveCatalog.isValid]. */
 enum class MarpValueCheck { NONE, ONE_OF, ONE_OF_IGNORE_CASE, HEADING_DIVIDER }
@@ -41,9 +44,10 @@ sealed interface MarpDirectiveKey {
 
 /**
  * The one source of facts about Marp directives, from Marpit 3.2 and marp-core 4.4 (the versions bundled in the
- * preview page). Comment features (completion, documentation, inspection) use it, and the front matter support reuses
- * [ALL], [resolve], [isValid] and the documentation keys. Keys that only the front matter knows, such as `marp`, are
- * not directives and are not listed here.
+ * preview page). The features for directive comments (completion, documentation, inspection) use it, and the front
+ * matter features use it too. The `marp` key of the front matter is not a directive of the engine: it comes from Marp
+ * for VS Code and only exists in the front matter, so it is kept apart in [MARP] and [FRONT_MATTER_ONLY], not in
+ * [ALL], and comments do not know it (see [resolveInFrontMatter]).
  *
  * Marpit recognises the global directives `theme`, `style`, `headingDivider` and `lang`, and the local directives
  * `paginate`, `header`, `footer`, `class`, `color` and the `background*` family. Every local directive also has a
@@ -88,6 +92,12 @@ object MarpDirectiveCatalog {
         MarpDirective("color", MarpDirectiveScope.LOCAL),
     )
 
+    /** The key that marks a file as a Marp deck. Front matter only: Marp itself does not read it, Marp for VS Code does. */
+    val MARP = MarpDirective("marp", MarpDirectiveScope.GLOBAL, MarpDirectiveOrigin.MARP_VSCODE, suggestions = listOf("true"))
+
+    /** Keys that only exist in the front matter and are not in [ALL]. */
+    val FRONT_MATTER_ONLY: List<MarpDirective> = listOf(MARP)
+
     private val BY_NAME: Map<String, MarpDirective> = ALL.associateBy { it.name }
 
     /** The directive called [name], spelled exactly (directive names are case sensitive). */
@@ -106,6 +116,10 @@ object MarpDirectiveCatalog {
         }
         return MarpDirectiveKey.Unknown(suggest(key))
     }
+
+    /** Classifies a key of the front matter: [resolve], and `marp` is known there. */
+    fun resolveInFrontMatter(key: String): MarpDirectiveKey =
+        if (key == MARP.name) MarpDirectiveKey.Known(MARP, spot = false) else resolve(key)
 
     /** Every key that Marp accepts: the directive names and the `_` form of the local ones. */
     val VALID_KEYS: List<String> = ALL.map { it.name } +
