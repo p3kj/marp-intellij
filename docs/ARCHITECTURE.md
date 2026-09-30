@@ -1,8 +1,8 @@
 # Architecture
 
 Marp Preview renders Marp decks with [marp-core](https://github.com/marp-team/marp-core) inside JCEF (the IDE's
-Chromium). The plugin owns its split editor; it does not plug into the bundled Markdown preview (that has no stable
-renderer API).
+Chromium). The plugin owns its split editor; it does not plug into the bundled Markdown preview. That preview renders a
+document, not a deck (no slide breaks, directives, themes or backgrounds), and it has no stable renderer API.
 
 ```
 Markdown file with `marp: true`
@@ -834,7 +834,7 @@ condition as the export actions) and `MarpPresenter`. Since #20 there are two wa
 - Security and trust: same content rules as the HTML export (untrusted project: HTML off and no custom themes; `html: all`
   in a trusted project keeps the deck's scripts). The only script added is `runPresentation`, which does no network
   access and no `fetch`.
-- Limits: browsers installed as Snap or Flatpak cannot read the temp folder (README, troubleshooting). Out of scope for
+- Limits: browsers installed as Snap or Flatpak cannot read the temp folder (USER_GUIDE.md, Troubleshooting). Out of scope for
   this page (the presentation of Marp CLI below has some of them): presenter view and notes, timers, remote control, click, touch and swipe navigation, on-screen controls, transitions, a
   slide counter, live reload of the browser, a JCEF presentation window, deleting files before the IDE exits. Not used:
   a second or offscreen JCEF browser (its own resource handler, CSP, navigation policy, focus and per-OS full screen),

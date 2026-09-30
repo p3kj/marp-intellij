@@ -87,6 +87,7 @@ The plugin must load and unload without restarting the IDE. Before a release, an
 - CI must be green: Build, Test, Verify plugin. Run `./gradlew check` locally first.
 - Add a line to the `[Unreleased]` section of `CHANGELOG.md` under `### Added`, `### Changed`, `### Fixed` or `### Removed` if users can notice the change.
 - Update `docs/ARCHITECTURE.md` when the bridge, URL scheme, security rules or threading rules change.
+- Update `docs/USER_GUIDE.md` when users can notice the change. The README only lists features: a new feature gets one bullet there and its details in the guide.
 - Commit messages: imperative subject under 72 characters, body explains the why.
 
 By contributing you agree that your contribution is licensed under the MIT License of this project.
