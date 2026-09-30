@@ -170,6 +170,14 @@ class MarpPreviewFileEditor(val project: Project, private val file: VirtualFile)
         }
     }
 
+    /**
+     * Sends the current text and settings to the page and returns once they are sent. The export commands call this first,
+     * so the page exports what the editor shows, unsaved changes included, whatever the throttle has not sent yet.
+     */
+    suspend fun renderNow() {
+        render()
+    }
+
     private class RenderInput(val markdown: String, val baseHref: String, val roots: List<Path>)
 
     private suspend fun render() {

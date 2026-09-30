@@ -71,7 +71,7 @@ internal class MarpPreviewFileEditorProvider : FileEditorProvider, DumbAware {
  * The toolbar (group [TOOLBAR_GROUP_ID]) goes into the right group only: the platform shows it in the floating toolbar
  * of the editor, so the editor gets no permanent toolbar row. The left group stays empty for the same reason.
  */
-class MarpSplitEditor(textEditor: TextEditor, preview: MarpPreviewFileEditor) :
+class MarpSplitEditor(textEditor: TextEditor, val preview: MarpPreviewFileEditor) :
     TextEditorWithPreview(textEditor, preview, MarpBundle.message("editor.name"), TextEditorWithPreview.Layout.SHOW_EDITOR_AND_PREVIEW) {
 
     private val project = preview.project

@@ -1,5 +1,8 @@
 package cz.p3kj.marp.preview
 
+import cz.p3kj.marp.preview.MarpBridgeState.Companion.COMMANDS
+import cz.p3kj.marp.preview.MarpBridgeState.Companion.EXPORT_HTML
+import cz.p3kj.marp.preview.MarpBridgeState.Companion.FLUSH_RENDER
 import cz.p3kj.marp.preview.MarpBridgeState.Companion.MAX_RELOADS
 import cz.p3kj.marp.preview.MarpBridgeState.Companion.REPLAY_ORDER
 import cz.p3kj.marp.preview.MarpBridgeState.Companion.SCROLL_TO_LINE
@@ -93,6 +96,68 @@ class MarpBridgeStateTest {
     @Test(expected = IllegalArgumentException::class)
     fun unknownMethodsAreRejected() {
         bridge.call("eval", "1")
+    }
+
+    @Test
+    fun commandsAreRejectedBeforeReadyAndAfterAReload() {
+        assertFalse(bridge.command(EXPORT_HTML, "{\"id\":1}"))
+        bridge.onReady()
+        bridge.onLoadStart()
+        assertFalse(bridge.command(FLUSH_RENDER, "{\"id\":2}"))
+        assertEquals(emptyList<Pair<String, String>>(), executed)
+    }
+
+    @Test
+    fun commandsRunOnceWhileReadyAndAreNeverReplayed() {
+        bridge.call(UPDATE, "u1")
+        bridge.onReady()
+        executed.clear()
+
+        assertTrue(bridge.command(EXPORT_HTML, "{\"id\":1}"))
+        assertTrue(bridge.command(FLUSH_RENDER, "{\"id\":2}"))
+        assertEquals(listOf(EXPORT_HTML to "{\"id\":1}", FLUSH_RENDER to "{\"id\":2}"), executed)
+
+        executed.clear()
+        bridge.onLoadStart()
+        bridge.onReady()
+        assertEquals("only the state comes back after a reload", listOf(UPDATE to "u1"), executed)
+    }
+
+    @Test
+    fun commandsKeepTheOrderOfTheCallsAroundThem() {
+        bridge.onReady()
+        bridge.call(UPDATE, "u1")
+        bridge.command(FLUSH_RENDER, "1")
+        bridge.call(UPDATE, "u2")
+        bridge.command(EXPORT_HTML, "2")
+        assertEquals(listOf(UPDATE to "u1", FLUSH_RENDER to "1", UPDATE to "u2", EXPORT_HTML to "2"), executed)
+    }
+
+    @Test
+    fun noCommandExecutesAfterDispose() {
+        bridge.onReady()
+        bridge.dispose()
+        assertFalse(bridge.command(EXPORT_HTML, "{}"))
+        assertEquals(emptyList<Pair<String, String>>(), executed)
+    }
+
+    @Test
+    fun commandsAreNotStateSetters() {
+        assertEquals(setOf(EXPORT_HTML, FLUSH_RENDER), COMMANDS)
+        assertTrue(COMMANDS.none { it in REPLAY_ORDER })
+        assertEquals("exportHtml", EXPORT_HTML)
+        assertEquals("flushRender", FLUSH_RENDER)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun stateSettersAreNotCommands() {
+        bridge.onReady()
+        bridge.command(UPDATE, "1")
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun commandsCannotBeRecordedAsState() {
+        bridge.call(EXPORT_HTML, "1")
     }
 
     @Test

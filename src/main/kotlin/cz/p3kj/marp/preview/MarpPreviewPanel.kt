@@ -29,6 +29,7 @@ import com.intellij.ui.jcef.JBCefJSQuery
 import cz.p3kj.marp.MarpBundle
 import cz.p3kj.marp.themes.MarpThemeSet
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
@@ -36,8 +37,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.cef.browser.CefBrowser
 import org.cef.browser.CefFrame
+import org.cef.callback.CefPdfPrintCallback
 import org.cef.handler.CefLifeSpanHandlerAdapter
 import org.cef.handler.CefLoadHandler
 import org.cef.handler.CefLoadHandlerAdapter
@@ -64,7 +67,8 @@ private val LOG = logger<MarpPreviewPanel>()
  *
  * Bridge calls are state setters, so [MarpBridgeState] keeps the latest argument of every call and sends them all (in
  * contract order) whenever the page reports `ready`, including after a reload. All public methods are thread-safe.
- * Create only when `JBCefApp.isSupported()`.
+ * The export commands ([exportHtml], [flushRender], [printToPdf]) are different: they are not state, they only work while
+ * the page is ready ([isPageReady]) and fail when it is reloaded or closed meanwhile. Create only when `JBCefApp.isSupported()`.
  */
 class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope) : Disposable {
 
@@ -118,7 +122,13 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
         browser?.cefBrowser?.executeJavaScript("window.marpBridge && window.marpBridge.$method($json);", MarpResourcePaths.APP_INDEX_URL, 0)
     }
 
+    /** Answers of the page to commands, see [sendCommand]. */
+    private val replies = MarpPageReplies()
+
     val component: JComponent get() = placeholder
+
+    /** `true` while the preview page is loaded and its bridge is installed: the export commands need that. */
+    val isPageReady: Boolean get() = bridge.isReady
 
     /** The browser once it exists, the placeholder before. */
     val preferredFocusedComponent: JComponent get() = browser?.jbBrowser?.component ?: placeholder
@@ -152,6 +162,7 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
         // Registered last, so it is disposed first: stop talking to the browser before it goes away.
         Disposer.register(this) {
             bridge.dispose()
+            replies.failAll("The preview was closed")
             listener = null
             scope.cancel()
         }
@@ -187,6 +198,7 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
                 if (frame?.isMain != true) return
                 if (isAppUrl(frame.url)) appLoadStarted = true
                 bridge.onLoadStart()
+                replies.failAll("The preview page is loading again")
             }
 
             override fun onLoadEnd(browser: CefBrowser?, frame: CefFrame?, httpStatusCode: Int) {
@@ -271,6 +283,53 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
         call(MarpBridgeState.SET_ACTIVE_LINE, line)
     }
 
+    /**
+     * The current deck as a standalone HTML document, rendered by the preview page (see `exportHtml` in
+     * `docs/ARCHITECTURE.md`). [title] is used when the deck has no `title:` directive. The page has to be ready and to
+     * hold the current text, so callers render first. Throws [MarpExportException].
+     */
+    suspend fun exportHtml(title: String): String {
+        val reply = sendCommand(MarpBridgeState.EXPORT_HTML, EXPORT_HTML_TIMEOUT_MS) { addProperty("title", title) }
+        return reply.string("html") ?: throw MarpExportException("The preview page answered without a document")
+    }
+
+    /** Makes the page render a pending update now and waits until it has done so. Throws [MarpExportException]. */
+    suspend fun flushRender() {
+        sendCommand(MarpBridgeState.FLUSH_RENDER, FLUSH_TIMEOUT_MS)
+    }
+
+    /**
+     * Prints the preview page to a PDF file with Chromium: one page per slide, sized like the deck (see [MarpPdfSettings]).
+     * Call [flushRender] first. Throws [MarpExportException].
+     */
+    suspend fun printToPdf(path: Path) {
+        val browser = browser ?: throw MarpExportException("The preview browser does not exist")
+        val done = CompletableDeferred<Boolean>()
+        withContext(UI_ANY_MODALITY) {
+            browser.cefBrowser.printToPDF(path.toString(), MarpPdfSettings.create(), CefPdfPrintCallback { _, ok -> done.complete(ok) })
+        }
+        val ok = withTimeoutOrNull(PDF_TIMEOUT_MS) { done.await() }
+            ?: throw MarpExportException("The browser did not finish printing within ${PDF_TIMEOUT_MS / 1000} s", timedOut = true)
+        if (!ok) throw MarpExportException("The browser could not print the page to $path")
+    }
+
+    /** Sends [method] with a fresh id (plus [fill]) and waits for the page's reply. */
+    private suspend fun sendCommand(method: String, timeoutMs: Long, fill: JsonObject.() -> Unit = {}): JsonObject {
+        val (id, reply) = replies.open()
+        try {
+            val argument = JsonObject().apply {
+                addProperty("id", id)
+                fill()
+            }
+            if (!bridge.command(method, argument.toString())) throw MarpExportException("The preview page is not ready")
+            return withTimeoutOrNull(timeoutMs) { reply.await() }
+                ?: throw MarpExportException("The preview page did not answer $method within ${timeoutMs / 1000} s", timedOut = true)
+        }
+        finally {
+            replies.cancel(id)
+        }
+    }
+
     /** The page's own texts; `{0}`, `{1}` stay placeholders that the page fills in. */
     private fun sendStrings() {
         call(MarpBridgeState.SET_STRINGS, JsonObject().apply {
@@ -336,12 +395,14 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
             }
             "openLink" -> json.string("href")?.let { href -> scope.launch { openLink(href) } }
             "error" -> LOG.info("Marp preview reported: ${json.string("message")}")
+            "reply" -> replies.onReply(json)
             else -> LOG.debug("Ignoring preview message: $message")
         }
     }
 
     /** The renderer died or the main frame left the preview page: load the preview page again (capped). */
     private fun onPageGone(reason: String) {
+        replies.failAll("The preview page is gone: $reason")
         if (bridge.onPageGone()) {
             LOG.info("Marp preview reloads: $reason")
             scope.launch(UI_ANY_MODALITY) {
@@ -382,6 +443,9 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
 
     private companion object {
         const val RELOAD_DELAY_MS = 500L
+        const val EXPORT_HTML_TIMEOUT_MS = 30_000L
+        const val FLUSH_TIMEOUT_MS = 10_000L
+        const val PDF_TIMEOUT_MS = 120_000L
 
         /**
          * Pure UI work: no write-intent lock, and any modality, so a modal dialog open at startup does not keep the
