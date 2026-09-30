@@ -29,9 +29,9 @@ avoids internal, deprecated and experimental APIs.
 |---|---|
 | `webview/` | npm project: preview page, marp-core bundle (esbuild), vitest tests. `src/export-html.ts` is the standalone export document, `src/present.ts` the presentation CSS and the script that goes into it |
 | `cz.p3kj.marp.MarpDetector` | front-matter `marp: true` detection, and where the front matter starts and ends |
-| `cz.p3kj.marp.slides` | slide model: Markdown PSI -> blocks (`MarpSlideParser`), Marp's split rules (`MarpSlideSplitter`, `MarpHeadingDivider`), `MarpDeck` / `MarpSlide`, and the pure slide swap (`MarpSlideReorder`) |
+| `cz.p3kj.marp.slides` | slide model: Markdown PSI -> blocks (`MarpSlideParser`), Marp's split rules (`MarpSlideSplitter`, `MarpHeadingDivider`), `MarpDeck` / `MarpSlide`, and the pure slide move (`MarpSlideReorder`) |
 | `cz.p3kj.marp.structure` | slide outline for the Structure tool window and the File Structure popup |
-| `cz.p3kj.marp.navigation` | slide navigation: Next / Previous / Go to Slide actions, "Slide 3 / 12" status bar widget, slide number inlay hints; slide reordering: Move Slide Up / Down actions and the Move Statement mover |
+| `cz.p3kj.marp.navigation` | slide navigation: Next / Previous / Go to Slide actions, "Slide 3 / 12" status bar widget, slide number inlay hints; slide reordering: Move Slide Up / Down actions, the Move Statement mover and the move for a drag in the slide overview |
 | `cz.p3kj.marp.folding` | one fold region per slide of a Marp deck |
 | `cz.p3kj.marp.directives` | directives in comments and the front matter: catalog of the Marp directives, comment and front matter parser, highlighting and color page (comments), completion, documentation, theme navigation, inspection |
 | `cz.p3kj.marp.images` | image syntax in alt text: catalog of the Marp image keywords, alt text finder, completion (contributor and confidence), documentation |
@@ -81,7 +81,9 @@ same-origin with the project files under `/doc/`, and could otherwise navigate t
   `frame-src 'none'` blocks frames with a `src`. Frames without one (`about:blank`, `srcdoc`) are not covered by it, so the
 page removes `<meta http-equiv>`, `<iframe>`, `<frame>`, `<object>`, `<embed>`, `<portal>`, `<base>` and
 `<link rel=import>` from the deck HTML, and every `autofocus` attribute, before it is inserted (under every HTML
-setting). The page also cancels `dragover` / `drop`, so a dropped file or link never becomes a navigation. Remote
+setting). The page also cancels `dragover` / `drop`, so a dropped file or link never becomes a navigation. The slide
+drag of the overview (#22) carries no drag data (it is built from mouse events, see Slide overview), does not change this
+and adds nothing to the CSP. Remote
 images work over https. `http:` images are mixed content in Chromium (upgraded to https or blocked) although the CSP
 lists `http:`. Only the bundled `/app/` script runs; inline `<script>`, event handler attributes, `javascript:` URLs, frames,
   plugins and `fetch` are blocked, and forms cannot submit (`form-action 'none'`, they still render). Theme CSS (injected as a `<style>` text), marp-core's inline styles, KaTeX /
@@ -198,9 +200,8 @@ with the grid on still gives one slide per page. In the grid:
   handler prevents every click and posts no `openLink` (middle click does nothing).
 - A single click on a thumbnail posts `didClick` with the slide's `data-marp-content-start-line` (`slideLineAt`, the line
   the active-slide ranges start at; a click in the gap posts nothing). Kotlin moves the caret as for a double-click, so
-  `setActiveLine` moves the highlight to the clicked slide and the editor scrolls to the caret. The grid stays on. There is
-  no new host message and the page never changes Kotlin state. The double-click handler does nothing in the grid, the two
-  clicks already posted.
+  `setActiveLine` moves the highlight to the clicked slide and the editor scrolls to the caret. The grid stays on. The
+  double-click handler does nothing in the grid, the two clicks already posted.
 - Scroll sync is suspended in both directions, because source lines have no monotonic position in a grid: `applyScroll`
   returns at once and the scroll listener sends no `revealLine`. `scrollToLine` still records the anchor, so the anchor
   follows the editor and turning the overview off re-applies it like after a resize (`realign`), landing on the slide
@@ -209,6 +210,33 @@ with the grid on still gives one slide per page. In the grid:
   the overview is turned on before the first render, as after a page reload, the first render does it once), and so does
   `setActiveLine` when the highlight moves to another slide. A caret move inside the same slide and a render do not
   scroll (typing must not jump, and the user's own scrolling of the grid must not be undone).
+- Reordering (#22, `webview/src/slide-drag.ts`): dragging a thumbnail to another place posts `didMoveSlide` and the host
+  moves the slide in the text. The page never reorders anything itself: the document change re-renders, the overview
+  stays on and the caret move highlights the moved slide.
+  - The drag is built from `mousedown` / `mousemove` / `mouseup`, not from HTML5 drag and drop. The preview browser is a
+    default `JBCefBrowser` and 2026.2 renders it off-screen (`ide.browser.jcef.osr.enabled`); `JBCefOsrHandler.startDragging`
+    returns `false`, which makes CEF abort every native drag, so `draggable` / `dragstart` / `drop` would never fire. Mouse
+    events work in both modes and in jsdom. A `dragstart` in the overview is prevented so that no native drag can start
+    and interrupt the mouse drag (windowed mode); the global `dragover` / `drop` cancelling of #12 stays as it is.
+  - A press on a thumbnail (primary button, overview on, deck reorderable) records the slide (its index among the
+    `[data-marp-slide-wrapper]` elements, `slideLineAt` its content start line, and the thumbnail count). A move of 5 px
+    (`dragThreshold`) or more starts the drag, a smaller one stays a click. While dragging, `#marp-root` has
+    `marp-slide-drag` (grabbing cursor, no hover outline), the dragged wrapper `marp-dragging` (dimmed), and one wrapper
+    gets `marp-drop-before` or `marp-drop-after`, a 3px bar in the middle of the 24px gap (`::after`, because `::before` is
+    the active-slide outline). The bar is only shown where the slide would change its place.
+  - The place comes from the wrappers' client rectangles, read again on every mouse move and scroll (wheel scrolling during
+    a drag works, there is no auto-scroll at the edges). `dropSlot` gives the insertion slot 0..n in reading order (left
+    half of a box = before it, a row gap = start of the next row, right of a row = after its last box), `moveTarget` the
+    index the slide gets (`undefined` next to itself), `indicatorFor` the wrapper and side for the bar. The drag ends
+    without a move when the thumbnails change under it (a render replaced them).
+  - Releasing posts `{"type":"didMoveSlide","from","to","line","count"}`, except on the slide's own place, which posts
+    nothing. Escape, losing the window focus, a mouse move without the button (released outside the page) and turning the
+    overview off cancel the drag. The click that follows a drop (or an Escape during a drag) is swallowed by a capturing listener on
+    the window, so it does not also post `didClick` and move the caret to a slide.
+  - Decks with `headingDivider` are not reorderable, as in Kotlin: after every successful render the page reads
+    `lastGlobalDirectives.headingDivider` (a protected Marpit field, cast like the title in `export-html.ts`, with the
+    Marpit option as fallback) and sets `reorderable`; a failed render clears it. There is no new bridge setter and no
+    Kotlin read of the deck per render. Kotlin checks the same again with `MarpSlideReorder.supports`.
 
 The state is per editor, not IDE-wide and not persisted: it is a view mode of one deck, like the Editor / Split / Preview
 layout, and an IDE-wide setting would flip every open preview and reopen decks as a grid after a restart.
@@ -237,6 +265,7 @@ string:
 | `{"type":"ready"}` | bridge is installed; Kotlin sends `setStrings`, `setIdeTheme`, `setThemes`, `update`, `scrollToLine`, `setActiveLine`, `setOverview` |
 | `{"type":"revealLine","line":n}` | the user scrolled the preview; scroll the editor so fractional line `n` is at the top |
 | `{"type":"didClick","line":n}` | double-click in a slide, or a click on a thumbnail in the slide overview (the slide's `data-marp-content-start-line`); move the caret to line `n` and focus the editor |
+| `{"type":"didMoveSlide","from":i,"to":j,"line":n,"count":c}` | a thumbnail was dropped on another place in the slide overview: slide `i` becomes slide `j` (0-based, `j` is the index after the move), `n` is the dragged slide's `data-marp-content-start-line`, `c` the number of thumbnails. `MarpSlideMove.parse` accepts whole non-negative numbers with `i != j` and both below `c`; `MarpSlideReordering.moveSlide` applies it to the committed deck and ignores it unless the deck has `c` slides and line `n` is inside slide `i` (see Slide reordering) |
 | `{"type":"openLink","href":"..."}` | a link was clicked (the page always prevents navigation). `https://marp.localhost/doc/...` inside the allowed roots -> open that file in the IDE; `http(s)`/`mailto` -> `BrowserUtil.browse`; anything else ignored (see Page security) |
 | `{"type":"error","message":"..."}` | render/theme error, already shown in the preview; Kotlin logs it |
 | `{"type":"reply","id":n,"html"?:"...","error"?:"..."}` | the one answer to the command with that `id` (`exportHtml`: `html` is the document; `flushRender`: no payload). `error` means it failed, the text is for the log |
@@ -378,17 +407,23 @@ included. Moving the caret is all they do, scroll sync then makes the preview fo
 
 ## Slide reordering (Kotlin)
 
-Issue #15. One pure edit function and two ways to trigger it, both in Marp decks only.
+Issues #15 and #22. One pure edit function and three ways to trigger it, all in Marp decks only: Move Slide Up / Down, Move Statement on a separator line, and a drag of a thumbnail in the slide overview.
 
-- `MarpSlideReorder.move(text, deck, index, down)` (package `slides`, plain Kotlin) returns an `Edit` or `null`. An `Edit`
+- `MarpSlideReorder.moveTo(text, deck, from, to)` (package `slides`, plain Kotlin) returns an `Edit` or `null`; `move(text,
+  deck, index, down)` is `moveTo` to `index + 1` or `index - 1`. An `Edit`
   replaces `[start, end)` with `text` and knows the moved piece (`movedFrom`, `movedLength`, `movedTo`, `contentTo`) so that
   `caretAfter(caret)` can keep a caret inside the moved piece at its place and send any other caret to the first
   non-blank line of it.
-  Both triggers apply exactly this edit, there is no second edit path.
-- Two neighbouring slides are swapped as one range. A slide travels as the text from its separator line to the start of
-  the next slide, so separator styles (`---`, `***`, `___`), local directives and notes move with it. The front matter
-  belongs to slide 0 in `MarpDeck` but stays on top: a swap that involves slide 0 swaps the BODIES (`bodyOffset` to the
-  next separator) and the separator line of slide 1 stays between them.
+  All triggers apply exactly this edit, there is no second edit path.
+- Moving a slide to any place is a swap of two NEIGHBOURING RUNS of slides as one range: moving down, the slide swaps with
+  the run after it up to `to`; moving up, the run from `to` up to the slide before it swaps with the slide. The swap only
+  reads the start and body offset of the first slide of each run and the end offset of the last, so `move` is the case where
+  the run is a single slide, and the moved slide is always one of the two pieces (`Edit` describes it). This was chosen
+  over repeated one-place swaps, which would need a PSI commit and a re-parse between the steps inside one command.
+  A slide travels as the text from its separator line to the start of the next slide, so separator styles (`---`, `***`,
+  `___`), local directives and notes move with it. The front matter belongs to slide 0 in `MarpDeck` but stays on top: a
+  swap that involves slide 0 swaps the BODIES (`bodyOffset` to the next separator) and the separator line of the first
+  slide of the lower run stays between them.
 - `blankEnded` puts a blank line after a piece that is followed by a separator and does not end with one. A paragraph line
   directly above `---` would otherwise become a setext heading and swallow the slide break. Decks with a blank line before
   each separator are not touched by it. The same goes for the top of the range: the piece that lands first starts with a
@@ -400,8 +435,17 @@ Issue #15. One pure edit function and two ways to trigger it, both in Marp decks
   divider heading at its start joins the slide before it) and reorder the competing `headingDivider` comments, so those
   decks are not supported: `move` returns `null`, the actions show `hint.moveSlide.headingDivider` and the mover steps
   aside. Structure view drag and drop is not offered either: the tree has no public drop hook (`StructureViewComponent` builds a
-  private `DnDAwareTree`).
-- `MarpSlideReordering` (package `navigation`) is the platform side. `move(project, editor, down)` reuses
+  private `DnDAwareTree`); reordering by drag is in the slide overview instead.
+- `MarpSlideReordering` (package `navigation`) is the platform side. `moveSlide(project, editor, from, to, line, count)` is
+  the drag in the overview: the request comes from the page, so nothing in it is trusted. Inside `withDeck` it returns
+  without a change (a debug log at most) in a viewer or read-only document, in a `headingDivider` deck, when the deck
+  does not end at the end of the document, when it has another number of slides than `count`, when `line` is not a line of
+  the document, when `deck.slideIndexAt(lineStart(line)) != from` (the page's `data-marp-content-start-line` lies inside
+  the slide's range: on its separator line or later, front matter lines belong to slide 0), and when `moveTo` returns
+  `null`. Otherwise the edit is applied like below, in one command named like Move Slide Up / Down (no new bundle
+  string). The caret goes into the moved slide (`caretAfter`), so `setActiveLine` highlights it in the overview, and the
+  focus is not changed, the user may drag again. The message reaches it as `MarpPreviewPanel.Listener.moveSlide` on the EDT
+  (`MarpSlideMove.parse` first), implemented by `MarpScrollSync` like `didClick`. `move(project, editor, down)` reuses
   `MarpSlideNavigation.withDeck` (non-blocking read of the committed PSI, continuation on the EDT), takes the slide under
   the LIVE primary caret, and applies the edit in `WriteCommandAction.writeCommandAction(project, psiFile).withName(...)`,
   so the file's read-only status is honoured and the move is one undo step. `apply` reads the caret first, drops
@@ -428,8 +472,10 @@ Issue #15. One pure edit function and two ways to trigger it, both in Marp decks
   action, so it is one undo step. The deck comes from the cached PSI (the handler commits the document first), read on
   the EDT like every mover does; a caret on the separator line of a moved slide stays on it, except when slide 1 moves up
   (its separator stays between the swapped bodies) where the caret goes to the first non-blank line of the moved body.
-- Not done: reordering from the preview or the overview, moving by more than one place, several slides at once,
-  keeping the collapsed state of the slide folds (the replaced range drops the fold regions inside it).
+- Not done: reordering from the normal (non-grid) preview, several slides at once (multi-select drags), auto-scroll of the
+  grid at its edges during a drag, reordering decks with `headingDivider`, an optimistic reorder in the page before the
+  re-render, a hint in the page for decks that cannot be reordered, keeping the collapsed state of the slide folds (the
+  replaced range drops the fold regions inside it).
 
 ## Slide folding (Kotlin)
 
@@ -865,7 +911,7 @@ would follow the internals of one CLI version).
   `MarpJcefStartup.prepare()` reads `ProxySettings.getProxyConfiguration()` on `Dispatchers.IO` (once per IDE session),
   then the browser is created on `Dispatchers.UI` (the EDT without the write-intent lock, any modality) and added to
   the placeholder. Page reloads also run on `Dispatchers.UI`; only calls that touch the editor (`revealLine`,
-  `didClick`) and `BrowserUtil.browse` (which may show a dialog) run on `Dispatchers.EDT`. Bridge calls made before that are
+  `didClick`, `moveSlide`) and `BrowserUtil.browse` (which may show a dialog) run on `Dispatchers.EDT`. Bridge calls made before that are
   only recorded and replayed on `ready`, as during a reload. Reason: the first browser of the session starts JCEF,
   and `JBCefApp`'s class initializer reads the proxy settings. If the platform has not read them yet (it does so on its
   first HTTP request, usually but not always before editors are restored at startup), creating the proxy settings
@@ -892,7 +938,7 @@ would follow the internals of one CLI version).
   theme service including trust, `.marprc` confinement and download limits), plus plain unit tests for logic that does
   not need the platform: `MarpDetector`, `MarpSlideSplitter` and `MarpHeadingDivider` (slide splitting, tricky cases by
   hand-built blocks; `MarpSlideParserTest` and `MarpStructureViewTest` cover the PSI adapter and the tree), the slide navigation
-  (actions, Go to Slide with a replaced test input dialog, status bar widget, inlay hints called through a recording sink), slide reordering (`MarpSlideReorderTest` for the pure swap, `MarpSlideReorderingTest` for the actions, undo and caret, `MarpSlideStatementMoverTest` for Move Statement through the editor actions; the tight-deck cases use real parsed decks, including a `# A` directly above `---` and two `---` lines in a row, see "Slide model"), slide folding (regions from the builder, and the real fold model after the initial folding pass next to the Markdown regions), `MarpBridgeState` (state setters and commands), `MarpPageReplies`, `MarpPdfSettings`, `MarpExportFormat`, `MarpScrollEchoGuard`, `MarpLinkPolicy` (and request
+  (actions, Go to Slide with a replaced test input dialog, status bar widget, inlay hints called through a recording sink), slide reordering (`MarpSlideReorderTest` for the pure move: one place equals `move`, over several slides, mixed separators, tight decks, the front matter, round trips; `MarpSlideReorderingTest` for the actions and for `moveSlide` (applied, one undo step, requests from another deck ignored), undo and caret, `MarpSlideMoveTest` for the message, `MarpSlideStatementMoverTest` for Move Statement through the editor actions; the tight-deck cases use real parsed decks, including a `# A` directly above `---` and two `---` lines in a row, see "Slide model"), slide folding (regions from the builder, and the real fold model after the initial folding pass next to the Markdown regions), `MarpBridgeState` (state setters and commands), `MarpPageReplies`, `MarpPdfSettings`, `MarpExportFormat`, `MarpScrollEchoGuard`, `MarpLinkPolicy` (and request
   routing), `MarpResourcePaths`, `MarpJcefStartup`, the `.marprc` parser, `MarpThemePaths`, `MarpThemeFolder`,
   `MarpThemeWatch`, `MarpThemeNames` and the theme URL validation of the settings page. The directive features have plain
   unit tests for the catalog and the comment parser, and light platform tests for highlighting, completion (including
@@ -911,13 +957,17 @@ would follow the internals of one CLI version).
   setting. There is no end-to-end test of opening a real browser and none with the real Marp CLI.
 - Slide overview: `MarpPreviewToolbarActionsTest` (the toggle is registered in the toolbar group, per editor, hidden
   without a Marp editor) and `MarpBridgeStateTest` (`setOverview` replayed last). Headless tests have no JCEF page, so the
-  flag in `MarpPreviewFileEditor` is what they check.
+  flag in `MarpPreviewFileEditor` is what they check. The `didMoveSlide` message is parsed by `MarpSlideMoveTest`; its delivery
+  through the JS query has no headless test (no JCEF page).
 - Webview (`webview/test`, vitest with jsdom): the host bridge and message queue, marp-core plugins and render options,
   scroll sync, active slide, link and click handling, the unknown-theme warning and the string table, the standalone export
   document (`export-html.test.ts`), the `exportHtml` / `flushRender` commands with their replies (`preview.test.ts`) and the
   presentation runtime (`present.test.ts`: keys, hash, start slide, anchor links, full screen, and the serialized script),
-  and the slide overview (`overview.test.ts` for the click target, the `slide overview` block of `preview.test.ts` for the
-  class, clicks, inert links and suspended scroll sync; the grid layout itself is CSS and needs a manual check).
+  and the slide overview (`overview.test.ts` for the click target, `slide-drag.test.ts` for the drop slot, the move target,
+  the indicator side and the `headingDivider` probe on a real render, the `slide overview` block of `preview.test.ts` for the
+  class, clicks, inert links, suspended scroll sync and the drag with its mouse events (drop, marks, Escape, threshold,
+  release outside, scroll, `headingDivider`, `dragstart`); the grid layout and the look of the drag are CSS and need a
+  manual check).
 - `./gradlew check` runs all of them plus `tsc --noEmit` and the NOTICE freshness check. `verifyPlugin` covers binary
   compatibility with the recommended IDEs and the next EAP.
 
