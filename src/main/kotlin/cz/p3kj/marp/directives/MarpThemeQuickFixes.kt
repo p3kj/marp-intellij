@@ -112,6 +112,7 @@ internal object MarpThemeQuickFixes {
             val base = MarpThemeService.getInstance(project).projectDir ?: return
             val dir = projectDirectory(project) ?: return
             // It may have been created since the problem was reported.
+            dir.refresh(false, false)
             existingMarprc(dir)?.let { return open(project, it) }
             val chooser = FileChooserDescriptorFactory.singleFileOrDir()
                 .withExtensionFilter("css")
@@ -127,11 +128,15 @@ internal object MarpThemeQuickFixes {
             }
             val entry = if (path.toAbsolutePath().normalize() == base.toAbsolutePath().normalize()) "." else MarpThemePaths.toStored(path, base)
             val text = "themeSet:\n  - '${entry.replace("'", "''")}'\n"
-            val file = WriteCommandAction.writeCommandAction(project)
-                .withName(MarpBundle.message("fix.theme.createMarprc.command"))
-                .compute<VirtualFile, IOException> {
+            val title = MarpBundle.message("fix.theme.createMarprc.command")
+            val file = try {
+                WriteCommandAction.writeCommandAction(project).withName(title).compute<VirtualFile, IOException> {
                     dir.createChildData(this@CreateMarprcFix, MARPRC_FILE).also { VfsUtil.saveText(it, text) }
                 }
+            } catch (e: IOException) {
+                Messages.showErrorDialog(project, e.message ?: e.javaClass.simpleName, title)
+                return
+            }
             open(project, file)
         }
     }

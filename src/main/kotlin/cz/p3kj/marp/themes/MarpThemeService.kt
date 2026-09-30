@@ -214,16 +214,16 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
      * without any edit of the file. Only a re-run, it loads nothing that is not loading already, so it cannot loop.
      */
     internal suspend fun restartMarkdownHighlighting() {
-        val files = readAction {
-            if (project.isDisposed) emptyList()
-            else {
+        // Inside the read action: restart may load the document of a file that is not cached yet.
+        readAction {
+            if (!project.isDisposed) {
                 val psiManager = PsiManager.getInstance(project)
-                FileEditorManager.getInstance(project).openFiles.mapNotNull { psiManager.findFile(it) as? MarkdownFile }
+                val daemon = DaemonCodeAnalyzer.getInstance(project)
+                for (file in FileEditorManager.getInstance(project).openFiles) {
+                    (psiManager.findFile(file) as? MarkdownFile)?.let { daemon.restart(it, "Marp themes changed") }
+                }
             }
         }
-        if (files.isEmpty()) return
-        val daemon = DaemonCodeAnalyzer.getInstance(project)
-        files.forEach { daemon.restart(it, "Marp themes changed") }
     }
 
     private fun trustChanged(changed: Project) {
@@ -243,6 +243,8 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
             publishJob = cs.launch {
                 if (delayMs > 0) delay(delayMs)
                 project.messageBus.syncPublisher(MarpThemeListener.TOPIC).themesChanged()
+                // Highlighting restarts once, with a loaded set: an inspection that finds nothing cached would only start a load.
+                loadThemes()
                 restartMarkdownHighlighting()
             }
         }

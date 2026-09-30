@@ -12,9 +12,9 @@ import cz.p3kj.marp.themes.MarpThemeService
 import org.intellij.plugins.markdown.lang.psi.impl.MarkdownFile
 
 /**
- * Reports a `theme:` directive (in the front matter or in a directive comment, also `_theme` for one slide) that names a
- * theme which is neither built into marp-core nor found in the custom themes, with quick fixes to add one
- * ([MarpThemeQuickFixes]). A theme name is case-sensitive, like in Marpit.
+ * Reports a `theme:` directive (in the front matter or in a directive comment) that names a theme which is neither
+ * built into marp-core nor found in the custom themes, with quick fixes to add one ([MarpThemeQuickFixes]). A theme name
+ * is taken as written and is case-sensitive, like in Marpit.
  *
  * Whether a name is unknown depends on files and settings outside the document, which load in the background, so the
  * inspection is quiet whenever it cannot be sure: while the themes are not loaded yet, in an untrusted project (no custom
@@ -57,8 +57,8 @@ class MarpUnknownThemeInspection : LocalInspectionTool(), DumbAware {
             val key = entry.resolved as? MarpDirectiveKey.Known ?: continue
             if (!key.directive.themeValue) continue
             val range = entry.valueRange ?: continue
-            val name = entry.value.trim()
-            if (name.isEmpty()) continue
+            val name = entry.value
+            if (name.isBlank()) continue
             // Asked only now, so that a file without a theme directive never starts loading the themes.
             val custom = MarpThemeService.getInstance(holder.project).themeNamesForInspection() ?: return
             if (name in MarpDirectiveCatalog.BUILT_IN_THEMES || name in custom) continue

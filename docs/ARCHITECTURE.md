@@ -188,7 +188,8 @@ string:
 - `MarpThemeService` (project service): `suspend fun loadThemes(): MarpThemeSet` (cached, never on EDT);
   publishes `MarpThemeListener.TOPIC` when watched theme files, folders or `.marprc` change, or theme settings change.
   It also restarts the daemon (`DaemonCodeAnalyzer.restart(PsiFile, Object)`) for the open Markdown files after every
-  publish and after a load that `themeNamesForInspection()` started, because the unknown-theme warnings depend on the set.
+  publish (the set is loaded first, so the highlighting restarts once with a cached set) and after a load that
+  `themeNamesForInspection()` started, because the unknown-theme warnings depend on the set.
 - Theme sources: settings `themes` entries (file / folder / `http(s)` URL; relative paths resolve against the project
   dir, and are reported as invalid when there is none) plus, when enabled, `themeSet` from `.marprc.yml` /
   `.marprc.yaml` / `.marprc.json` / `.marprc` (no extension) in the project root (string or list; relative to the

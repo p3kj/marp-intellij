@@ -1,7 +1,7 @@
 <html>
 <body>
 Reports a <code>theme</code> directive of a Marp deck that names a theme which is neither built into Marp (<code>default</code>,
-<code>gaia</code>, <code>uncover</code>) nor one of your custom themes. Marp then falls back to the default theme without a hint.
+<code>gaia</code>, <code>uncover</code>) nor one of your custom themes. Marp ignores it and keeps the previous theme (or the default one); only the preview shows a warning.
 <pre><code>---
 marp: true
 theme: sketch

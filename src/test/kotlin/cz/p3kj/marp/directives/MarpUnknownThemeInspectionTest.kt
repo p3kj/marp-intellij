@@ -11,12 +11,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 class MarpUnknownThemeInspectionTest : MarpLightTestCase() {
     private lateinit var base: Path
     private lateinit var service: MarpThemeService
     private lateinit var previousProjectDir: () -> Path?
     private lateinit var previousTrusted: () -> Boolean
+    private lateinit var previousFetcher: (String) -> String
     private var trusted = true
     private val defaultChooser = MarpThemeChooser.choose
 
@@ -32,6 +35,7 @@ class MarpUnknownThemeInspectionTest : MarpLightTestCase() {
         service = MarpThemeService.getInstance(project)
         previousProjectDir = service.projectDirProvider
         previousTrusted = service.trustedProvider
+        previousFetcher = service.urlFetcher
         service.projectDirProvider = { base }
         trusted = true
         service.trustedProvider = { trusted }
@@ -46,6 +50,7 @@ class MarpUnknownThemeInspectionTest : MarpLightTestCase() {
         try {
             MarpThemeChooser.choose = defaultChooser
             service.trustedProvider = previousTrusted
+            service.urlFetcher = previousFetcher
             settings(useMarprc = true)
             service.projectDirProvider = previousProjectDir
             base.toFile().deleteRecursively()
@@ -111,6 +116,10 @@ class MarpUnknownThemeInspectionTest : MarpLightTestCase() {
         check("---\nmarp: true\ntheme: <warning descr=\"Unknown Marp theme 'nope'\">'nope'</warning>\n---\n")
     }
 
+    fun testQuotedNameKeepsItsSpaces() {
+        check("${deck}<!-- theme: <warning descr=\"Unknown Marp theme ' alpha '\">' alpha '</warning> -->\n")
+    }
+
     fun testThemeNamesAreCaseSensitive() {
         check("${deck}<!-- theme: ${unknown("Gaia")} -->\n")
     }
@@ -125,12 +134,18 @@ class MarpUnknownThemeInspectionTest : MarpLightTestCase() {
     }
 
     fun testQuietWhileTheThemesAreNotLoaded() {
-        settings(useMarprc = true, "themes/alpha.css")
-        settings(useMarprc = false, "themes/alpha.css")
-        // Nothing is cached: no warning, it only starts loading.
-        check("---\nmarp: true\ntheme: nope\n---\n")
+        // A download that has not finished keeps the set from loading (a changed setting starts loading it right away).
+        val release = CountDownLatch(1)
+        service.urlFetcher = { release.await(30, TimeUnit.SECONDS); "/* @theme remote */" }
+        try {
+            settings(useMarprc = false, "themes/alpha.css", "https://example.com/remote.css")
+            check("---\nmarp: true\ntheme: nope\n---\n")
+        } finally {
+            release.countDown()
+        }
         load()
         check("---\nmarp: true\ntheme: ${unknown("nope")}\n---\n")
+        check("---\nmarp: true\ntheme: remote\n---\n")
     }
 
     fun testHighlightingOfOpenMarkdownFilesCanBeRestartedOffTheEdt() {
