@@ -15,7 +15,7 @@
             <li><b>Local images</b> with relative paths, <code>![bg](...)</code> backgrounds, fitting headers, Twemoji.</li>
             <li><b>Math</b> with MathJax (works offline) or KaTeX.</li>
             <li><b>Inline HTML</b> in slides: off, Marp's safe allow list, or all. Untrusted projects render without HTML and without remote themes.</li>
-            <li><b>Slide navigation</b>: current slide in the status bar, Next / Previous Slide and Go to Slide, slide numbers in the editor.</li>
+            <li><b>Slide navigation</b>: current slide in the status bar, Next / Previous Slide and Go to Slide, slide numbers in the editor, and folding of each slide.</li>
             <li><b>New deck and live templates</b>: File | New | Marp Presentation, and <code>slide</code>, <code>lead</code>, <code>bg</code> and <code>notes</code> live templates in Marp decks.</li>
             <li>The preview follows the IDE light or dark theme. Links open in the IDE (project files) or in the system browser.</li>
         </ul>
@@ -56,6 +56,9 @@
                                               bundle="messages.MarpBundle"
                                               nameKey="inlay.slideNumbers.name"
                                               descriptionKey="inlay.slideNumbers.description"/>
+
+        <!-- One folding region per slide of a Marp deck. First, so it wins over Markdown heading regions that cross a slide boundary -->
+        <lang.foldingBuilder language="Markdown" order="first" implementationClass="cz.p3kj.marp.folding.MarpSlideFoldingBuilder"/>
 
         <!-- Settings and themes -->
         <projectConfigurable
