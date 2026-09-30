@@ -90,6 +90,30 @@
                     icon="AllIcons.General.Settings"/>
         </group>
 
+        <!-- Navigate | Marp slide actions, only enabled in the editor of a Marp deck. The default shortcuts are taken by the bundled
+             NetBeans and Visual Studio keymaps, so those two get them removed instead of a clash. Go to Slide has none: Ctrl+G is Go to Line. -->
+        <group id="Marp.SlideNavigation">
+            <separator/>
+            <action id="Marp.PreviousSlide" class="cz.p3kj.marp.navigation.MarpPreviousSlideAction">
+                <keyboard-shortcut keymap="$default" first-keystroke="control alt PAGE_UP"/>
+                <keyboard-shortcut keymap="NetBeans 6.5" first-keystroke="control alt PAGE_UP" remove="true"/>
+                <keyboard-shortcut keymap="Visual Studio" first-keystroke="control alt PAGE_UP" remove="true"/>
+                <keyboard-shortcut keymap="Visual Studio OSX" first-keystroke="meta alt PAGE_UP" remove="true"/>
+                <synonym key="action.Marp.PreviousSlide.synonym"/>
+            </action>
+            <action id="Marp.NextSlide" class="cz.p3kj.marp.navigation.MarpNextSlideAction">
+                <keyboard-shortcut keymap="$default" first-keystroke="control alt PAGE_DOWN"/>
+                <keyboard-shortcut keymap="NetBeans 6.5" first-keystroke="control alt PAGE_DOWN" remove="true"/>
+                <keyboard-shortcut keymap="Visual Studio" first-keystroke="control alt PAGE_DOWN" remove="true"/>
+                <keyboard-shortcut keymap="Visual Studio OSX" first-keystroke="meta alt PAGE_DOWN" remove="true"/>
+                <synonym key="action.Marp.NextSlide.synonym"/>
+            </action>
+            <action id="Marp.GoToSlide" class="cz.p3kj.marp.navigation.MarpGoToSlideAction">
+                <synonym key="action.Marp.GoToSlide.synonym"/>
+            </action>
+            <add-to-group group-id="GoToMenu" anchor="last"/>
+        </group>
+
         <!-- File | New | Marp Presentation, creates a deck from the internal file template of the same name. -->
         <action id="Marp.NewPresentation"
                 class="cz.p3kj.marp.templates.MarpNewPresentationAction"
