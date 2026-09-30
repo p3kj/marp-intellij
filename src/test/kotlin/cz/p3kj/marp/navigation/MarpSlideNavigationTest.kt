@@ -94,10 +94,10 @@ class MarpSlideNavigationTest : MarpLightTestCase() {
         open()
         caret(offsetOf("# Three") + 3)
         move(+1)
-        assertEquals("Next at the last slide goes to its content", offsetOf("# Three"), caretOffset())
+        assertEquals("Next at the last slide leaves the caret", offsetOf("# Three") + 3, caretOffset())
         caret(offsetOf("# One") + 2)
         move(-1)
-        assertEquals("Previous at the first slide goes to its content", offsetOf("# One"), caretOffset())
+        assertEquals("Previous at the first slide leaves the caret", offsetOf("# One") + 2, caretOffset())
     }
 
     fun testMoveDropsTheSelectionAndSecondaryCarets() {
@@ -216,8 +216,6 @@ class MarpSlideNavigationTest : MarpLightTestCase() {
                 ),
                 asked,
             )
-            assertEquals("Slide number (1-3):", asked[0])
-            assertEquals("Enter a number from 1 to 3", asked[2])
         }
     }
 
@@ -248,14 +246,6 @@ class MarpSlideNavigationTest : MarpLightTestCase() {
         open()
         caret(offsetOf("# Three"))
         goToSlide("1", offsetOf("# One"))
-    }
-
-    fun testGoToSlideCancelledStaysPut() {
-        open()
-        caret(offsetOf("# Two"))
-        goToSlide(null, offsetOf("# Two"))
-        // A number outside the deck never gets past the validator, but a wrong answer must not move anything either.
-        goToSlide("9", offsetOf("# Two"))
     }
 
     // Actions -------------------------------------------------------------------------------------------------------

@@ -40,12 +40,15 @@ class MarpSlideWidgetFactory : StatusBarEditorBasedWidgetFactory(), DumbAware {
     override fun createWidget(project: Project): StatusBarWidget = MarpSlideWidget(project)
 }
 
-class MarpSlideWidget(project: Project) : EditorBasedWidget(project), StatusBarWidget.TextPresentation {
+class MarpSlideWidget(project: Project) : EditorBasedWidget(project), StatusBarWidget.TextPresentation, StatusBarWidget.Multiframe {
 
     /** The text on show. EDT only. */
     private var current = ""
 
     override fun ID(): String = ID
+
+    /** Detached editor windows have their own status bar and get their own widget. */
+    override fun copy(): StatusBarWidget = MarpSlideWidget(project)
 
     override fun getPresentation(): StatusBarWidget.WidgetPresentation = this
 
@@ -60,7 +63,7 @@ class MarpSlideWidget(project: Project) : EditorBasedWidget(project), StatusBarW
     }
 
     override fun install(statusBar: StatusBar) {
-        super.install(statusBar)
+        super<EditorBasedWidget>.install(statusBar)
         val multicaster = EditorFactory.getInstance().eventMulticaster
         multicaster.addCaretListener(object : CaretListener {
             override fun caretPositionChanged(event: CaretEvent) {

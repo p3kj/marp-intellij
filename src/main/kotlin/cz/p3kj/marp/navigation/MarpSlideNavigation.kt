@@ -70,11 +70,14 @@ object MarpSlideNavigation {
 
     /**
      * Moves the caret [delta] slides from the slide it is in. The caret is read on the EDT when the deck arrives, so
-     * presses in quick succession each advance one slide. At the last (first) slide Next (Previous) stays there.
+     * presses in quick succession each advance one slide. At the last (first) slide Next (Previous) leaves the caret
+     * where it is.
      */
     fun move(project: Project, editor: Editor, delta: Int): CancellablePromise<*> =
         withDeck(project, editor) { deck ->
-            moveTo(editor, deck.slides[targetIndex(deck, editor.caretModel.offset, delta)])
+            val offset = editor.caretModel.offset
+            val target = targetIndex(deck, offset, delta)
+            if (target != deck.slideIndexAt(offset)) moveTo(editor, deck.slides[target])
         }
 
     /** The zero-based slide index for a number typed by the user (`1..count`), `null` when it is not one. */
@@ -85,7 +88,7 @@ object MarpSlideNavigation {
 
     /**
      * Asks for a slide number, prefilled with the current one, and moves the caret to that slide. The promise is done
-     * when the dialog is closed, the move itself follows with a second read.
+     * once the deck is read, the dialog runs right after on the EDT and the move follows with a second read.
      */
     fun showGoToSlide(project: Project, editor: Editor): CancellablePromise<*> =
         withDeck(project, editor) { deck ->

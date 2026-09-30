@@ -4,6 +4,7 @@ import com.intellij.openapi.application.runReadActionBlocking
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.wm.StatusBar
+import com.intellij.openapi.wm.StatusBarWidget
 import com.intellij.openapi.wm.StatusBarWidgetFactory
 import com.intellij.openapi.wm.WindowManager
 import com.intellij.testFramework.PlatformTestUtil
@@ -52,14 +53,13 @@ class MarpSlideWidgetTest : MarpLightTestCase() {
         val factory = StatusBarWidgetFactory.EP_NAME.extensionList.firstOrNull { it.id == MarpSlideWidget.ID }
         assertNotNull(factory)
         assertEquals(MarpBundle.message("statusBar.slide.name"), factory!!.displayName)
-        assertEquals("Marp Slide", factory.displayName)
         assertTrue(factory.isAvailable(project))
     }
 
     // The widget itself ---------------------------------------------------------------------------------------------
 
-    private fun installedWidget(): MarpSlideWidget? {
-        val statusBar: StatusBar = WindowManager.getInstance().getStatusBar(project) ?: return null
+    private fun installedWidget(): MarpSlideWidget {
+        val statusBar: StatusBar = checkNotNull(WindowManager.getInstance().getStatusBar(project)) { "No status bar for the test project" }
         val widget = MarpSlideWidget(project)
         Disposer.register(testRootDisposable, widget)
         widget.install(statusBar)
@@ -72,7 +72,7 @@ class MarpSlideWidgetTest : MarpLightTestCase() {
 
     fun testWidgetFollowsTheCaretAndTheText() {
         myFixture.configureByText("deck.md", deck)
-        val widget = installedWidget() ?: return
+        val widget = installedWidget()
         assertEquals("Marp.SlidePosition", widget.ID())
         waitForText(widget, "Slide 1 / 3")
         assertNotNull(widget.getTooltipText())
@@ -88,9 +88,18 @@ class MarpSlideWidgetTest : MarpLightTestCase() {
         waitForText(widget, "Slide 3 / 4")
     }
 
+    fun testWidgetIsCopiedForDetachedWindows() {
+        val widget = installedWidget()
+        val copy = (widget as StatusBarWidget.Multiframe).copy()
+        Disposer.register(testRootDisposable, copy)
+        assertTrue(copy is MarpSlideWidget)
+        assertNotSame(widget, copy)
+        assertEquals(MarpSlideWidget.ID, copy.ID())
+    }
+
     fun testWidgetIsEmptyOutsideADeck() {
         myFixture.configureByText("plain.md", "# One\n\n---\n\n# Two\n")
-        val widget = installedWidget() ?: return
+        val widget = installedWidget()
         // A Markdown file that is no deck: one background read, then the answer (no deck) is cached with the text.
         widget.refresh()?.let { PlatformTestUtil.waitForPromise(it) }
         assertEquals("", widget.getText())
@@ -102,7 +111,7 @@ class MarpSlideWidgetTest : MarpLightTestCase() {
 
     fun testWidgetDropsTheDeckWhenMarpIsRemoved() {
         myFixture.configureByText("deck.md", deck)
-        val widget = installedWidget() ?: return
+        val widget = installedWidget()
         waitForText(widget, "Slide 1 / 3")
         WriteCommandAction.runWriteCommandAction(project) {
             val document = myFixture.editor.document
