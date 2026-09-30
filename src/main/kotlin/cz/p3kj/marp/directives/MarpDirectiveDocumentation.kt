@@ -12,19 +12,34 @@ import cz.p3kj.marp.MarpBundle
 
 /**
  * Quick documentation (and the hover popup, which uses the same providers) for the directive under the caret in a
- * comment of a Marp deck: `_class`, `paginate` and so on. Only the key has documentation, not the value or a note.
+ * comment or in the front matter of a Marp deck: `_class`, `paginate`, `marp` and so on. Only the key has documentation,
+ * not the value or a note.
+ *
+ * With the YAML plugin the front matter is an injected YAML file. The IDE asks about the injected file first and then
+ * about the Markdown file (hover), so both are mapped to the Markdown file ([MarpFrontMatter.hostOf]) and end up with the
+ * same target. The extension is registered `order="first"`: the YAML support has targets of its own in that file, and
+ * this provider only answers for the keys of Marp, so it takes them first.
  */
 class MarpDirectiveDocumentationTargetProvider : DocumentationTargetProvider, DumbAware {
 
     override fun documentationTargets(file: PsiFile, offset: Int): List<DocumentationTarget> {
-        if (!MarpDirectiveComments.isMarpDeck(file)) return emptyList()
-        val markdown = MarpDirectiveComments.markdownFile(file) ?: return emptyList()
-        val element = MarpDirectiveComments.commentElementAt(markdown, offset) ?: return emptyList()
+        val (host, hostOffset) = MarpFrontMatter.hostOf(file, offset)
+        if (!MarpDirectiveComments.isMarpDeck(host)) return emptyList()
+        val text = MarpFrontMatter.text(host) ?: return emptyList()
+        val frontMatter = MarpFrontMatter.parse(text)
+        if (frontMatter != null && hostOffset >= frontMatter.bodyRange.startOffset && hostOffset <= frontMatter.bodyRange.endOffset) {
+            return targetOf(frontMatter.entries, hostOffset)
+        }
+        val markdown = MarpDirectiveComments.markdownFile(host) ?: return emptyList()
+        val element = MarpDirectiveComments.commentElementAt(markdown, hostOffset) ?: return emptyList()
         val comment = MarpDirectiveComments.parse(element.text) ?: return emptyList()
-        val relative = offset - element.textRange.startOffset
+        return targetOf(comment.entries, offset = hostOffset - element.textRange.startOffset)
+    }
+
+    /** The documentation of the key at [offset] (in the coordinates of the entries), if it is a directive. */
+    private fun targetOf(entries: List<MarpDirectiveEntry>, offset: Int): List<DocumentationTarget> {
         // The end of the key counts: the caret is often right behind the last letter.
-        val entry = comment.entries.firstOrNull { relative >= it.keyRange.startOffset && relative <= it.keyRange.endOffset }
-            ?: return emptyList()
+        val entry = entries.firstOrNull { offset >= it.keyRange.startOffset && offset <= it.keyRange.endOffset } ?: return emptyList()
         val directive = when (val key = entry.resolved) {
             is MarpDirectiveKey.Known -> key.directive
             is MarpDirectiveKey.GlobalWithUnderscore -> key.directive

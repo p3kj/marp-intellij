@@ -1,6 +1,7 @@
 package cz.p3kj.marp.directives
 
 import com.intellij.lang.documentation.ide.IdeDocumentationTargetProvider
+import com.intellij.lang.injection.InjectedLanguageManager
 import com.intellij.platform.backend.documentation.DocumentationResult
 import cz.p3kj.marp.MarpLightTestCase
 
@@ -58,6 +59,98 @@ class MarpDirectiveDocumentationTest : MarpLightTestCase() {
         assertEmpty(targetsAt("# Not a deck\n\n<!-- _pagi<caret>nate: true -->"))
     }
 
+    // Front matter ----------------------------------------------------------------------------------------------------
+    //
+    // With the caret in the front matter the fixture hands out the injected YAML file and an offset in it, so
+    // `targetsAt` above already asks the way the IDE does for the injected file. These go through the host file and
+    // the injected file on purpose, whatever the fixture returns.
+
+    private fun hostOf(textWithCaret: String): Pair<com.intellij.psi.PsiFile, Int> {
+        myFixture.configureByText("deck.md", textWithCaret)
+        return MarpFrontMatter.hostOf(myFixture.file, myFixture.caretOffset)
+    }
+
+    private fun namesAt(file: com.intellij.psi.PsiFile, offset: Int): List<String> =
+        provider.documentationTargets(file, offset).map { (it as MarpDirectiveDocumentationTarget).directive.name }
+
+    /** Asks about the Markdown file with the offset in the document. */
+    private fun hostTargetsAt(textWithCaret: String): List<String> {
+        val (host, offset) = hostOf(textWithCaret)
+        return namesAt(host, offset)
+    }
+
+    /** Asks about the injected YAML file with the offset in it, `null` when there is no injection. */
+    private fun injectedTargetsAt(textWithCaret: String): List<String>? {
+        val (host, offset) = hostOf(textWithCaret)
+        val injected = InjectedLanguageManager.getInstance(project).findInjectedElementAt(host, offset)?.containingFile ?: return null
+        val injectedOffset = offset - InjectedLanguageManager.getInstance(project).injectedToHost(injected, 0)
+        return namesAt(injected, injectedOffset)
+    }
+
+    private fun assertFrontMatterTargets(expected: List<String>, textWithCaret: String) {
+        assertEquals("host file", expected, hostTargetsAt(textWithCaret))
+        assertEquals("injected file", expected, injectedTargetsAt(textWithCaret))
+        assertEquals("fixture file", expected, targetsAt(textWithCaret))
+    }
+
+    fun testFrontMatterIsInjectedInTests() {
+        assertNotNull("YAML is injected into the front matter, is the YAML plugin loaded in tests?", injectedTargetsAt("---\nmarp: true\nx<caret>y: 1\n---\n"))
+    }
+
+    fun testFrontMatterKey() {
+        assertFrontMatterTargets(listOf("paginate"), "---\nmarp: true\npag<caret>inate: true\n---\n")
+        assertFrontMatterTargets(listOf("theme"), "---\nmarp: true\ntheme<caret>: gaia\n---\n")
+        assertFrontMatterTargets(listOf("class"), "---\nmarp: true\n<caret>class: lead\n---\n")
+    }
+
+    fun testFrontMatterMarpKey() {
+        assertFrontMatterTargets(listOf("marp"), "---\nma<caret>rp: true\n---\n")
+    }
+
+    fun testFrontMatterSpotAndUnderscoreKeys() {
+        assertFrontMatterTargets(listOf("class"), "---\nmarp: true\n_cl<caret>ass: lead\n---\n")
+        assertFrontMatterTargets(listOf("theme"), "---\nmarp: true\n_th<caret>eme: gaia\n---\n")
+    }
+
+    fun testFrontMatterKeyAfterAnEntryWithAList() {
+        assertFrontMatterTargets(listOf("paginate"), "---\nmarp: true\nimages:\n  - a.png\npagi<caret>nate: true\n---\n")
+    }
+
+    fun testNoneOnFrontMatterValuesAndOtherKeys() {
+        assertFrontMatterTargets(emptyList(), "---\nmarp: true\npaginate: tr<caret>ue\n---\n")
+        assertFrontMatterTargets(emptyList(), "---\nmarp: true\nti<caret>tle: Deck\n---\n")
+        assertFrontMatterTargets(emptyList(), "---\nmarp: true\nimages:\n  - pagi<caret>nate\n---\n")
+    }
+
+    fun testFrontMatterKeysAreNotDocumentedInAComment() {
+        assertEmpty(targetsAt("---\nmarp: true\n---\n\n<!-- ma<caret>rp: true -->"))
+    }
+
+    fun testNoneInTheFrontMatterOfAPlainMarkdownFile() {
+        assertFrontMatterTargets(emptyList(), "---\ntitle: Post\npagi<caret>nate: true\n---\n")
+        assertFrontMatterTargets(emptyList(), "---\nmarp: false\npagi<caret>nate: true\n---\n")
+    }
+
+    fun testNoneOnTheFenceLinesAndAfterTheFrontMatter() {
+        assertEmpty(targetsAt("---\nmarp: true\n--<caret>-\n"))
+        assertEmpty(targetsAt("---\nmarp: true\n---\n\npagi<caret>nate: true\n"))
+    }
+
+    fun testTheIdeAsksTheRegisteredProviderInTheFrontMatter() {
+        myFixture.configureByText("deck.md", "---\nmarp: true\npag<caret>inate: true\n---\n")
+        val targets = IdeDocumentationTargetProvider.getInstance(project).documentationTargets(myFixture.editor, myFixture.file, myFixture.caretOffset)
+        assertEquals("paginate", (targets.first() as MarpDirectiveDocumentationTarget).directive.name)
+    }
+
+    fun testHtmlOfTheMarpKey() {
+        val html = MarpDirectiveDocs.html(MarpDirectiveCatalog.MARP)
+        assertTrue(html, html.contains("Marp for VS Code"))
+        assertTrue(html, html.contains("Front matter only"))
+        assertTrue(html, html.contains("https://github.com/marp-team/marp-vscode"))
+        assertTrue(html, html.contains("<code>true</code>"))
+        assertEquals("marp: front matter", MarpDirectiveDocs.hint(MarpDirectiveCatalog.MARP))
+    }
+
     fun testTheIdeAsksTheRegisteredProvider() {
         myFixture.configureByText("deck.md", "$deck<!-- _pag<caret>inate: true -->")
         val targets = IdeDocumentationTargetProvider.getInstance(project).documentationTargets(myFixture.editor, myFixture.file, myFixture.caretOffset)
@@ -94,7 +187,7 @@ class MarpDirectiveDocumentationTest : MarpLightTestCase() {
     }
 
     fun testEveryDirectiveHasDocumentationWithoutRawKeys() {
-        for (directive in MarpDirectiveCatalog.ALL) {
+        for (directive in MarpDirectiveCatalog.ALL + MarpDirectiveCatalog.FRONT_MATTER_ONLY) {
             val html = MarpDirectiveDocs.html(directive)
             assertTrue(directive.name, html.contains(directive.name))
             assertFalse(directive.name, html.contains("directive.doc."))
