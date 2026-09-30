@@ -124,7 +124,7 @@
         <action id="Marp.ExportJpeg" class="cz.p3kj.marp.export.MarpExportJpegAction">
             <add-to-group group-id="FileExportGroup" anchor="last"/>
         </action>
-        <group id="Marp.Export" popup="true" icon="AllIcons.ToolbarDecorator.Export">
+        <group id="Marp.Export" popup="true" icon="AllIcons.Actions.Download">
             <reference ref="Marp.ExportHtml"/>
             <reference ref="Marp.ExportPdf"/>
             <separator/>
@@ -147,7 +147,7 @@
             </action>
             <action id="Marp.ToggleOverview"
                     class="cz.p3kj.marp.editor.MarpOverviewToggleAction"
-                    icon="AllIcons.Graph.Grid">
+                    icon="AllIcons.Actions.GroupBy">
                 <synonym key="action.Marp.ToggleOverview.synonym"/>
             </action>
             <action id="Marp.Present"

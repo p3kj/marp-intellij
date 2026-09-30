@@ -57,6 +57,24 @@ section.lead footer {
   color: #ffd8a8;
 }
 
+/* `class: invert`: the section colors above are fixed, so the default theme's invert would not show. */
+section.invert {
+  background: #1f2937;
+  color: #fffaf5;
+}
+
+section.invert h2 {
+  color: #ffd8a8;
+}
+
+section.invert a {
+  color: #66d9e8;
+}
+
+section.invert .cols > div {
+  background: #374151;
+}
+
 .cols {
   display: grid;
   grid-template-columns: 1fr 1fr;

@@ -214,7 +214,7 @@ The state is per editor, not IDE-wide and not persisted: it is a view mode of on
 layout, and an IDE-wide setting would flip every open preview and reopen decks as a grid after a restart.
 `MarpPreviewFileEditor.overview` holds it (so it also works without JCEF), `setOverview(on)` passes it to the panel, and
 `MarpBridgeState` replays it after a reload, last in the order. The toolbar button (`Marp.ToggleOverview`,
-`MarpOverviewToggleAction`, `AllIcons.Graph.Grid`, `BGT`) finds its editor in the data context like the export actions
+`MarpOverviewToggleAction`, `AllIcons.Actions.GroupBy`, `BGT`) finds its editor in the data context like the export actions
 (`MarpExporter.previewOf`) and is hidden without a preview page.
 
 Scroll sync interpolates the same way in both directions: linearly between the tops of adjacent visible `code-line`
