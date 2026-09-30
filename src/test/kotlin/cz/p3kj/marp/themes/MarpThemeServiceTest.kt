@@ -101,6 +101,35 @@ class MarpThemeServiceTest : MarpLightTestCase() {
         assertSame(service.cachedThemeNames(), service.cachedThemeNames())
     }
 
+    fun testCachedThemeFileForNavigation() {
+        val alpha = write("a.css", "/* @theme alpha */")
+        write("b.css", "section {}")
+        settings(false, "a.css", "b.css", "https://example.com/remote.css")
+        // Nothing is cached yet: the call does not wait for the themes, it only starts loading them.
+        assertNull(service.cachedThemeFile("alpha"))
+        load()
+        assertEquals(alpha, service.cachedThemeFile("alpha"))
+        // A URL theme has no file, an unknown name has none either.
+        assertNull(service.cachedThemeFile("remote"))
+        assertNull(service.cachedThemeFile("gaia"))
+        assertNull(service.cachedThemeFile("beta"))
+    }
+
+    fun testCachedThemeFileOfADuplicateNameIsTheLastOne() {
+        write("a.css", "/* @theme alpha */")
+        val second = write("b.css", "/* @theme alpha */")
+        settings(false, "a.css", "b.css")
+        load()
+        assertEquals(second, service.cachedThemeFile("alpha"))
+    }
+
+    fun testCachedThemeFileOfANameThatAUrlThemeRedeclaresIsNull() {
+        write("a.css", "/* @theme remote */")
+        settings(false, "a.css", "https://example.com/remote.css")
+        load()
+        assertNull(service.cachedThemeFile("remote"))
+    }
+
     fun testThemeNamesForTheInspection() {
         write("a.css", "/* @theme alpha */")
         write("b.css", "/* @theme beta */")

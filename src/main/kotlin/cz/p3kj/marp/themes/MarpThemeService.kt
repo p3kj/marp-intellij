@@ -53,8 +53,11 @@ import kotlin.io.path.isDirectory
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.name
 
-/** One custom theme stylesheet. [source] is a display name (project-relative path or URL) used in error messages. */
-data class MarpThemeCss(val source: String, val css: String)
+/**
+ * One custom theme stylesheet. [source] is a display name (project-relative path or URL) used in error messages, [path]
+ * is the theme file, `null` for a URL.
+ */
+data class MarpThemeCss(val source: String, val css: String, val path: Path? = null)
 
 /** Resolved custom themes plus human-readable problems (missing file, failed download...) to show in the preview. */
 data class MarpThemeSet(val themes: List<MarpThemeCss>, val errors: List<String>) {
@@ -171,6 +174,31 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
         }
         return namesOf(set)
     }
+
+    /**
+     * The file of the custom theme [name] in the cached set, for navigation: never suspends and never blocks. `null`
+     * for a name that is unknown or comes from a URL, and while nothing is cached (loading starts in the background, like
+     * in [cachedThemeNames]). When several files declare [name] the last one wins, like in the preview.
+     */
+    fun cachedThemeFile(name: String): Path? {
+        val set = cached
+        if (set == null) {
+            cs.launch { loadThemes() }
+            return null
+        }
+        return filesOf(set)[name]
+    }
+
+    /** The file of every declared name of one set, built once: the last declaration of a name wins. */
+    private fun filesOf(set: MarpThemeSet): Map<String, Path?> {
+        files?.let { if (it.first === set) return it.second }
+        val result = set.themes.mapNotNull { theme -> MarpThemeNames.nameOf(theme.css)?.let { it to theme.path } }.toMap()
+        files = set to result
+        return result
+    }
+
+    @Volatile
+    private var files: Pair<MarpThemeSet, Map<String, Path?>>? = null
 
     /** The names of one set are read once, completion asks for them on every keystroke. */
     private fun namesOf(set: MarpThemeSet): List<String> {
@@ -374,7 +402,7 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
         if (text == null) {
             collected.errors += MarpBundle.message("themes.error.unreadable", display)
         } else {
-            collected.themes += MarpThemeCss(display, text)
+            collected.themes += MarpThemeCss(display, text, path)
         }
     }
 
