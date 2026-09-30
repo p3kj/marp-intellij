@@ -142,6 +142,8 @@ interface MarpBridge {
   setActiveLine(line: number): void
   /** IDE look and feel. Colors are CSS hex strings. */
   setIdeTheme(arg: { dark: boolean; background: string; foreground: string }): void
+  /** Slide overview: the slides as a grid of thumbnails, scroll sync suspended, a click jumps to the slide's source. */
+  setOverview(on: boolean): void
 }
 ```
 
@@ -186,6 +188,33 @@ Cards are siblings of the wrappers, so the slide diff replaces only a changed ca
 scroll sync ignores them. Toggling notes does not rebuild Marp. When the deck has no content (Marpit renders one empty
 slide) the page shows the `emptyDeck` hint below it.
 
+Slide overview (#14, `setOverview`, `webview/src/overview.ts`): turns the slides that are already rendered into a grid of
+thumbnails. There is no second render and no second DOM: the class `marp-overview` on `#marp-root` makes `#__marp-preview`
+a CSS grid (`repeat(auto-fill, minmax(200px, 1fr))`), the wrappers take the width of their cell, and marpit's inline SVG
+(a `viewBox` and no size) scales to it. The rules are inside `@media screen` in `preview.css`, so printing the page to PDF
+with the grid on still gives one slide per page. In the grid:
+
+- Presenter notes are hidden, and slides and links are inert: the SVG has `pointer-events: none`, and the page's click
+  handler prevents every click and posts no `openLink` (middle click does nothing).
+- A single click on a thumbnail posts `didClick` with the slide's `data-marp-content-start-line` (`slideLineAt`, the line
+  the active-slide ranges start at; a click in the gap posts nothing). Kotlin moves the caret as for a double-click, so
+  `setActiveLine` moves the highlight to the clicked slide and the editor scrolls to the caret. The grid stays on. There is
+  no new host message and the page never changes Kotlin state. The double-click handler does nothing in the grid, the two
+  clicks already posted.
+- Scroll sync is suspended in both directions, because source lines have no monotonic position in a grid: `applyScroll`
+  returns at once and the scroll listener sends no `revealLine`. `scrollToLine` still records the anchor, so the anchor
+  follows the editor and turning the overview off re-applies it like after a resize (`realign`), landing on the slide
+  that was clicked when scroll sync is on. Kotlin keeps sending `scrollToLine`, nothing in `MarpScrollSync` changes.
+- The active-slide highlight stays. Entering the grid and `setActiveLine` scroll the active thumbnail into view
+  (`block: 'nearest'`), a render does not (typing must not jump).
+
+The state is per editor, not IDE-wide and not persisted: it is a view mode of one deck, like the Editor / Split / Preview
+layout, and an IDE-wide setting would flip every open preview and reopen decks as a grid after a restart.
+`MarpPreviewFileEditor.overview` holds it (so it also works without JCEF), `setOverview(on)` passes it to the panel, and
+`MarpBridgeState` replays it after a reload, last in the order. The toolbar button (`Marp.ToggleOverview`,
+`MarpOverviewToggleAction`, `AllIcons.Graph.Grid`, `BGT`) finds its editor in the data context like the export actions
+(`MarpExporter.previewOf`) and is hidden without a preview page.
+
 Scroll sync interpolates the same way in both directions: linearly between the tops of adjacent visible `code-line`
 elements, proportionally inside fenced code, so a preview position maps to a line that maps back to the same position.
 
@@ -203,9 +232,9 @@ string:
 
 | Message | Meaning |
 |---|---|
-| `{"type":"ready"}` | bridge is installed; Kotlin sends `setStrings`, `setIdeTheme`, `setThemes`, `update`, `scrollToLine`, `setActiveLine` |
+| `{"type":"ready"}` | bridge is installed; Kotlin sends `setStrings`, `setIdeTheme`, `setThemes`, `update`, `scrollToLine`, `setActiveLine`, `setOverview` |
 | `{"type":"revealLine","line":n}` | the user scrolled the preview; scroll the editor so fractional line `n` is at the top |
-| `{"type":"didClick","line":n}` | double-click in a slide; move the caret to line `n` and focus the editor |
+| `{"type":"didClick","line":n}` | double-click in a slide, or a click on a thumbnail in the slide overview (the slide's `data-marp-content-start-line`); move the caret to line `n` and focus the editor |
 | `{"type":"openLink","href":"..."}` | a link was clicked (the page always prevents navigation). `https://marp.localhost/doc/...` inside the allowed roots -> open that file in the IDE; `http(s)`/`mailto` -> `BrowserUtil.browse`; anything else ignored (see Page security) |
 | `{"type":"error","message":"..."}` | render/theme error, already shown in the preview; Kotlin logs it |
 | `{"type":"reply","id":n,"html"?:"...","error"?:"..."}` | the one answer to the command with that `id` (`exportHtml`: `html` is the document; `flushRender`: no payload). `error` means it failed, the text is for the log |
@@ -580,7 +609,8 @@ Package `cz.p3kj.marp.export` (#12): File | Export | Marp Deck to HTML and Marp 
   the `size` directive (a 4:3 deck gives 960px 720px), and `@media print` rules for one slide per page and exact colors,
   so every slide is one page of the deck's own size. `preview.css` adds `@media print` rules that remove the preview chrome
   (background, scrollbars, slide margins and shadows, the active-slide outline, presenter notes, the error banner and the empty
-  hint). The PDF has no outline and no notes.
+  hint). The PDF has no outline and no notes. The slide overview grid rules are inside `@media screen`, so a preview that
+  is in the overview still prints one slide per page.
 - Security: nothing in the preview page changes (CSP, navigation rules, allowed roots). The exported file lives outside the
   CSP, so it holds exactly what the preview renders under the same effective settings: in an untrusted project HTML is off and
   no custom themes are loaded, and with `html: all` in a trusted project the deck's own HTML and scripts stay in the file, like
@@ -704,10 +734,15 @@ condition as the export actions) and `MarpPresenter`.
 - Present: `MarpPresentActionTest` (action registered, toolbar position, hidden without a Marp editor, start slide from
   the caret through `MarpPresenter.withStartSlide`), `MarpPresentFilesTest` (base href, temp file), `MarpPresentOptionsTest`
   (JSON). There is no end-to-end test of opening the browser.
+- Slide overview: `MarpPreviewToolbarActionsTest` (the toggle is registered in the toolbar group, per editor, hidden
+  without a Marp editor) and `MarpBridgeStateTest` (`setOverview` replayed last). Headless tests have no JCEF page, so the
+  flag in `MarpPreviewFileEditor` is what they check.
 - Webview (`webview/test`, vitest with jsdom): the host bridge and message queue, marp-core plugins and render options,
   scroll sync, active slide, link and click handling, the unknown-theme warning and the string table, the standalone export
   document (`export-html.test.ts`), the `exportHtml` / `flushRender` commands with their replies (`preview.test.ts`) and the
-  presentation runtime (`present.test.ts`: keys, hash, start slide, anchor links, full screen, and the serialized script).
+  presentation runtime (`present.test.ts`: keys, hash, start slide, anchor links, full screen, and the serialized script),
+  and the slide overview (`overview.test.ts` for the click target, the `slide overview` block of `preview.test.ts` for the
+  class, clicks, inert links and suspended scroll sync; the grid layout itself is CSS and needs a manual check).
 - `./gradlew check` runs all of them plus `tsc --noEmit` and the NOTICE freshness check. `verifyPlugin` covers binary
   compatibility with the recommended IDEs and the next EAP.
 
@@ -717,5 +752,5 @@ condition as the export actions) and `MarpPresenter`.
 `http://127.0.0.1:5173/` with a mock IDE host (`window.__marpHost`). Query parameters: `deck` (absolute path of a
 Markdown file), `themes` (comma-separated absolute CSS paths), `dark=1`, and the render options such as `html` and
 `math`. The page gets the production CSP (with `'self'` for scripts and `connect-src 'self'` for the mock host). Set
-`CSP=0` in the environment to disable it. `notes=1` turns presenter notes on. The server only answers requests whose
+`CSP=0` in the environment to disable it. `notes=1` turns presenter notes on, `overview=1` the slide overview. The server only answers requests whose
 `Host` is `localhost` or `127.0.0.1` (DNS rebinding). Messages the page sends to the host are collected in `window.__hostLog`.

@@ -12,6 +12,7 @@
 - Two-way scroll sync between the editor and the preview (an IDE-wide setting), highlight of the slide under the caret, double-click in the preview jumps to the source line
 - Presenter notes: HTML comments that are not directives can be shown under each slide (Settings | Tools | Marp)
 - Preview toolbar buttons to turn scroll sync and presenter notes on or off and to open Settings | Tools | Marp. The toggles change the same IDE-wide settings and are also available in Find Action
+- Slide overview in the preview toolbar: shows the slides as a grid of thumbnails, a click on one moves the caret to that slide. Per editor, off by default, scroll sync pauses while it is on
 - A hint in the preview while the deck has no content yet; Escape closes the error banner
 - Custom themes from files, folders and URLs, configured in Settings | Tools | Marp. Entries can be typed as a path and edited in place
 - Theme folders skip `node_modules` and hidden folders and load at most 200 CSS files, 8 levels deep; theme URLs must serve CSS or plain text of at most 5 MB
