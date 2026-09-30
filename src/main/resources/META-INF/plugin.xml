@@ -19,7 +19,7 @@
             <li><b>Slide navigation</b>: current slide in the status bar, Next / Previous Slide and Go to Slide, slide numbers in the editor, and folding of each slide.</li>
             <li><b>Reorder slides</b>: Move Slide Up / Down in the Code menu, or Move Statement Up / Down with the caret on a slide's <code>---</code> line.</li>
             <li><b>Export</b> to a standalone HTML file or to a PDF with one page per slide, from File | Export or the preview toolbar. It needs no Node.js. PowerPoint and PNG or JPEG images are exported with <a href="https://github.com/marp-team/marp-cli">Marp CLI</a>, which you install yourself (it needs Node.js and Chrome, Edge or Firefox).</li>
-            <li><b>Present</b> the deck in the system browser one slide at a time, starting at the slide under the caret, with keyboard navigation and full screen (Present Deck in the preview toolbar).</li>
+            <li><b>Present</b> the deck in the system browser one slide at a time, starting at the slide under the caret (Present Deck in the preview toolbar). With <a href="https://github.com/marp-team/marp-cli">Marp CLI</a> installed it is Marp's own presentation with presenter view, notes, timer and overview, otherwise a built-in page with keyboard navigation and full screen.</li>
             <li><b>New deck and live templates</b>: File | New | Marp Presentation, and <code>slide</code>, <code>lead</code>, <code>bg</code> and <code>notes</code> live templates in Marp decks.</li>
             <li>The preview follows the IDE light or dark theme. Links open in the IDE (project files) or in the system browser.</li>
         </ul>

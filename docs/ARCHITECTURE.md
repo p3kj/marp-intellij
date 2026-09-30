@@ -37,7 +37,7 @@ avoids internal, deprecated and experimental APIs.
 | `cz.p3kj.marp.images` | image syntax in alt text: catalog of the Marp image keywords, alt text finder, completion (contributor and confidence), documentation |
 | `cz.p3kj.marp.editor` | file editor provider, split editor, preview file editor, preview toolbar actions (group `Marp.PreviewToolbar`) |
 | `cz.p3kj.marp.preview` | JCEF panel, JS bridge (state setters and export commands with their replies), resource request handler, PDF print settings, `MarpPresentOptions` (the `present` argument of `exportHtml`) |
-| `cz.p3kj.marp.export` | File \| Export \| Marp Deck to HTML / PDF, the toolbar popup, save dialog, progress and notifications; PPTX and images through an external Marp CLI (`MarpCliExporter`, `MarpCliCommand`, `MarpCliRunner`); Present Deck (`MarpPresentAction`, `MarpPresenter`, `MarpPresentFiles`) |
+| `cz.p3kj.marp.export` | File \| Export \| Marp Deck to HTML / PDF, the toolbar popup, save dialog, progress and notifications; PPTX and images through an external Marp CLI (`MarpCliExporter`, `MarpCliCommand`, `MarpCliRunner`); Present Deck: the built-in page or the presentation of Marp CLI (`MarpPresentAction`, `MarpPresenter`, `MarpPresentFiles`) |
 | `cz.p3kj.marp.sync` | editor <-> preview scroll sync, caret -> active slide |
 | `cz.p3kj.marp.notifications` | "Marp deck detected, reopen with preview" banner |
 | `cz.p3kj.marp.settings` | project settings (`.idea/marp.xml`), settings page |
@@ -246,7 +246,7 @@ string:
 - `MarpSettings` (project service, `.idea/marp.xml`): `themes`, `useMarprcThemeSet`, `html`, `math`;
   `update { }` publishes `MarpSettingsListener.TOPIC` when the block changed anything.
 - `MarpAppSettings` (application service, `options/marp.xml`, settings category Tools): `scrollSync`,
-  `presenterNotes` and `marpCliPath` (blank is stored as `null`), personal preferences that must not travel with
+  `presenterNotes`, `presentWithCli` (default on) and `marpCliPath` (blank is stored as `null`), personal preferences that must not travel with
   `.idea/marp.xml`; `update { }` publishes `MarpAppSettingsListener.TOPIC` on the
   application bus. Settings | Tools | Marp (`MarpConfigurable`) edits both.
 - `MarpThemeService` (project service): `suspend fun loadThemes(): MarpThemeSet` (cached, never on EDT);
@@ -705,7 +705,9 @@ go through an external Marp CLI process and are a separate path, see "Marp CLI e
 
 `Marp.ExportPptx`, `Marp.ExportPng`, `Marp.ExportJpeg` (#16, `MarpCliExporter`) run the user's Marp CLI. They do not use the
 preview page and are shown for every Marp editor; the CLI is not looked up in `update()` (a disabled item cannot say why), a
-missing one is a warning with an Open Settings action on click.
+missing one is a warning with an Open Settings action on click. Present Deck runs the CLI too (#20, see Present): the lookup
+(`MarpCliExporter.locate`) and the run (`render`: config, temporary folder, process, cleanup, with the arguments from the
+caller) are shared.
 
 - Trust: only trusted projects are exported. In an untrusted one a notification says so and nothing starts. The CLI is an
   external program reading the project, and on Windows `marp.cmd` runs through `cmd.exe`, which parses `%`, `&` and `^` in
@@ -734,7 +736,8 @@ missing one is a warning with an Open Settings action on click.
 slide at a time, starting at the slide under the caret. It is the HTML export with a `present` argument, so there is no
 second browser, no server, no new bridge command and nothing changes in the preview page's CSP, navigation rules or
 allowed roots. Package `cz.p3kj.marp.export`, `MarpPresentAction` (`DumbAwareAction`, `BGT`, shown under the same
-condition as the export actions) and `MarpPresenter`.
+condition as the export actions) and `MarpPresenter`. Since #20 there are two ways to present, the built-in page
+(everything below up to "Marp CLI template") and the presentation of Marp CLI.
 
 - Flow: `MarpPresenter.present` (EDT) needs the preview panel and, when `isPageReady` is false, shows the `export.notReady`
   warning. It then computes the start slide (below) and, in the project scope under `withBackgroundProgress`, calls
@@ -779,11 +782,63 @@ condition as the export actions) and `MarpPresenter`.
 - Security and trust: same content rules as the HTML export (untrusted project: HTML off and no custom themes; `html: all`
   in a trusted project keeps the deck's scripts). The only script added is `runPresentation`, which does no network
   access and no `fetch`.
-- Limits: browsers installed as Snap or Flatpak cannot read the temp folder (README, troubleshooting). Out of scope:
-  presenter view and notes, timers, remote control, click, touch and swipe navigation, on-screen controls, transitions, a
+- Limits: browsers installed as Snap or Flatpak cannot read the temp folder (README, troubleshooting). Out of scope for
+  this page (the presentation of Marp CLI below has some of them): presenter view and notes, timers, remote control, click, touch and swipe navigation, on-screen controls, transitions, a
   slide counter, live reload of the browser, a JCEF presentation window, deleting files before the IDE exits. Not used:
   a second or offscreen JCEF browser (its own resource handler, CSP, navigation policy, focus and per-OS full screen),
   `GraphicsDevice.setFullScreenWindow`.
+
+### Marp CLI template (#20)
+
+When the CLI is usable, Present Deck lets Marp CLI (4.5.1 checked, MIT) write its own presentation, the `bespoke`
+template: on-screen controls, presenter view (`p`), overview (`o`), full screen (`f`), progress bar, transitions from the
+`transition` directive. Nothing of it is bundled into the webview; the built-in page above stays the fallback.
+
+1. Command: `marp --config-file <tmp>/marp-config.json -o <marp-present-*.html> -- <deck>` (`MarpCliArgs.presentArguments`),
+   working directory = the temporary CLI folder, as in the export. The config is the export config (`themeSet`, `html`,
+   `options.math`, `allowLocalFiles`; the project's own Marp config files are still bypassed) plus `"template": "bespoke"`
+   and `"bespoke": {"progress": true}` (`MarpCliArgs.config(present = true)`). Everything else stays Marp's default. The
+   format follows the `.html` extension of `-o`. `--html` is NOT passed: for the CLI it means "allow HTML tags".
+2. Output file: `MarpPresentFiles.newFile()` (the `createTempFile("marp-present-", ".html")` + `deleteOnExit` of the built-in
+   page, owner-only), created BEFORE the run and overwritten by the CLI. It is not in the temporary CLI folder, which is
+   deleted right after the run. It is deleted again when the run fails or is cancelled.
+3. Post-processing (pure, `MarpPresentFiles.cliPresentation(html, baseHref, start)`): right after the first `<head>` tag
+   (`<head(\s[^>]*)?>`, case-insensitive, so `<header>` never matches) a `<base href="{deck folder}/">` (escaped for an
+   attribute) and one script are inserted. The script sets `#N` (start + 1) with `history.replaceState` and an ABSOLUTE
+   URL when the address has no hash (a relative `#N` would resolve against the base), and a capture-phase click listener
+   sends `a[href^="#"]` to `location.hash` (with a base, a plain `#3` link would leave the page; bespoke's `hashchange`
+   does the rest). bespoke reads `#N` (1-based) from `location.hash` at startup, then writes `#N` itself, so a reload keeps
+   the slide. The start slide is in the file and not in the URL because `file:` URLs lose the fragment on Windows and
+   macOS (#13). No `<head>` found: the page is opened unchanged (logged), it starts at slide 1 and relative files may be
+   missing.
+4. Images and themes: marp-cli writes no `<base>` for HTML (it sets one only for PDF, PPTX and images), so relative image
+   URLs and relative `url()` in theme CSS (inlined into `<style>`) would break in the temporary folder. The base makes
+   them resolve from the deck folder like the built-in page and the CLI's own PDF. Absolute, remote and data URLs are unaffected.
+5. When (`MarpPresenter.present`, `cliExecutable`): the `presentWithCli` app setting (default on) AND the project is trusted
+   (`MarpCliExporter.trustedProvider`, the CLI is an external program that reads the project) AND the deck is on the
+   local file system (`getNioPath != null`) AND `MarpCliExporter.locate` is `Located` (the export's lookup order). Anything
+   else uses the built-in page silently (`LOG.info`, no `export.cli.*` warning). The setting exists because the built-in
+   page shows unsaved text without saving, needs no Node.js and matches the preview.
+6. Saving: the CLI reads from disk, so when the CLI is possible by the checks that need no I/O (setting, trust, local
+   deck), `present()` (EDT, from `actionPerformed`) calls `FileDocumentManager.saveAllDocuments()` before
+   `withStartSlide`, like the export. Saving when the lookup then fails is harmless. On the CLI path there is no
+   `renderNow()` and no `isPageReady` check; when the lookup fails, the built-in page checks `isPageReady` on the EDT
+   then (the `export.notReady` warning), otherwise up front as before.
+7. Progress and threading: `MarpCliExporter.present` runs `render` and the post-processing under
+   `withBackgroundProgress(present.progress)` (I/O on `Dispatchers.IO`), cancel kills the process (`runMarpCli`). The browser
+   opens after the progress through `MarpCliExporter.browser` (a test hook, `BrowserUtil.browse(Path)` inside
+   `withContext(Dispatchers.EDT)`). No success notification, as before.
+8. Errors: a CLI that cannot be started is the export's `export.cli.cannotStart` (with the settings link) and NO fallback,
+   so a broken install stays visible. Exit code != 0, an empty file or the timeout show the escaped output tail as
+   `present.cli.failed`, `present.cli.failed.noOutput` or `present.cli.timeout`. Other exceptions are logged and shown as
+   `present.failed` (name and message escaped, notifications are HTML). `CancellationException` is rethrown.
+
+Not used: the `baseUrl` config key (typed as internal, "for Marp team tools", may change), `--html`, `--watch`, `--server`
+and `--preview`, `BrowserUtil.browse(String)` with a fragment, `BrowserUtil.browse(File)` (obsolete), writing next to the
+deck, a redirect file. Out of scope: live reload, the `osc` and `transition` options of bespoke as settings, Present
+without a JCEF preview, running the CLI tests on Windows, and bundling bespoke into the webview (its markup, data
+attributes and CSS come from the compiled templates inside `marp-cli-*.js` and the package pulls in puppeteer-core, so it
+would follow the internals of one CLI version).
 
 ## Threading and lifecycle rules
 
@@ -832,8 +887,12 @@ condition as the export actions) and `MarpPresenter`.
   Marp editor, the preview found from a split editor). Headless tests have no JCEF page, so there is no end-to-end test of the
   save dialog, the HTML file or the PDF: see the manual checks in the pull request.
 - Present: `MarpPresentActionTest` (action registered, toolbar position, hidden without a Marp editor, start slide from
-  the caret through `MarpPresenter.withStartSlide`), `MarpPresentFilesTest` (base href, temp file), `MarpPresentOptionsTest`
-  (JSON). There is no end-to-end test of opening the browser.
+  the caret through `MarpPresenter.withStartSlide`), `MarpPresentFilesTest` (base href, temp file, `cliPresentation`),
+  `MarpPresentOptionsTest` (JSON). The Marp CLI path is tested with shell scripts that stand in for the CLI
+  (`MarpCliExporterTest`, skipped on Windows): arguments, config, the page that is opened (a replaced `browser`), failures,
+  cancel, `MarpPresenter.cliExecutable`, and `MarpPresenter.present` on a split editor for a deck on disk (saves first,
+  start slide, fallback to the built-in page); `MarpCliCommandTest` and `MarpConfigurableTest` cover the config keys and the
+  setting. There is no end-to-end test of opening a real browser and none with the real Marp CLI.
 - Slide overview: `MarpPreviewToolbarActionsTest` (the toggle is registered in the toolbar group, per editor, hidden
   without a Marp editor) and `MarpBridgeStateTest` (`setOverview` replayed last). Headless tests have no JCEF page, so the
   flag in `MarpPreviewFileEditor` is what they check.

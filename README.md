@@ -82,7 +82,7 @@ For a bigger example open the `samples/` folder of this repository as a project.
 - Inline HTML in slides: off, Marp's allow list or all
 - Export a deck to a standalone HTML file or to a PDF with one page per slide (File | Export or the preview toolbar), without Node.js
 - Export a deck to PowerPoint (PPTX) or to PNG or JPEG images through [Marp CLI](https://github.com/marp-team/marp-cli), which you install yourself
-- Present a deck in the system browser, one slide at a time, starting at the slide under the caret, with keyboard navigation and full screen (Present Deck in the preview toolbar)
+- Present a deck in the system browser, one slide at a time, starting at the slide under the caret (Present Deck in the preview toolbar). With [Marp CLI](https://github.com/marp-team/marp-cli) it is Marp's own presentation with presenter view, notes, timer and overview, without it a built-in page with keyboard navigation and full screen
 - The preview follows the IDE light or dark theme
 - Locked-down preview page (Content Security Policy, no navigation away) and a restricted mode for untrusted projects
 - Works in every IntelliJ-based IDE, no IDE-specific APIs
@@ -123,6 +123,7 @@ Export the deck that is open in the editor to HTML, PDF, PowerPoint or images. U
 
 File | Export (and the Export Deck button of the preview toolbar) also has Marp Deck to PowerPoint (Marp CLI)..., Marp Deck to PNG Images (Marp CLI)... and Marp Deck to JPEG Images (Marp CLI)... They run [Marp CLI](https://github.com/marp-team/marp-cli), so unlike HTML and PDF they need software of your own: Marp CLI itself, Node.js, and Chrome, Edge or Firefox (Marp CLI renders the slides in a headless browser). They do not use the preview, so they work without JCEF and without a loaded preview. The entries are shown for every Marp deck in the Marp editor; if Marp CLI cannot be found, the export says so and offers to open the settings.
 
+- **Also used by Present Deck**: with the same lookup, the same themes and settings and the same temporary configuration, Present Deck lets Marp CLI write its own presentation, see [Present](#present). It is optional and falls back to a built-in page, see there.
 - **Trusted projects only**: the export starts an external program that reads the files of the project (on Windows `marp.cmd` even runs through `cmd.exe`, which reads `%`, `&` and `^` in file names as commands). In an untrusted project a notification asks you to trust the project and nothing is started. HTML and PDF export are not affected.
 - **Where Marp CLI is looked for**, in this order: (1) the Marp CLI field in Settings | Tools | Marp, if you set a path there (nothing else is tried when it is wrong); (2) `node_modules/.bin/marp` of the project (`npm install -D @marp-team/marp-cli`), in the deck's folder and each folder above it up to the project root, never further up (on Windows `marp.cmd` next to it is used); (3) `marp` on the PATH of the IDE (`marp.cmd` on Windows is found too). Step 2 needs no setting, and it is the reason the export is limited to trusted projects: the binary comes from the repository. The Test button follows the same order for the project root (there is no deck) and says whether the project or the PATH provided the CLI. The Test button runs `marp --version`. The setting applies to all projects and is stored in the IDE configuration, never in the project: a path in a project's `.idea/marp.xml` could make the IDE run any program that came with a cloned repository. `npx` is not used, because its first run downloads a package and can take minutes.
 - **What is passed on**: the same custom themes as the preview (files, folders, URLs and the `themeSet` of `.marprc.yml`), the HTML in slides and the math typesetting settings, and local images can be read. The plugin gives Marp CLI its own temporary configuration file and runs it in a temporary folder, so a `.marprc`, `marp.config.js` or `package.json` `marp` section of the project is not loaded by the export (the preview ignores those options as well, only the themes of a `.marprc.yml` are used).
@@ -134,13 +135,36 @@ File | Export (and the Export Deck button of the preview toolbar) also has Marp 
 
 ## Present
 
-Click Present Deck (the play button) in the preview toolbar, or run it from Find Action ("Present Deck", "Slideshow"). The deck opens in your system browser one slide at a time, starting at the slide the caret is in. It is not bound to a shortcut, assign one in Settings | Keymap if you want one. The action appears whenever the deck is open in the Marp editor (and the IDE has JCEF). If the preview page is not loaded yet, a notification asks you to show the preview and try again.
+Click Present Deck (the play button) in the preview toolbar, or run it from Find Action ("Present Deck", "Slideshow"). The deck opens in your system browser one slide at a time, starting at the slide the caret is in. It is not bound to a shortcut, assign one in Settings | Keymap if you want one. The action appears whenever the deck is open in the Marp editor (and the IDE has JCEF).
+
+There are two presentations, and the plugin picks one each time:
+
+- **Marp CLI's own presentation** when all of this holds: "Present decks with Marp CLI" in Settings | Tools | Marp is on (it is by default), the project is trusted, the deck is a local file and Marp CLI is found (the same lookup as the [export](#pptx-and-images-with-marp-cli): the path in the settings, `node_modules/.bin/marp` of the project, `marp` on the PATH).
+- **The built-in page** in every other case: the setting is off, the project is not trusted, the deck is not a local file, or Marp CLI is not found. It says nothing about that and just shows the built-in page. If Marp CLI is found but cannot be started, Present Deck does not fall back: a notification with a link to the settings tells you, so a broken install is not hidden.
+
+### With Marp CLI
+
+The page is what `marp deck.md -o deck.html` writes (the default `bespoke` template of Marp CLI) with the progress bar turned on. Marp CLI and Node.js are installed by you, see [PPTX and images with Marp CLI](#pptx-and-images-with-marp-cli). Unlike the PPTX and image export it needs no Chrome, Edge or Firefox for rendering.
+
+- **Controls**: the arrow keys, Space and Page Up / Page Down move between slides, F toggles full screen, P opens the presenter view in a new window (the current and the next slide, the presenter notes and a timer, kept in step with the presentation window) and O shows an overview of all slides. There are on-screen buttons too, and a progress bar along the top. Transitions set with the `transition` directive are played in browsers that support them.
+- **Unsaved changes**: Marp CLI reads the deck and its theme files from disk, so the open files are saved when you click Present Deck. Turn the setting off if you prefer to present the text of the editor without saving, which the built-in page does.
+- **A snapshot**: it does not follow later edits, press Present Deck again to see them (a new tab opens with the current text). Reloading the browser tab keeps the slide, because the slide number is in the address (`#3`).
+- **What is passed on**: the same custom themes as the preview, the HTML in slides and the math typesetting settings, and local images can be read. The project's own `.marprc`, `marp.config.js` and `package.json` `marp` section are not loaded, as in the export. Relative images and theme `url()`s resolve from the deck's folder.
+- **Preparing it takes a moment**: it runs in the background with a progress you can cancel (that stops Marp CLI). It is stopped after five minutes. When it fails, the notification shows the last lines that Marp CLI printed.
+- **Results can differ slightly from the preview**: Marp CLI has its own copy of marp-core, so a different version than the one in this plugin can render a deck a little differently.
+
+### Built-in page
+
+The plugin's own presentation, which needs no Node.js.
 
 - **Keys** in the browser: Right, Down, Page Down, Space and Enter go to the next slide (Enter activates a focused link or button instead), Left, Up, Page Up, Backspace and Shift+Space to the previous one, Home and End to the first and the last. F toggles full screen and Esc leaves it (the browser's own key). Links to another slide of the deck (`[back to the agenda](#2)`) work. Clicks do not change slides.
-- **A snapshot**: the page is the HTML export of the preview (see [Export](#export)) with a small script, so it shows the current text, including changes you have not saved, and the same themes, math library and HTML setting. It does not follow later edits: press Present Deck again to see them. Reloading the browser tab keeps the slide, because the slide number is in the address (`#3`).
+- **A snapshot**: the page is the HTML export of the preview (see [Export](#export)) with a small script, so it shows the current text, including changes you have not saved, and the same themes, math library and HTML setting. The preview page has to be loaded (if it is not, a notification asks you to show the preview and try again). It does not follow later edits: press Present Deck again to see them. Reloading the browser tab keeps the slide, because the slide number is in the address (`#3`).
+- **Not included**: presenter view, presenter notes, timer, remote control, slide counter and transitions. Marp CLI's presentation has them, see above.
+
+### Both
+
 - **Files**: the page is written to a new file in the system's temporary folder (readable by you only, where the file system supports that) and deleted when the IDE exits. Relative images and theme `url()`s keep working because the page points at the deck's folder. That only works for a deck on the local file system.
 - **Trust and HTML in slides**: like the export. In an untrusted project raw HTML is off and custom themes are not loaded. With HTML set to All in a trusted project, the deck's own HTML and scripts run in the page, the same as `marp --html`.
-- **Not included**: presenter view, presenter notes, timer, remote control, slide counter and transitions. Use Marp CLI if you need them.
 
 ## Settings
 
@@ -152,13 +176,14 @@ Open Settings | Tools | Marp.
 | Also use themeSet from .marprc.yml | When enabled, the `themeSet` from `.marprc.yml` (or `.yaml`, `.json`, `.marprc`) in the project root is loaded automatically. The quick fixes that create or open a `.marprc.yml` need this on. |
 | HTML in slides | Inline HTML: Off, Default (marp-core allowlist) or All. Forced to Off in untrusted projects. |
 | Math typesetting | MathJax, KaTeX or Off. The `math:` directive in the front matter takes precedence over this setting where marp-core allows it. |
-| Marp CLI | The Marp CLI executable used to export to PowerPoint and images. Empty means `node_modules/.bin/marp` of the (trusted) project, then `marp` on the PATH. The Test button runs `marp --version`. Applies to all projects. |
+| Marp CLI | The Marp CLI executable used to export to PowerPoint and images and to present decks. Empty means `node_modules/.bin/marp` of the (trusted) project, then `marp` on the PATH. The Test button runs `marp --version`. Applies to all projects. |
+| Present decks with Marp CLI | On by default. Present Deck shows Marp's own presentation (presenter view, overview, progress bar) when Marp CLI is found and the project is trusted, and saves the open files first. Off, or without Marp CLI, it shows the built-in page. Applies to all projects. |
 | Show presenter notes under slides | Shows each slide's presenter notes (HTML comments that are not directives, like `<!-- Say hello -->`) under the slide. Off by default, applies to all projects. |
 | Synchronize scrolling between editor and preview | Turns scroll sync on or off. This setting applies to all projects. |
 
 Presenter notes and scroll sync can also be toggled from the preview toolbar; that changes these same settings.
 
-The theme, HTML and math settings are stored per project in `.idea/marp.xml`. You can commit that file to share them with your team. Presenter notes, scroll sync and the Marp CLI path are personal preferences and are stored in the IDE configuration.
+The theme, HTML and math settings are stored per project in `.idea/marp.xml`. You can commit that file to share them with your team. Presenter notes, scroll sync, the Marp CLI path and Present decks with Marp CLI are personal preferences and are stored in the IDE configuration.
 
 ## Themes
 
@@ -204,6 +229,8 @@ If you used the Marp for VS Code extension:
 
 **Present Deck shows old text.** The page is a snapshot. Press Present Deck again, it opens a new tab with the current text.
 
+**Present Deck does not show the presenter view, or looks plainer than Marp's presentation.** That is the built-in page. Marp's own presentation needs the setting "Present decks with Marp CLI" on, a trusted project, a deck that is a local file and a Marp CLI that is found (press Test in Settings | Tools | Marp, and see the Marp CLI entries above). The plugin does not say why it used the built-in page. If Marp CLI is found but does not start, or fails, a notification says so.
+
 **Images are missing in the exported HTML.** The file keeps the image paths as written. Save it next to the deck (the dialog starts there), or keep the folder structure when you move it. A PDF has the images inside.
 
 **Images do not show.** Relative paths resolve from the Markdown file's folder. Only files inside the project (content roots or the deck's folder) are served. Remote images need https: plain http images are mixed content in Chromium and are upgraded or blocked.
@@ -228,7 +255,7 @@ If you used the Marp for VS Code extension:
 | Inline HTML modes off / default / all | yes | yes |
 | Restricted mode for untrusted projects | yes | yes |
 | Export to HTML and PDF | yes, no Node.js | yes |
-| Present in the browser | yes, one slide at a time, no presenter view | no, use the exported HTML file |
+| Present in the browser | yes, one slide at a time; with Marp CLI it is Marp's own presentation with presenter view | no, use the exported HTML file |
 | Export to PPTX and images | yes, through Marp CLI which you install yourself | yes, through Marp CLI |
 | Directive completion and diagnostics | yes, in comments and the front matter | yes |
 | Toggle Marp feature command | not yet | yes |
@@ -246,7 +273,7 @@ The bundled Markdown plugin renders a document, not a deck. It has no notion of 
 - PPTX and image export need Marp CLI, Node.js and a browser that you install yourself. They work in trusted projects only, export the whole deck (no single slide, no editable PPTX, no image scale, no notes), and do not use `npx`. A Marp CLI in the project's `node_modules/.bin` is found automatically, an install elsewhere needs its path in the settings. Not verified on Windows.
 - Speaker notes are not shown in the preview.
 - Slides cannot be moved in a deck that uses `headingDivider`, and not by dragging them in the Structure view or in the preview.
-- Present Deck shows a snapshot in the system browser with keyboard navigation and full screen. It has no presenter view, notes, timer or live reload, and a browser that is sandboxed (Snap, Flatpak) cannot open the temporary file.
+- Present Deck shows a snapshot in the system browser, with no live reload. Marp CLI's presentation has a presenter view, notes and a timer but needs Marp CLI, Node.js and a trusted project, saves the open files first and cannot show unsaved text; the built-in page has keyboard navigation and full screen only. A browser that is sandboxed (Snap, Flatpak) cannot open the temporary file.
 - JCEF is required. Without it the preview shows a message instead of the slides.
 - Remote Development (JetBrains Gateway thin client) is untested.
 
