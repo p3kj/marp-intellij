@@ -88,6 +88,9 @@
         <localInspection language="Markdown" shortName="MarpUnknownTheme" bundle="messages.MarpBundle" key="inspection.unknownTheme.name"
                          groupKey="inspection.group" enabledByDefault="true" level="WARNING" dumbAware="true"
                          implementationClass="cz.p3kj.marp.directives.MarpUnknownThemeInspection"/>
+
+        <!-- Image syntax -->
+        <platform.backend.documentation.targetProvider implementation="cz.p3kj.marp.images.MarpImageDocumentationTargetProvider"/>
     </extensions>
 
     <actions>

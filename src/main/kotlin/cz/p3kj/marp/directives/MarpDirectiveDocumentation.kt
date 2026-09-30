@@ -91,20 +91,21 @@ object MarpDirectiveDocs {
         append(DocumentationMarkup.SECTIONS_START)
         val values = if (directive.themeValue) MarpDirectiveCatalog.BUILT_IN_THEMES else directive.suggestions
         if (values.isNotEmpty()) {
-            section(MarpBundle.message("directive.doc.values"), values.joinToString(", ") { "<code>$it</code>" })
+            docSection(MarpBundle.message("directive.doc.values"), values.joinToString(", ") { "<code>$it</code>" })
         }
         val (originKey, url) = when (directive.origin) {
             MarpDirectiveOrigin.MARPIT -> "directive.doc.origin.marpit" to MARPIT_URL
             MarpDirectiveOrigin.MARP_CORE -> "directive.doc.origin.core" to MARP_CORE_URL
             MarpDirectiveOrigin.MARP_VSCODE -> "directive.doc.origin.vscode" to MARP_VSCODE_URL
         }
-        section(MarpBundle.message("directive.doc.origin"), "<a href=\"$url\">${MarpBundle.message(originKey)}</a>")
+        docSection(MarpBundle.message("directive.doc.origin"), "<a href=\"$url\">${MarpBundle.message(originKey)}</a>")
         append(DocumentationMarkup.SECTIONS_END)
     }
+}
 
-    private fun StringBuilder.section(header: String, content: String) {
-        append(DocumentationMarkup.SECTION_HEADER_START).append(header)
-        append(DocumentationMarkup.SECTION_SEPARATOR).append(content)
-        append(DocumentationMarkup.SECTION_END)
-    }
+/** One row of the sections table of a documentation popup: the [header] and its [content] (HTML). */
+internal fun StringBuilder.docSection(header: String, content: String) {
+    append(DocumentationMarkup.SECTION_HEADER_START).append(header)
+    append(DocumentationMarkup.SECTION_SEPARATOR).append(content)
+    append(DocumentationMarkup.SECTION_END)
 }
