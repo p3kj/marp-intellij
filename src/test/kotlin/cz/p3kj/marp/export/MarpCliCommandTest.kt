@@ -296,4 +296,170 @@ class MarpCliCommandTest {
         val script = file("npm", "marp")
         assertEquals(MarpCliLocation.Missing(script.toString()), MarpCliLocator.locate(script.toString(), FakePath(), listOf(".exe", ".cmd")))
     }
+
+    // The project-local install: node_modules/.bin/marp from the folder of the deck up to the project root.
+
+    private val projectRoot: Path get() = temp.root.toPath().resolve("proj")
+
+    private fun project(start: String, trusted: Boolean = true) =
+        MarpCliProject(start.split('/').fold(projectRoot) { dir, part -> dir.resolve(part) }, projectRoot, trusted)
+
+    private fun local(vararg folder: String, name: String = "marp", executable: Boolean = true): Path =
+        file("proj", *folder, "node_modules", ".bin", name, executable = executable)
+
+    @Test
+    fun aProjectInstallInTheFolderOfTheDeckIsFound() {
+        val marp = local("decks")
+        val path = FakePath()
+        assertEquals(MarpCliLocation.FoundInProject(marp), MarpCliLocator.locate("", path, null, project("decks")))
+        assertTrue("the PATH is not needed", path.asked.isEmpty())
+    }
+
+    @Test
+    fun aProjectInstallInAParentFolderIsFound() {
+        val marp = local()
+        assertEquals(MarpCliLocation.FoundInProject(marp), MarpCliLocator.locate("", FakePath(), null, project("decks/talks/2026")))
+    }
+
+    @Test
+    fun theNearestProjectInstallWins() {
+        local()
+        local("decks")
+        val nearest = local("decks", "talks")
+        assertEquals(MarpCliLocation.FoundInProject(nearest), MarpCliLocator.locate("", FakePath(), null, project("decks/talks/2026")))
+    }
+
+    @Test
+    fun theProjectRootItselfIsSearched() {
+        val marp = local()
+        val root = MarpCliProject(projectRoot, projectRoot, trusted = true)
+        assertEquals(MarpCliLocation.FoundInProject(marp), MarpCliLocator.locate("", FakePath(), null, root))
+    }
+
+    @Test
+    fun aFolderAboveTheProjectRootIsNotSearched() {
+        // Next to the project, not in it.
+        file("node_modules", ".bin", "marp")
+        assertEquals(MarpCliLocation.Missing(null), MarpCliLocator.locate("", FakePath(), null, project("decks/talks")))
+        val onPath = file("bin", "marp")
+        assertEquals(MarpCliLocation.Found(onPath), MarpCliLocator.locate("", FakePath(mapOf("marp" to onPath)), null, project("decks/talks")))
+    }
+
+    @Test
+    fun aDeckOutsideTheProjectHasNoProjectInstall() {
+        file("elsewhere", "node_modules", ".bin", "marp")
+        local()
+        val outside = MarpCliProject(temp.root.toPath().resolve("elsewhere"), projectRoot, trusted = true)
+        assertEquals(MarpCliLocation.Missing(null), MarpCliLocator.locate("", FakePath(), null, outside))
+        // Not by a path that only starts like the root either.
+        val sibling = MarpCliProject(temp.root.toPath().resolve("proj-other"), projectRoot, trusted = true)
+        assertEquals(MarpCliLocation.Missing(null), MarpCliLocator.locate("", FakePath(), null, sibling))
+        // Nor by leaving the project with "..".
+        val dotDot = MarpCliProject(projectRoot.resolve("decks").resolve("..").resolve(".."), projectRoot, trusted = true)
+        assertEquals(MarpCliLocation.Missing(null), MarpCliLocator.locate("", FakePath(), null, dotDot))
+    }
+
+    @Test
+    fun anUntrustedProjectIsNeverSearched() {
+        local("decks")
+        val onPath = file("bin", "marp")
+        val path = FakePath(mapOf("marp" to onPath))
+        assertEquals(MarpCliLocation.Found(onPath), MarpCliLocator.locate("", path, null, project("decks", trusted = false)))
+        assertEquals(MarpCliLocation.Missing(null), MarpCliLocator.locate("", FakePath(), null, project("decks", trusted = false)))
+    }
+
+    @Test
+    fun withoutAProjectNothingIsSearched() {
+        local("decks")
+        assertEquals(MarpCliLocation.Missing(null), MarpCliLocator.locate("", FakePath(), null))
+    }
+
+    @Test
+    fun theConfiguredPathWinsOverTheProjectInstall() {
+        local("decks")
+        val configured = file("tools", "marp")
+        val path = FakePath()
+        assertEquals(MarpCliLocation.Found(configured), MarpCliLocator.locate(configured.toString(), path, null, project("decks")))
+        assertTrue(path.asked.isEmpty())
+    }
+
+    @Test
+    fun aMissingConfiguredPathIsNotReplacedByTheProjectInstall() {
+        local("decks")
+        val gone = temp.root.toPath().resolve("gone").resolve("marp")
+        assertEquals(MarpCliLocation.Missing(gone.toString()), MarpCliLocator.locate(gone.toString(), FakePath(), null, project("decks")))
+        // A name to look up on the PATH is not a project lookup either.
+        assertEquals(MarpCliLocation.Missing("other"), MarpCliLocator.locate("other", FakePath(), null, project("decks")))
+    }
+
+    @Test
+    fun theProjectInstallWinsOverThePath() {
+        val marp = local("decks")
+        val path = FakePath(mapOf("marp" to file("bin", "marp")))
+        assertEquals(MarpCliLocation.FoundInProject(marp), MarpCliLocator.locate("  ", path, null, project("decks")))
+    }
+
+    @Test
+    fun thePathIsUsedWhenTheProjectHasNoInstall() {
+        val onPath = file("bin", "marp")
+        val path = FakePath(mapOf("marp" to onPath))
+        assertEquals(MarpCliLocation.Found(onPath), MarpCliLocator.locate("", path, null, project("decks")))
+        assertEquals(listOf("marp"), path.asked)
+    }
+
+    @Test
+    fun aFolderNamedLikeTheProjectInstallIsSkipped() {
+        temp.newFolder("proj", "decks", "node_modules", ".bin", "marp")
+        val above = local()
+        assertEquals(MarpCliLocation.FoundInProject(above), MarpCliLocator.locate("", FakePath(), null, project("decks")))
+    }
+
+    @Test
+    fun aProjectInstallThatIsNotExecutableIsSkippedOutsideWindows() {
+        assumeFalse(SystemInfo.isWindows)
+        local("decks", executable = false)
+        val above = local()
+        assertEquals(MarpCliLocation.FoundInProject(above), MarpCliLocator.locate("", FakePath(), null, project("decks")))
+    }
+
+    @Test
+    fun onWindowsTheProjectInstallIsItsCmdSibling() {
+        val extensions = listOf(".exe", ".cmd")
+        local("decks")
+        val cmd = local("decks", name = "marp.cmd")
+        local("decks", name = "marp.ps1")
+        assertEquals(MarpCliLocation.FoundInProject(cmd), MarpCliLocator.locate("", FakePath(), extensions, project("decks")))
+    }
+
+    @Test
+    fun onWindowsTheProjectScriptWithoutASiblingIsNotAProgram() {
+        local("decks")
+        assertEquals(MarpCliLocation.Missing(null), MarpCliLocator.locate("", FakePath(), listOf(".exe", ".cmd"), project("decks")))
+    }
+
+    @Test
+    fun projectFoldersRunFromTheStartUpToAndIncludingTheRoot() {
+        val root = temp.root.toPath().resolve("proj")
+        val start = root.resolve("a").resolve("b")
+        assertEquals(listOf(start, root.resolve("a"), root), MarpCliLocator.projectFolders(start, root))
+        assertEquals(listOf(root), MarpCliLocator.projectFolders(root, root))
+        assertEquals(listOf(root.resolve("a"), root), MarpCliLocator.projectFolders(root.resolve("a").resolve("x").resolve(".."), root))
+    }
+
+    @Test
+    fun projectFoldersStayInsideTheRoot() {
+        val root = temp.root.toPath().resolve("proj")
+        assertTrue(MarpCliLocator.projectFolders(root.parent, root).isEmpty())
+        assertTrue(MarpCliLocator.projectFolders(temp.root.toPath().resolve("proj2"), root).isEmpty())
+        assertTrue(MarpCliLocator.projectFolders(root.resolve("..").resolve("other"), root).isEmpty())
+    }
+
+    @Test
+    fun aProjectNeedsABaseDirectoryAndAStart() {
+        val start = projectRoot.resolve("decks")
+        assertEquals(MarpCliProject(start, projectRoot, true), MarpCliProject.of(projectRoot.toString(), start, true))
+        assertNull(MarpCliProject.of(null, start, true))
+        assertNull(MarpCliProject.of(projectRoot.toString(), null, true))
+        assertNull(MarpCliProject.of("a\u0000b", start, true))
+    }
 }

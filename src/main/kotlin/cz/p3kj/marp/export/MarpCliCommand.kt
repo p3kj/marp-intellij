@@ -13,16 +13,47 @@ import java.nio.file.Path
 
 /** Where Marp CLI is, see [MarpCliLocator]. */
 sealed interface MarpCliLocation {
-    data class Found(val executable: Path) : MarpCliLocation
+    /** An executable that was found, wherever. */
+    sealed interface Located : MarpCliLocation {
+        val executable: Path
+    }
 
-    /** [configured] is the path from the settings, `null` when the setting is empty and there is no `marp` on the PATH. */
+    /** The configured path, or `marp` on the PATH when nothing is configured. */
+    data class Found(override val executable: Path) : Located
+
+    /** `node_modules/.bin/marp` of a trusted project, looked up because nothing is configured. */
+    data class FoundInProject(override val executable: Path) : Located
+
+    /** [configured] is the path from the settings, `null` when the setting is empty and there is no Marp CLI to find. */
     data class Missing(val configured: String?) : MarpCliLocation
 }
 
 /**
- * Finds the Marp CLI executable from the `marpCliPath` of [cz.p3kj.marp.settings.MarpAppSettings]: empty means `marp`
- * on the PATH (`marp.cmd` on Windows), an absolute path is used as it is, anything else (`marp.cmd`) is a name to look
- * up on the PATH. Touches the file system, so call it off the EDT.
+ * Where a project-local Marp CLI is looked for: from [start] (the folder of the deck) up to [root] (the project base
+ * directory), see [MarpCliLocator.projectFolders]. Only a [trusted] project is searched: a repository must not be able
+ * to make the IDE run a binary that came with it.
+ */
+data class MarpCliProject(val start: Path, val root: Path, val trusted: Boolean) {
+    companion object {
+        /** `null` when the project has no base directory or [start] is unknown, so there is nothing to search. */
+        fun of(basePath: String?, start: Path?, trusted: Boolean): MarpCliProject? {
+            if (basePath == null || start == null) return null
+            val root = try {
+                Path.of(basePath)
+            } catch (_: InvalidPathException) {
+                return null
+            }
+            return MarpCliProject(start, root, trusted)
+        }
+    }
+}
+
+/**
+ * Finds the Marp CLI executable. The order: the `marpCliPath` of [cz.p3kj.marp.settings.MarpAppSettings] when it is set (an
+ * absolute path is used as it is, anything else, such as `marp.cmd`, is a name to look up on the PATH; nothing else is
+ * tried when it is missing), else `node_modules/.bin/marp` in the folder of the deck and its parents up to the project
+ * base directory (trusted projects only, see [MarpCliProject]), else `marp` on the PATH (`marp.cmd` on Windows). Touches
+ * the file system, so call it off the EDT.
  */
 object MarpCliLocator {
 
@@ -30,15 +61,19 @@ object MarpCliLocator {
 
     /**
      * [onPath] finds an executable by name on the PATH, [windowsExtensions] are the `PATHEXT` entries on Windows and `null`
-     * elsewhere; both are replaced in tests.
+     * elsewhere; both are replaced in tests. [project] is where a project-local install is searched, `null` for nowhere.
      */
     fun locate(
         configured: String,
         onPath: (String) -> Path? = ::findOnPath,
         windowsExtensions: List<String>? = pathExtensions(),
+        project: MarpCliProject? = null,
     ): MarpCliLocation {
         val text = configured.trim()
-        if (text.isEmpty()) return onPath(DEFAULT_NAME)?.let(MarpCliLocation::Found) ?: MarpCliLocation.Missing(null)
+        if (text.isEmpty()) {
+            findInProject(project, windowsExtensions)?.let { return MarpCliLocation.FoundInProject(it) }
+            return onPath(DEFAULT_NAME)?.let(MarpCliLocation::Found) ?: MarpCliLocation.Missing(null)
+        }
         val path = try {
             Path.of(text)
         } catch (_: InvalidPathException) {
@@ -46,6 +81,32 @@ object MarpCliLocator {
         }
         if (path.isAbsolute) return findAbsolute(path, windowsExtensions)?.let(MarpCliLocation::Found) ?: MarpCliLocation.Missing(text)
         return onPath(text)?.let(MarpCliLocation::Found) ?: MarpCliLocation.Missing(text)
+    }
+
+    /**
+     * The folders a project-local install is searched in: [start], then each parent, up to and including [root], never
+     * above it. Empty when [start] is not inside [root] (a deck from elsewhere has no project install to speak of).
+     * Pure path arithmetic, symbolic links are not resolved.
+     */
+    fun projectFolders(start: Path, root: Path): List<Path> {
+        val top = root.toAbsolutePath().normalize()
+        val first = start.toAbsolutePath().normalize()
+        if (!first.startsWith(top)) return emptyList()
+        val folders = mutableListOf(first)
+        while (folders.last() != top) folders.add(folders.last().parent)
+        return folders
+    }
+
+    /** `node_modules/.bin/marp` of the nearest folder of [project] that has one, `null` for an untrusted or unknown project. */
+    private fun findInProject(project: MarpCliProject?, windowsExtensions: List<String>?): Path? {
+        if (project == null || !project.trusted) return null
+        for (folder in projectFolders(project.start, project.root)) {
+            val candidate = folder.resolve("node_modules").resolve(".bin").resolve(DEFAULT_NAME)
+            val found = findAbsolute(candidate, windowsExtensions) ?: continue
+            // Like the PATH search: a file that cannot be started is not a candidate. Windows starts by extension.
+            if (windowsExtensions != null || Files.isExecutable(found)) return found
+        }
+        return null
     }
 
     /**

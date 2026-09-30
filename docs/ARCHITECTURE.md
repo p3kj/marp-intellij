@@ -719,6 +719,9 @@ missing one is a warning with an Open Settings action on click.
   kills the tree (the CLI starts a browser), also on cancel; the folder is deleted in a `NonCancellable` `finally`. Images
   are numbered by the CLI (`deck.001.png`), success needs exit code 0 and that first file. Failure notifications show the
   escaped output tail (notifications are HTML).
+- Lookup order (#19, `MarpCliLocator.locate`): the configured `marpCliPath` (wrong means missing, no fallback), then
+  `node_modules/.bin/marp` from the deck's folder up to the project base dir (`MarpCliProject`, skipped unless `trusted`,
+  so no code path picks a repository binary in an untrusted project), then `marp` on the PATH.
 - PATH lookup: `MarpAppSettings.marpCliPath` is IDE level (a path in `.idea/marp.xml` would let a cloned repository pick the
   binary). `MarpCliLocator` has its own search over `EnvironmentUtil.getValue("PATH")`: absolute entries only, executable
   bit outside Windows, `PATHEXT` on Windows (`marp` is `marp.cmd`), because `findExecutableInPathOnAnyOS` is deprecated for

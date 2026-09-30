@@ -36,7 +36,8 @@ private val LOG = logger<MarpCliExporter>()
  * handed over through a temporary config file, so the result follows the settings like the preview does.
  *
  * Only trusted projects are exported: the CLI is an external program that reads the files of the project (on Windows
- * `marp.cmd` even runs through `cmd.exe`, which parses `%`, `&` and `^` in the file names of a repository).
+ * `marp.cmd` even runs through `cmd.exe`, which parses `%`, `&` and `^` in the file names of a repository). That is also
+ * what allows the lookup to use a `node_modules/.bin/marp` that came with the project, see [MarpCliLocator].
  *
  * [export] runs on the EDT (save dialog), the rest in the project scope under a background progress. The process is
  * killed with the progress, see [runMarpCli].
@@ -47,6 +48,9 @@ internal object MarpCliExporter {
 
     /** Whether the export may run in a project. Replaced in tests. */
     internal var trustedProvider: (Project) -> Boolean = { TrustedProjects.isProjectTrusted(it) }
+
+    /** The base directory of the project, where the search for a project-local Marp CLI stops. Replaced in tests. */
+    internal var projectBasePath: (Project) -> String? = { it.basePath }
 
     /** Notifications are HTML, file names, paths and messages are not. */
     private fun html(text: String): String = StringUtil.escapeXmlEntities(text)
@@ -91,8 +95,10 @@ internal object MarpCliExporter {
     }
 
     private suspend fun convert(project: Project, deck: Path, format: MarpCliFormat, target: Path) {
-        val executable = when (val location = withContext(Dispatchers.IO) { MarpCliLocator.locate(MarpAppSettings.getInstance().marpCliPath) }) {
-            is MarpCliLocation.Found -> location.executable
+        // The trust is asked again on purpose: the lookup is the one place that could pick a binary from the repository.
+        val cliProject = MarpCliProject.of(projectBasePath(project), deck.parent, trustedProvider(project))
+        val executable = when (val location = withContext(Dispatchers.IO) { MarpCliLocator.locate(MarpAppSettings.getInstance().marpCliPath, project = cliProject) }) {
+            is MarpCliLocation.Located -> location.executable
             is MarpCliLocation.Missing -> {
                 val message = location.configured?.let { MarpBundle.message("export.cli.missingPath", html(it)) } ?: MarpBundle.message("export.cli.notFound")
                 MarpExporter.notifyWithSettings(project, NotificationType.WARNING, message)

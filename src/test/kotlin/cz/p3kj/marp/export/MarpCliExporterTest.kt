@@ -28,6 +28,7 @@ class MarpCliExporterTest : MarpLightTestCase() {
 
     private lateinit var work: Path
     private lateinit var deck: Path
+    private lateinit var binDir: Path
     private val notifications: MutableList<Notification> = Collections.synchronizedList(mutableListOf())
 
     override fun setUp() {
@@ -35,7 +36,9 @@ class MarpCliExporterTest : MarpLightTestCase() {
         work = Files.createTempDirectory("marp-cli-test")
         deck = work.resolve("deck.md")
         Files.writeString(deck, "---\nmarp: true\n---\n# One\n")
+        binDir = work.resolve("bin")
         MarpCliExporter.trustedProvider = { true }
+        MarpCliExporter.projectBasePath = { null }
         project.messageBus.connect(testRootDisposable).subscribe(Notifications.TOPIC, object : Notifications {
             override fun notify(notification: Notification) {
                 notifications += notification
@@ -46,6 +49,7 @@ class MarpCliExporterTest : MarpLightTestCase() {
     override fun tearDown() {
         try {
             MarpCliExporter.trustedProvider = { true }
+            MarpCliExporter.projectBasePath = { it.basePath }
             MarpAppSettings.getInstance().update { marpCliPath = null }
             MarpSettings.getInstance(project).update {
                 themes.clear()
@@ -58,9 +62,12 @@ class MarpCliExporterTest : MarpLightTestCase() {
         }
     }
 
-    /** A "marp" that records its arguments, working directory and config, and writes the file after `-o`. */
-    private fun fakeMarp(afterwards: String = ""): Path {
-        val script = work.resolve("bin").resolve("marp")
+    /**
+     * A "marp" that records its arguments, working directory and config next to itself, and writes the file after `-o`.
+     * It is the configured CLI unless [configure] is false.
+     */
+    private fun fakeMarp(afterwards: String = "", script: Path = work.resolve("bin").resolve("marp"), configure: Boolean = true): Path {
+        binDir = script.parent
         Files.createDirectories(script.parent)
         Files.writeString(
             script,
@@ -83,7 +90,7 @@ class MarpCliExporterTest : MarpLightTestCase() {
             """.trimIndent() + "\n",
         )
         assertTrue(script.toFile().setExecutable(true))
-        MarpAppSettings.getInstance().update { marpCliPath = script.toString() }
+        if (configure) MarpAppSettings.getInstance().update { marpCliPath = script.toString() }
         return script
     }
 
@@ -91,7 +98,7 @@ class MarpCliExporterTest : MarpLightTestCase() {
         runBlocking(Dispatchers.Default) { MarpCliExporter.run(project, deck, format, target) }
     }
 
-    private fun recorded(name: String): String = Files.readString(work.resolve("bin").resolve(name))
+    private fun recorded(name: String): String = Files.readString(binDir.resolve(name))
 
     private fun onePlainNotification(): Notification {
         assertEquals(notifications.toString(), 1, notifications.size)
@@ -250,6 +257,35 @@ class MarpCliExporterTest : MarpLightTestCase() {
         assertFalse("the process $pid is still running", ProcessHandle.of(pid).map { it.isAlive }.orElse(false))
         assertFalse("the temporary config folder is removed", Files.exists(Path.of(recorded("config-path").trim()).parent))
         assertTrue("a cancelled export says nothing: $notifications", notifications.isEmpty())
+    }
+
+    fun testAProjectInstallIsUsedWhenNoPathIsConfigured() {
+        if (SystemInfo.isWindows) return
+        MarpCliExporter.projectBasePath = { work.toString() }
+        // The install is in the project root, the deck two folders below it.
+        fakeMarp(script = work.resolve("node_modules").resolve(".bin").resolve("marp"), configure = false)
+        val nested = work.resolve("talks").resolve("2026").resolve("deck.md")
+        Files.createDirectories(nested.parent)
+        Files.writeString(nested, "---\nmarp: true\n---\n# One\n")
+        val target = work.resolve("deck.pptx")
+        runBlocking(Dispatchers.Default) { MarpCliExporter.run(project, nested, MarpCliFormat.PPTX, target) }
+
+        assertEquals(listOf("--config-file"), recorded("args").lines().take(1))
+        assertTrue(recorded("args").contains(nested.toString()))
+        assertTrue(Files.isRegularFile(target))
+        assertEquals(NotificationType.INFORMATION, onePlainNotification().type)
+    }
+
+    fun testAConfiguredCliWinsOverTheProjectInstall() {
+        if (SystemInfo.isWindows) return
+        MarpCliExporter.projectBasePath = { work.toString() }
+        val local = fakeMarp(script = work.resolve("node_modules").resolve(".bin").resolve("marp"), configure = false)
+        fakeMarp()
+        export(MarpCliFormat.PPTX, work.resolve("deck.pptx"))
+
+        assertTrue("the configured CLI ran", Files.exists(work.resolve("bin").resolve("args")))
+        assertFalse("the project install must not run", Files.exists(local.resolveSibling("args")))
+        assertEquals(NotificationType.INFORMATION, onePlainNotification().type)
     }
 
     fun testAnUntrustedProjectStartsNoProcess() {

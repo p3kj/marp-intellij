@@ -1,5 +1,6 @@
 package cz.p3kj.marp.settings
 
+import com.intellij.ide.trustedProjects.TrustedProjects
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.DataContext
@@ -32,6 +33,7 @@ import com.intellij.ui.dsl.listCellRenderer.textListCellRenderer
 import cz.p3kj.marp.MarpBundle
 import cz.p3kj.marp.export.MarpCliLocation
 import cz.p3kj.marp.export.MarpCliLocator
+import cz.p3kj.marp.export.MarpCliProject
 import cz.p3kj.marp.export.marpCliVersion
 import cz.p3kj.marp.themes.MarpThemePaths
 import kotlinx.coroutines.Dispatchers
@@ -150,13 +152,32 @@ class MarpConfigurable(private val project: Project) : BoundConfigurable(MarpBun
         }
     }
 
-    /** EDT. Looks for the CLI the way an export does and asks it for its version, under a modal progress. Returns what to show. */
+    /**
+     * EDT. Looks for the CLI the way an export does and asks it for its version, under a modal progress. Returns what to
+     * show. Without a configured path the project's `node_modules/.bin` counts too, searched from the project root because
+     * there is no deck, and the result says whether the project or the PATH provided the CLI.
+     */
     private fun testCli(configured: String): String =
         runWithModalProgressBlocking(project, MarpBundle.message("settings.marpCli.test.progress")) {
-            when (val location = withContext(Dispatchers.IO) { MarpCliLocator.locate(configured) }) {
-                is MarpCliLocation.Missing -> MarpBundle.message("settings.marpCli.test.notFound")
-                is MarpCliLocation.Found -> marpCliVersion(location.executable)?.let { MarpBundle.message("settings.marpCli.test.found", it) }
-                    ?: MarpBundle.message("settings.marpCli.test.failed", location.executable.toString())
+            val trusted = TrustedProjects.isProjectTrusted(project)
+            val searchProject = projectDir?.let { MarpCliProject(it, it, trusted) }
+            val location = withContext(Dispatchers.IO) { MarpCliLocator.locate(configured, project = searchProject) }
+            val automatic = configured.isBlank()
+            val version = (location as? MarpCliLocation.Located)?.let { marpCliVersion(it.executable) }
+            // A note only where it matters: nothing is configured and the project would have been searched if it were trusted.
+            val note = if (automatic && !trusted && searchProject != null) " " + MarpBundle.message("settings.marpCli.test.untrusted") else ""
+            when (location) {
+                is MarpCliLocation.Missing ->
+                    if (!automatic) MarpBundle.message("settings.marpCli.test.notFound")
+                    else if (searchProject?.trusted == true) MarpBundle.message("settings.marpCli.test.notFound.auto")
+                    else MarpBundle.message("settings.marpCli.test.notFound.path") + note
+                is MarpCliLocation.Located -> if (version == null) {
+                    MarpBundle.message("settings.marpCli.test.failed", location.executable.toString())
+                } else when {
+                    location is MarpCliLocation.FoundInProject -> MarpBundle.message("settings.marpCli.test.found.project", location.executable.toString(), version)
+                    automatic -> MarpBundle.message("settings.marpCli.test.found.path", version) + note
+                    else -> MarpBundle.message("settings.marpCli.test.found", version)
+                }
             }
         }
 
