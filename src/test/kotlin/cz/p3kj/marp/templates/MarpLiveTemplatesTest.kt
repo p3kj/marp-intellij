@@ -37,6 +37,22 @@ class MarpLiveTemplatesTest : MarpLightTestCase() {
         myFixture.checkResult("$text<caret>")
     }
 
+    fun testBackgroundExpandsAfterAnImage() =
+        expand("![a](b.png) bg", variables = 2, expected = "![a](b.png) ![bg right:40%]()<caret>")
+
+    fun testBackgroundDoesNotExpandInTheAltTextOfAnImage() {
+        val text = "$deck![bg"
+        myFixture.configureByText("deck.md", "$text<caret>")
+        myFixture.performEditorAction(IdeActions.ACTION_EXPAND_LIVE_TEMPLATE_BY_TAB)
+        myFixture.checkResult("$text<caret>")
+    }
+
+    fun testContextIsNotTheAltTextOfAnImage() {
+        assertTrue(inContext("deck.md", "$deck![a](b.png) bg"))
+        assertFalse(inContext("deck.md", "$deck![bg"))
+        assertFalse(inContext("deck.md", "$deck![a b"))
+    }
+
     fun testContextIsAMarpDeckOnly() {
         assertTrue(inContext("deck.md", "$deck-"))
         assertFalse(inContext("notes.txt", "$deck-"))
