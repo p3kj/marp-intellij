@@ -46,6 +46,16 @@
                                 implementation="cz.p3kj.marp.navigation.MarpSlideWidgetFactory"
                                 order="before Position"/>
 
+        <!-- Slide numbers at the end of the line where each slide starts, switchable in Settings | Editor | Inlay Hints -->
+        <codeInsight.declarativeInlayProvider language="Markdown"
+                                              implementationClass="cz.p3kj.marp.navigation.MarpSlideNumberInlayProvider"
+                                              isEnabledByDefault="true"
+                                              group="OTHER_GROUP"
+                                              providerId="marp.slideNumbers"
+                                              bundle="messages.MarpBundle"
+                                              nameKey="inlay.slideNumbers.name"
+                                              descriptionKey="inlay.slideNumbers.description"/>
+
         <!-- Settings and themes -->
         <projectConfigurable
                 parentId="tools"
