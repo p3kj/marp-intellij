@@ -176,12 +176,21 @@ object MarpCliArgs {
         listOf("--config-file", config.toString()) + format.cliArgs + listOf("-o", output.toString(), "--", deck.toString())
 
     /**
+     * The arguments after the executable for Present Deck: the HTML file [output] in the template the CLI has by default
+     * (`bespoke`, a slide show with on-screen controls, a presenter view and an overview), see [config]. The deck comes
+     * after `--` like in [arguments]. Not `--html`: for the CLI that allows HTML tags, the format follows the extension.
+     */
+    fun presentArguments(deck: Path, output: Path, config: Path): List<String> =
+        listOf("--config-file", config.toString(), "-o", output.toString(), "--", deck.toString())
+
+    /**
      * The JSON of the config file. Passing one stops the CLI from looking for the project's `.marprc*`,
      * `marp.config.*` and `package.json#marp`, which would add themes twice, run project scripts and differ from the
      * preview, and it is the only way to set the math library. [themeFiles] are the custom theme stylesheets, [html]
      * the effective mode (untrusted projects are already `OFF`), [allowLocalFiles] lets the browser read local images.
+     * [present] asks for the `bespoke` template with a progress bar, nothing else of it is changed.
      */
-    fun config(themeFiles: List<Path>, html: MarpHtmlMode, math: MarpMathMode, allowLocalFiles: Boolean): String {
+    fun config(themeFiles: List<Path>, html: MarpHtmlMode, math: MarpMathMode, allowLocalFiles: Boolean, present: Boolean = false): String {
         val json = JsonObject()
         if (themeFiles.isNotEmpty()) {
             json.add("themeSet", JsonArray().apply { themeFiles.forEach { add(it.toString()) } })
@@ -200,6 +209,10 @@ object MarpCliArgs {
             MarpMathMode.OFF -> options.addProperty("math", false)
         }
         json.add("options", options)
+        if (present) {
+            json.addProperty("template", "bespoke")
+            json.add("bespoke", JsonObject().apply { addProperty("progress", true) })
+        }
         return json.toString()
     }
 

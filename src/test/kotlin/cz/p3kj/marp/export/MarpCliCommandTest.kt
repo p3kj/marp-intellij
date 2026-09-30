@@ -47,6 +47,18 @@ class MarpCliCommandTest {
     }
 
     @Test
+    fun presentArgumentsWriteHtmlWithoutAFormatOption() {
+        assertEquals(
+            listOf("--config-file", config.toString(), "-o", "/tmp/marp-present-1.html", "--", deck.toString()),
+            MarpCliArgs.presentArguments(deck, Path.of("/tmp/marp-present-1.html"), config),
+        )
+        val args = MarpCliArgs.presentArguments(Path.of("--pptx"), Path.of("out.html"), config)
+        assertEquals("--", args[args.size - 2])
+        assertEquals("--pptx", args.last())
+        assertFalse("--html means allow HTML tags for the CLI", "--html" in args)
+    }
+
+    @Test
     fun aDeckNamedLikeAnOptionComesAfterTheSeparator() {
         val args = MarpCliArgs.arguments(MarpCliFormat.PPTX, Path.of("--pptx"), Path.of("out.pptx"), config)
         assertEquals("--", args[args.size - 2])
@@ -58,7 +70,8 @@ class MarpCliCommandTest {
         html: MarpHtmlMode = MarpHtmlMode.DEFAULT,
         math: MarpMathMode = MarpMathMode.MATHJAX,
         allowLocalFiles: Boolean = true,
-    ): JsonObject = JsonParser.parseString(MarpCliArgs.config(themes, html, math, allowLocalFiles)).asJsonObject
+        present: Boolean = false,
+    ): JsonObject = JsonParser.parseString(MarpCliArgs.config(themes, html, math, allowLocalFiles, present)).asJsonObject
 
     @Test
     fun themesAreListedAsPaths() {
@@ -93,6 +106,29 @@ class MarpCliCommandTest {
     fun localFilesAreAllowedOnlyWhenAsked() {
         assertTrue(config(allowLocalFiles = true).get("allowLocalFiles").asBoolean)
         assertFalse(config(allowLocalFiles = false).get("allowLocalFiles").asBoolean)
+    }
+
+    @Test
+    fun onlyAPresentationAsksForTheBespokeTemplate() {
+        val export = config()
+        assertFalse(export.has("template"))
+        assertFalse(export.has("bespoke"))
+
+        val present = config(present = true)
+        assertEquals("bespoke", present.get("template").asString)
+        val bespoke = present.getAsJsonObject("bespoke")
+        assertEquals("only the progress bar is turned on", setOf("progress"), bespoke.keySet())
+        assertTrue(bespoke.get("progress").asBoolean)
+    }
+
+    @Test
+    fun aPresentationKeepsTheSettingsOfTheProject() {
+        val theme = Path.of("/themes/a.css").toAbsolutePath()
+        val present = config(themes = listOf(theme), html = MarpHtmlMode.ALL, math = MarpMathMode.KATEX, present = true)
+        assertEquals(listOf(theme.toString()), present.getAsJsonArray("themeSet").map { it.asString })
+        assertTrue(present.get("html").asBoolean)
+        assertEquals("katex", present.getAsJsonObject("options").get("math").asString)
+        assertTrue(present.get("allowLocalFiles").asBoolean)
     }
 
     @Test
