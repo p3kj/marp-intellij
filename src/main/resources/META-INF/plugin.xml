@@ -147,7 +147,7 @@
             </action>
             <action id="Marp.ToggleOverview"
                     class="cz.p3kj.marp.editor.MarpOverviewToggleAction"
-                    icon="AllIcons.Actions.GroupBy">
+                    icon="/icons/slideOverview.svg">
                 <synonym key="action.Marp.ToggleOverview.synonym"/>
             </action>
             <action id="Marp.Present"
