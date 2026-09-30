@@ -95,9 +95,7 @@ internal object MarpCliExporter {
     }
 
     private suspend fun convert(project: Project, deck: Path, format: MarpCliFormat, target: Path) {
-        // The trust is asked again on purpose: the lookup is the one place that could pick a binary from the repository.
-        val cliProject = MarpCliProject.of(projectBasePath(project), deck.parent, trustedProvider(project))
-        val executable = when (val location = withContext(Dispatchers.IO) { MarpCliLocator.locate(MarpAppSettings.getInstance().marpCliPath, project = cliProject) }) {
+        val executable = when (val location = locate(project, deck)) {
             is MarpCliLocation.Located -> location.executable
             is MarpCliLocation.Missing -> {
                 val message = location.configured?.let { MarpBundle.message("export.cli.missingPath", html(it)) } ?: MarpBundle.message("export.cli.notFound")
@@ -105,6 +103,36 @@ internal object MarpCliExporter {
                 return
             }
         }
+        val result = render(project, deck, executable) { MarpCliArgs.arguments(format, deck, target, it) } ?: return
+        val produced = result.exitCode == 0 && Files.isRegularFile(if (format.isImages) firstImage(target, format) else target)
+        if (produced) {
+            finished(project, format, target)
+        }
+        else {
+            LOG.warn("Marp CLI did not export $deck (exit code ${result.exitCode})\n${result.output}")
+            failed(project, target.fileName.toString(), result)
+        }
+    }
+
+    /**
+     * Where Marp CLI is for [deck]: see [MarpCliLocator]. The trust is asked again on purpose, the lookup is the one place
+     * that could pick a binary from the repository. Touches the file system, so it runs on `Dispatchers.IO`.
+     */
+    internal suspend fun locate(project: Project, deck: Path): MarpCliLocation {
+        val cliProject = MarpCliProject.of(projectBasePath(project), deck.parent, trustedProvider(project))
+        return withContext(Dispatchers.IO) { MarpCliLocator.locate(MarpAppSettings.getInstance().marpCliPath, project = cliProject) }
+    }
+
+    /**
+     * Runs the CLI on [deck] with the config of the project (themes, HTML mode, math, see [MarpCliArgs.config]) and the
+     * [arguments] for it, which get the path of that config. The result, or `null` after telling the user that the CLI
+     * cannot be started. The temporary folder
+     * with the config and the copies of themes from a URL is the working directory and is removed at the end; the files
+     * the arguments name elsewhere are the caller's.
+     */
+    private suspend fun render(
+        project: Project, deck: Path, executable: Path, arguments: (config: Path) -> List<String>,
+    ): MarpCliResult? {
         val themes = MarpThemeService.getInstance(project).loadThemes().themes
         val settings = MarpSettings.getInstance(project)
 
@@ -126,7 +154,7 @@ internal object MarpCliExporter {
                 Files.writeString(config, json)
                 // Every input is an absolute path and Marp CLI resolves the images from the deck file, so the working
                 // directory can be one that holds nothing of the project.
-                GeneralCommandLine(listOf(executable.toString()) + MarpCliArgs.arguments(format, deck, target, config))
+                GeneralCommandLine(listOf(executable.toString()) + arguments(config))
                     .withWorkingDirectory(tempDir)
                     .withCharset(Charsets.UTF_8)
             }
@@ -137,17 +165,10 @@ internal object MarpCliExporter {
                 LOG.warn("Cannot start Marp CLI for $deck: ${commandLine.commandLineString}", e)
                 val reason = e.message ?: e.javaClass.simpleName
                 MarpExporter.notifyWithSettings(project, NotificationType.ERROR, MarpBundle.message("export.cli.cannotStart", html(executable.toString()), html(reason)))
-                return
+                return null
             }
-            val produced = result.exitCode == 0 && Files.isRegularFile(if (format.isImages) firstImage(target, format) else target)
-            if (produced) {
-                LOG.info("Marp CLI exported $deck: ${commandLine.commandLineString}")
-                finished(project, format, target)
-            }
-            else {
-                LOG.warn("Marp CLI did not export $deck (exit code ${result.exitCode}): ${commandLine.commandLineString}\n${result.output}")
-                failed(project, target, result)
-            }
+            LOG.info("Marp CLI ended with exit code ${result.exitCode} for $deck: ${commandLine.commandLineString}")
+            return result
         }
         finally {
             withContext(Dispatchers.IO + NonCancellable) { tempDir.toFile().deleteRecursively() }
@@ -177,8 +198,7 @@ internal object MarpCliExporter {
         }
     }
 
-    private fun failed(project: Project, target: Path, result: MarpCliResult) {
-        val name = target.fileName.toString()
+    private fun failed(project: Project, name: String, result: MarpCliResult) {
         val tail = MarpCliArgs.outputTail(result.output)
         val message = when {
             result.exitCode == null -> MarpBundle.message("export.cli.timeout", html(name), TIMEOUT_MINUTES.toString())
