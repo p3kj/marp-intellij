@@ -80,6 +80,9 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
 
         /** Double-click in a slide: editor line to put the caret on. */
         fun didClick(line: Int)
+
+        /** A thumbnail was dropped on another place in the slide overview, see [MarpSlideMove]. */
+        fun moveSlide(move: MarpSlideMove)
     }
 
     @Volatile
@@ -415,6 +418,11 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
             }
             "didClick" -> json.number("line")?.let { line ->
                 scope.launch(Dispatchers.EDT) { listener?.didClick(line.toInt()) }
+            }
+            "didMoveSlide" -> {
+                val move = MarpSlideMove.parse(json)
+                if (move != null) scope.launch(Dispatchers.EDT) { listener?.moveSlide(move) }
+                else LOG.debug("Ignoring malformed slide move: $message")
             }
             "openLink" -> json.string("href")?.let { href -> scope.launch { openLink(href) } }
             "error" -> LOG.info("Marp preview reported: ${json.string("message")}")

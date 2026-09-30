@@ -118,6 +118,79 @@ class MarpSlideReorderingTest : MarpLightTestCase() {
         assertEquals(plain, text())
     }
 
+    // Moving to any place, the drag in the slide overview -----------------------------------------------------------------
+
+    private val four = "$front\n# One\n\n---\n\n# Two\n\n---\n\n# Three\n\n---\n\n# Four\n"
+
+    /** The editor line of [marker], like the line the overview reports for the slide that starts there. */
+    private fun lineOf(marker: String): Int = myFixture.editor.document.getLineNumber(text().indexOf(marker))
+
+    private fun moveSlide(from: Int, to: Int, line: Int, count: Int) {
+        PlatformTestUtil.waitForPromise(MarpSlideReordering.moveSlide(project, myFixture.editor, from, to, line, count))
+    }
+
+    fun testMoveSlideMovesToAnyPlaceAndTheCaretGoesIntoTheMovedSlide() {
+        open(four)
+        moveSlide(1, 3, lineOf("# Two"), 4)
+        assertEquals("$front\n# One\n\n---\n\n# Three\n\n---\n\n# Four\n\n---\n\n# Two\n", text())
+        assertEquals(text().indexOf("---\n\n# Two"), myFixture.editor.caretModel.offset)
+        moveSlide(3, 0, lineOf("# Two"), 4)
+        assertEquals("$front\n# Two\n\n---\n\n# One\n\n---\n\n# Three\n\n---\n\n# Four\n", text())
+        assertEquals(text().indexOf("# Two"), myFixture.editor.caretModel.offset)
+    }
+
+    fun testMoveSlideIsOneUndoStep() {
+        open(four)
+        moveSlide(0, 3, lineOf("# One"), 4)
+        assertEquals("$front\n# Two\n\n---\n\n# Three\n\n---\n\n# Four\n\n---\n\n# One\n", text())
+        undo()
+        assertEquals(four, text())
+    }
+
+    fun testMoveSlideIgnoresARequestFromAnotherDeck() {
+        open(four)
+        // The line is in another slide than `from`.
+        moveSlide(1, 3, lineOf("# Three"), 4)
+        // The page showed a different number of slides.
+        moveSlide(1, 3, lineOf("# Two"), 3)
+        moveSlide(1, 3, lineOf("# Two"), 5)
+        // The line is outside the document.
+        moveSlide(1, 3, 1000, 4)
+        moveSlide(1, 3, -1, 4)
+        // Not two slides of the deck.
+        moveSlide(1, 1, lineOf("# Two"), 4)
+        moveSlide(1, 4, lineOf("# Two"), 4)
+        moveSlide(4, 1, lineOf("# Two"), 4)
+        assertEquals(four, text())
+    }
+
+    fun testMoveSlideUsesTheSlideTheLineIsInWhateverTheCaretIs() {
+        open(four)
+        myFixture.editor.caretModel.moveToOffset(text().indexOf("# Four"))
+        // The line of the separator that starts the slide belongs to it.
+        moveSlide(2, 0, lineOf("---\n\n# Three"), 4)
+        assertEquals("$front\n# Three\n\n---\n\n# One\n\n---\n\n# Two\n\n---\n\n# Four\n", text())
+    }
+
+    fun testMoveSlideLeavesHeadingDividerDecksAlone() {
+        val deck = "---\nmarp: true\nheadingDivider: 2\n---\n\n# A\n\n## B\n\n## C\n"
+        open(deck)
+        moveSlide(1, 2, lineOf("## B"), 3)
+        moveSlide(2, 0, lineOf("## C"), 3)
+        assertEquals(deck, text())
+    }
+
+    fun testMoveSlideLeavesAViewerAndPlainMarkdownAlone() {
+        open(four)
+        (myFixture.editor as EditorEx).isViewer = true
+        moveSlide(1, 3, lineOf("# Two"), 4)
+        assertEquals(four, text())
+        val plain = "# One\n\n---\n\n# Two\n"
+        open(plain, "plain.md")
+        moveSlide(0, 1, 0, 2)
+        assertEquals(plain, text())
+    }
+
     // Actions -------------------------------------------------------------------------------------------------------------
 
     private fun contextOf(): DataContext = SimpleDataContext.builder()

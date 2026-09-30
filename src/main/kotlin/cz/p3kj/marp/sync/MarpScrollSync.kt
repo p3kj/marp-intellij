@@ -14,7 +14,9 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Condition
 import com.intellij.openapi.wm.IdeFocusManager
 import cz.p3kj.marp.editor.MarpPreviewFileEditor
+import cz.p3kj.marp.navigation.MarpSlideReordering
 import cz.p3kj.marp.preview.MarpPreviewPanel
+import cz.p3kj.marp.preview.MarpSlideMove
 import cz.p3kj.marp.settings.MarpAppSettings
 import cz.p3kj.marp.settings.MarpAppSettingsListener
 import java.awt.Point
@@ -26,7 +28,8 @@ import kotlin.math.roundToInt
  * - editor scrolled -> `scrollToLine(top visible line + fraction)`, when [MarpAppSettings.scrollSync] is on;
  * - preview scrolled (`revealLine`) -> scroll the editor so that fractional line is at the top, caret untouched;
  * - caret moved -> `setActiveLine`;
- * - double-click in a slide (`didClick`) -> caret to that line, scroll it into view, focus the editor.
+ * - double-click in a slide (`didClick`) -> caret to that line, scroll it into view, focus the editor;
+ * - thumbnail dropped in the slide overview (`didMoveSlide`) -> the slide moves in the text, see [MarpSlideReordering.moveSlide].
  *
  * Programmatic scrolls of one side must not bounce back from the other, so events arriving right after this class
  * scrolled the other side are ignored ([MarpScrollEchoGuard]).
@@ -145,6 +148,11 @@ class MarpScrollSync(
             editor.scrollingModel.scrollToCaret(ScrollType.MAKE_VISIBLE)
         }
         IdeFocusManager.getInstance(project).requestFocus(editor.contentComponent, true)
+    }
+
+    override fun moveSlide(move: MarpSlideMove) {
+        if (editor.isDisposed) return
+        MarpSlideReordering.moveSlide(project, editor, move.from, move.to, move.line, move.count)
     }
 
     /** Logical line at the top of the viewport plus how far (0..1) the viewport top is into it. */
