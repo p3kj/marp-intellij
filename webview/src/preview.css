@@ -113,6 +113,40 @@ body {
   margin-top: 6px;
 }
 
+/* Slide overview (overview.ts): the rendered slides as a grid of thumbnails. Screen only, so printing the page to PDF is
+   unaffected when the grid is on. The inline SVG has a viewBox and no size, so it scales to the width of its cell. The
+   selectors beat the list rules above and the notes rules. The 24px gap keeps the active-slide outline (inset -7px) clear
+   of the neighbours. */
+@media screen {
+  #marp-root.marp-overview #__marp-preview {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 24px;
+    align-items: start;
+    padding: 16px 20px;
+  }
+
+  #marp-root.marp-overview [data-marp-slide-wrapper] {
+    width: auto;
+    max-width: none;
+    margin: 0;
+    cursor: pointer;
+  }
+
+  #marp-root.marp-overview svg[data-marpit-svg] {
+    pointer-events: none;
+    box-shadow: 0 2px 6px var(--marp-shadow);
+  }
+
+  #marp-root.marp-overview [data-marp-slide-wrapper]:hover > svg {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--marp-accent) 50%, transparent);
+  }
+
+  #marp-root.marp-overview .marp-notes {
+    display: none;
+  }
+}
+
 #marp-empty-hint {
   margin: 24px 20px;
   text-align: center;

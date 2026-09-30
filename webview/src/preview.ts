@@ -1,5 +1,5 @@
 import { browser } from '@marp-team/marp-core/browser'
-import { markActiveSlide } from './active-slide'
+import { activeSlideClass, markActiveSlide } from './active-slide'
 import { isEmptyDeck } from './empty-deck'
 import { createErrorBanner } from './error-banner'
 import { exportDocument } from './export-html'
@@ -7,6 +7,7 @@ import { createHostChannel } from './host'
 import { findLink } from './links'
 import { createMarp, marpKey, type MarpBuild } from './marp-factory'
 import { insertNotes } from './notes'
+import { overviewClass, slideLineAt } from './overview'
 import { parseFragment, patchSlides } from './patch'
 import { createScrollReporter } from './scroll-reporter'
 import { collectCodeLines, lineForViewportPosition, offsetForLine, type CodeLine } from './scroll-sync'
@@ -49,6 +50,8 @@ const ASSET_WAIT_MS = 5000
 let renderPending = false
 let pendingScrollLine: number | undefined
 let activeLine: number | undefined
+/** Slide overview (thumbnail grid) on: scroll sync is suspended, see `setOverview`. */
+let overview = false
 let entries: CodeLine[] | undefined
 const scroll = createScrollReporter((line) => host.post({ type: 'revealLine', line }))
 
@@ -147,11 +150,21 @@ function inject(html: string, css: string, notes: readonly (readonly string[])[]
 }
 
 function applyScroll(line: number): void {
+  // The grid is not monotonic in y, so a source line has no position in it. The anchor is kept and re-applied on leaving.
+  if (overview) return
   entries ??= collectCodeLines(document, document.body)
   const y = offsetForLine(entries, line, { scrollY: window.scrollY })
   if (y === undefined) return
   window.scrollTo(window.scrollX, y)
   scroll.scrolledProgrammatically(window.scrollY)
+}
+
+/** Shows the anchor line again (resize, leaving the overview); a pending render applies it after it. */
+function realign(): void {
+  const anchor = scroll.anchor
+  if (!anchor) return
+  if (renderPending) pendingScrollLine ??= anchor.line
+  else applyScroll(anchor.line)
 }
 
 const bridge: MarpBridge = {
@@ -182,7 +195,18 @@ const bridge: MarpBridge = {
 
   setActiveLine(line) {
     activeLine = line
-    if (!renderPending) markActiveSlide(root, line)
+    if (renderPending) return
+    const wrapper = markActiveSlide(root, line)
+    // Not from render(): that would jump on every edit.
+    if (overview) wrapper?.scrollIntoView({ block: 'nearest' })
+  },
+
+  setOverview(on) {
+    if (on === overview) return
+    overview = on
+    root.classList.toggle(overviewClass, on)
+    if (on) root.querySelector<HTMLElement>(`.${activeSlideClass}`)?.scrollIntoView({ block: 'nearest' })
+    else realign()
   },
 
   setIdeTheme({ dark, background, foreground }) {
@@ -231,6 +255,7 @@ window.addEventListener(
     scrollQueued = true
     nextFrame(() => {
       scrollQueued = false
+      if (overview) return
       scroll.scrolled(window.scrollY, () => {
         entries ??= collectCodeLines(document, document.body)
         return lineForViewportPosition(entries, 0)
@@ -243,14 +268,16 @@ window.addEventListener(
 // Resizing the preview (splitter, editor split, tool windows) rescales the slides: keep showing the same source line.
 // Without this, the pixel offset would point at other slides, and a scroll clamped by a shorter page would be reported
 // as a user scroll and move the editor. applyScroll marks the resulting scroll events as programmatic.
-window.addEventListener('resize', () => {
-  const anchor = scroll.anchor
-  if (!anchor) return
-  if (renderPending) pendingScrollLine ??= anchor.line
-  else applyScroll(anchor.line)
-})
+window.addEventListener('resize', realign)
 
 function onLinkClick(e: MouseEvent): void {
+  if (overview) {
+    // Slides are inert in the grid: no link opens, a click on a thumbnail moves the caret to the slide.
+    e.preventDefault()
+    const line = e.type === 'click' ? slideLineAt(e.target) : undefined
+    if (line !== undefined) host.post({ type: 'didClick', line })
+    return
+  }
   const link = findLink(e.target, document.baseURI)
   if (!link) return
   e.preventDefault()
@@ -272,6 +299,7 @@ document.addEventListener('auxclick', onLinkClick)
 for (const type of ['dragover', 'drop']) document.addEventListener(type, (e) => e.preventDefault())
 
 document.addEventListener('dblclick', (e) => {
+  if (overview) return // the two clicks already posted didClick
   const target = e.target as Element | null
   const el = target?.closest?.('[data-line]') ?? target?.closest?.('section[data-marp-content-start-line]')
   if (!el) return

@@ -42,6 +42,8 @@ export interface MarpBridge {
   scrollToLine(line: number): void
   setActiveLine(line: number): void
   setIdeTheme(arg: { dark: boolean; background: string; foreground: string }): void
+  /** Slide overview: the slides as a grid of thumbnails, scroll sync suspended, a click jumps to the slide's source. */
+  setOverview(on: boolean): void
   /**
    * Command, not a state setter: renders the last `update` with an export Marp instance and replies with the complete
    * standalone HTML document (`html`), or with an `error`. `title` is the fallback when the deck has no `title:`. With

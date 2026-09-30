@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { MarpBridge, RenderOptions } from '../src/types'
 
 let bridge: MarpBridge
@@ -196,5 +196,155 @@ describe('export commands', () => {
     bridge.flushRender({ id: 32 })
     await frame()
     expect(replies(32)).toEqual([{ type: 'reply', id: 32 }])
+  })
+})
+
+describe('slide overview', () => {
+  const deck = '---\nmarp: true\n---\n\n# First\n\n[a link](https://example.com/)\n\n---\n\n# Second\n\n---\n\n# Third\n'
+  const root = () => document.getElementById('marp-root') as HTMLElement
+  const startLines = () =>
+    Array.from(document.querySelectorAll('#marp-root section[data-marp-content-start-line]'), (s) =>
+      Number(s.getAttribute('data-marp-content-start-line')),
+    )
+  const click = (target: Element, type = 'click') => {
+    const e = new MouseEvent(type, { bubbles: true, cancelable: true })
+    target.dispatchEvent(e)
+    return e
+  }
+  const didClicks = () => posted.filter((m) => m.type === 'didClick')
+  const scrollIntoView = vi.fn()
+  const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+  const original = Element.prototype.scrollIntoView
+
+  beforeAll(() => {
+    // jsdom has no scrollIntoView.
+    Element.prototype.scrollIntoView = scrollIntoView
+  })
+
+  afterEach(() => {
+    bridge.setOverview(false)
+    scrollIntoView.mockClear()
+    scrollTo.mockClear()
+    posted.length = 0
+  })
+
+  afterAll(() => {
+    Element.prototype.scrollIntoView = original
+    scrollTo.mockRestore()
+  })
+
+  it('setOverview puts the class on #marp-root and takes it off again', async () => {
+    await render(deck)
+    expect(root().classList.contains('marp-overview')).toBe(false)
+    bridge.setOverview(true)
+    expect(root().classList.contains('marp-overview')).toBe(true)
+    bridge.setOverview(true)
+    expect(root().classList.contains('marp-overview')).toBe(true)
+    bridge.setOverview(false)
+    expect(root().classList.contains('marp-overview')).toBe(false)
+  })
+
+  it('a click on a slide posts didClick with the content start line of that slide', async () => {
+    await render(deck)
+    const lines = startLines()
+    expect(lines).toHaveLength(3)
+    bridge.setOverview(true)
+    const headings = Array.from(document.querySelectorAll('#marp-root h1'))
+    expect(headings).toHaveLength(3)
+    const e = click(headings[1]!)
+    expect(e.defaultPrevented).toBe(true)
+    expect(didClicks()).toEqual([{ type: 'didClick', line: lines[1] }])
+    click(slides()[2]!)
+    expect(didClicks().at(-1)).toEqual({ type: 'didClick', line: lines[2] })
+  })
+
+  it('a click in the gap between thumbnails posts nothing', async () => {
+    await render(deck)
+    bridge.setOverview(true)
+    click(document.getElementById('__marp-preview')!)
+    expect(didClicks()).toEqual([])
+  })
+
+  it('links inside a slide stay inert: no openLink, the click is prevented', async () => {
+    await render(deck)
+    bridge.setOverview(true)
+    const link = document.querySelector('#marp-root a[href="https://example.com/"]')
+    expect(link).not.toBeNull()
+    const e = click(link!)
+    expect(e.defaultPrevented).toBe(true)
+    expect(posted.filter((m) => m.type === 'openLink')).toEqual([])
+    // A click on a link is a click on its slide.
+    expect(didClicks()).toEqual([{ type: 'didClick', line: startLines()[0] }])
+    // A middle click does nothing at all.
+    posted.length = 0
+    const aux = click(link!, 'auxclick')
+    expect(aux.defaultPrevented).toBe(true)
+    expect(posted).toEqual([])
+  })
+
+  it('a double-click adds nothing to the two clicks in the grid', async () => {
+    await render(deck)
+    bridge.setOverview(true)
+    click(document.querySelectorAll('#marp-root h1')[0]!, 'dblclick')
+    expect(didClicks()).toEqual([])
+  })
+
+  it('outside the grid a single click posts no didClick and links still open', async () => {
+    await render(deck)
+    click(document.querySelectorAll('#marp-root h1')[1]!)
+    expect(didClicks()).toEqual([])
+    click(document.querySelector('#marp-root a[href="https://example.com/"]')!)
+    expect(posted.filter((m) => m.type === 'openLink')).toEqual([{ type: 'openLink', href: 'https://example.com/' }])
+  })
+
+  it('scrollToLine does not scroll the page in the grid, and leaving it shows the last line again', async () => {
+    await render(deck)
+    // jsdom has no layout: give every element a box, taller the further down the document it is, so that a line maps.
+    const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const top = 50 * Array.from(document.querySelectorAll('*')).indexOf(this)
+      return { top, bottom: top + 40, left: 0, right: 100, width: 100, height: 40, x: 0, y: top, toJSON() {} }
+    })
+    try {
+      bridge.scrollToLine(10)
+      expect(scrollTo).toHaveBeenCalledTimes(1)
+      scrollTo.mockClear()
+
+      bridge.setOverview(true)
+      bridge.scrollToLine(12)
+      expect(scrollTo).not.toHaveBeenCalled()
+
+      // The anchor followed the editor meanwhile, so the page shows line 12 once the grid is off.
+      bridge.setOverview(false)
+      expect(scrollTo).toHaveBeenCalledTimes(1)
+    } finally {
+      rect.mockRestore()
+    }
+  })
+
+  it('setActiveLine scrolls the active thumbnail into view in the grid only', async () => {
+    await render(deck)
+    const lines = startLines()
+    bridge.setActiveLine(lines[1]!)
+    expect(scrollIntoView).not.toHaveBeenCalled()
+
+    bridge.setOverview(true)
+    // Entering the grid shows the highlighted slide.
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(scrollIntoView.mock.contexts[0]).toBe(slides()[1])
+    expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'nearest' })
+
+    bridge.setActiveLine(lines[2]!)
+    expect(slides()[2]!.classList.contains('marp-active-slide')).toBe(true)
+    expect(scrollIntoView).toHaveBeenCalledTimes(2)
+    expect(scrollIntoView.mock.contexts[1]).toBe(slides()[2])
+  })
+
+  it('a render in the grid does not scroll, so typing never jumps', async () => {
+    await render(deck)
+    bridge.setActiveLine(startLines()[0]!)
+    bridge.setOverview(true)
+    scrollIntoView.mockClear()
+    await render(deck.replace('# Second', '# Second, edited'))
+    expect(scrollIntoView).not.toHaveBeenCalled()
   })
 })

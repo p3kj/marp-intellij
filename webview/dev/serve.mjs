@@ -2,7 +2,7 @@
 //   /                          dev page (?deck=<abs md path>&themes=<abs css>,<abs css>&dark=1)
 //   /doc/<absolute path>       local files, like the plugin's https://marp.localhost/doc/ handler
 //   /file?path=<abs path>      raw text of a file (used by the mock host)
-//   ?html=off|default|all  ?math=mathjax|katex|off  ?notes=1  ?kerr=<text>   options for the mock host
+//   ?html=off|default|all  ?math=mathjax|katex|off  ?notes=1  ?overview=1  ?kerr=<text>   options for the mock host
 // The dev page gets the Content-Security-Policy of src/index.html, adapted to this origin (CSP=0 leaves it out).
 // Dev only: serves any readable file on this machine to localhost. Requests must name localhost or 127.0.0.1 as Host,
 // so a page whose DNS name is rebound to 127.0.0.1 cannot read them.

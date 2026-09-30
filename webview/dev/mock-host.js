@@ -26,6 +26,7 @@ async function start() {
   bridge.setThemes({ themes, errors: params.get('kerr') ? [params.get('kerr')] : [] })
   const options = { html: params.get('html') ?? 'default', math: params.get('math') ?? 'mathjax', notes: params.get('notes') === '1' }
   bridge.update({ markdown, baseHref, options })
+  if (params.get('overview') === '1') bridge.setOverview(true)
   window.__mock = { markdown, baseHref, themes }
 }
 
