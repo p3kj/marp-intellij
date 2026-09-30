@@ -18,7 +18,27 @@ internal const val MARP_CLI_TIMEOUT_MS: Long = 5 * 60 * 1000
 
 private const val VERSION_TIMEOUT_MS: Long = 15_000
 
-/** What a Marp CLI run printed (stdout and stderr together) and how it ended: [exitCode] is `null` when it was killed for taking too long. */
+/** How much of the output of a run is kept. A CLI that prints without end must not fill the memory of the IDE. */
+internal const val MARP_CLI_OUTPUT_LIMIT: Int = 64 * 1024
+
+/** Collects text from several threads and keeps the last [limit] characters of it. */
+internal class MarpCliOutput(private val limit: Int = MARP_CLI_OUTPUT_LIMIT) {
+    private val text = StringBuilder()
+
+    @Synchronized
+    fun append(chunk: String) {
+        text.append(chunk)
+        if (text.length > limit) text.delete(0, text.length - limit)
+    }
+
+    @Synchronized
+    override fun toString(): String = text.toString()
+}
+
+/**
+ * What a Marp CLI run printed (stdout and stderr together, the last [MARP_CLI_OUTPUT_LIMIT] characters) and how it ended:
+ * [exitCode] is `null` when it was killed for taking too long.
+ */
 data class MarpCliResult(val exitCode: Int?, val output: String)
 
 /**
@@ -28,7 +48,7 @@ data class MarpCliResult(val exitCode: Int?, val output: String)
  */
 suspend fun runMarpCli(commandLine: GeneralCommandLine, timeoutMs: Long): MarpCliResult = withContext(Dispatchers.IO) {
     val handler = KillableProcessHandler(commandLine)
-    val output = StringBuffer()
+    val output = MarpCliOutput()
     val exit = CompletableDeferred<Int>()
     handler.addProcessListener(object : ProcessListener {
         override fun onTextAvailable(event: ProcessEvent, outputType: Key<*>) {
@@ -40,8 +60,8 @@ suspend fun runMarpCli(commandLine: GeneralCommandLine, timeoutMs: Long): MarpCl
         }
     })
     handler.startNotify()
-    handler.processInput.close()
     try {
+        handler.processInput.close()
         // withTimeoutOrNull, not withTimeout: its exception is a CancellationException that callers would rethrow silently.
         MarpCliResult(withTimeoutOrNull(timeoutMs) { exit.await() }, output.toString())
     }

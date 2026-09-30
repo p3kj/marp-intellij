@@ -703,54 +703,26 @@ go through an external Marp CLI process and are a separate path, see "Marp CLI e
 
 ### Marp CLI export (PPTX, PNG, JPEG)
 
-`Marp.ExportPptx`, `Marp.ExportPng` and `Marp.ExportJpeg` (`MarpCliExportAction`, in `FileExportGroup` and, after a
-separator, in the `Marp.Export` popup) run the user's Marp CLI. They do not touch the preview page, the bridge or the
-webview, and they are shown whenever a Marp editor exists (`MarpExporter.previewOf(e) != null`, no JCEF or page check). The CLI
-is not looked up in `update()`: a disabled item cannot say why, so a missing CLI is reported on click, as a warning with an
-Open Settings action.
+`Marp.ExportPptx`, `Marp.ExportPng`, `Marp.ExportJpeg` (#16, `MarpCliExporter`) run the user's Marp CLI. They do not use the
+preview page and are shown for every Marp editor; the CLI is not looked up in `update()` (a disabled item cannot say why), a
+missing one is a warning with an Open Settings action on click.
 
-- Executable: `MarpAppSettings.marpCliPath` (IDE level, deliberately not in `.idea/marp.xml`, which a cloned repository could
-  use to pick the binary). `MarpCliLocator` (file I/O, call on `Dispatchers.IO`): empty is `marp` on the PATH, an
-  absolute path must be a regular file, any other value is a name looked up on the PATH. The lookup is our own
-  (`MarpCliLocator.findExecutable`, PATH from `EnvironmentUtil.getValue`, which is what the started process sees, executable
-  bit outside Windows, `PATHEXT` on Windows so that `marp` is `marp.cmd` and npm's extensionless shell script is skipped),
-  because `PathEnvironmentVariableUtil.findExecutableInPathOnAnyOS` is deprecated for removal in 263 and `findFirst`
-  is experimental. No `npx` (downloads on first use), no discovery of a
-  project `node_modules/.bin/marp`. Settings has a Test button (`runWithModalProgressBlocking`, then `marpCliVersion` runs
-  `--version` with a 15 s timeout).
-- Flow (`MarpCliExporter`): `export` (EDT) resolves the deck to a local `Path` (`getNioPath`, else `export.cli.notLocal`),
-  `MarpExporter.chooseTarget` (shared with HTML / PDF through the `MarpExportTarget` interface), then
-  `FileDocumentManager.saveAllDocuments()` after the dialog (the CLI reads the deck and the theme files from disk, a
-  cancelled dialog saves nothing), then `run` in `MarpProjectScope` under a cancellable `withBackgroundProgress`.
-- Configuration: a temporary folder with `marp-config.json` is passed as `--config-file`. That stops the CLI from loading
-  the project's `.marprc*`, `marp.config.*` and `package.json#marp` (no double themes, no repository JavaScript executed, the
-  same as the preview), and it is the only way to set `options.math`. `MarpCliArgs.config` writes `themeSet` (absolute paths
-  of `MarpThemeService.loadThemes()` themes; a theme from a URL is written to `url-theme-<n>.css` in that folder), `html`
-  (`MarpPreviewFileEditor.effectiveHtmlMode`: all `true`, off `false`, default omitted), `allowLocalFiles` (only in a trusted
-  project) and `options.math` (`mathjax`, `katex` or `false`, the mapping of `mathOption` in `marp-factory.ts`). Untrusted
-  projects therefore get no HTML, no local files and no custom themes (the theme service returns none), but the CLI still runs.
-  Arguments: `--config-file <cfg> <format options> -o <target> -- <deck>` with the deck folder as working directory. Formats
-  (`MarpCliFormat`): `--pptx`, `--images png`, `--images jpeg`. For images the user names `deck.png` and the CLI writes
-  `deck.001.png`, `deck.002.png`...; the exporter does not depend on those names and only offers Show in Folder
-  (`RevealFileAction.openDirectory(Path)`). Existing image files are overwritten without a check.
-- Process (`runMarpCli`, `Dispatchers.IO`): `KillableProcessHandler`, stdout and stderr collected together with a
-  `ProcessListener`, stdin closed at once (the CLI must never wait for Markdown on it), exit awaited in a
-  `CompletableDeferred`. The timeout (5 minutes) is `withTimeoutOrNull`, and the result has a `null` exit code, because a
-  `TimeoutCancellationException` is a `CancellationException` and would be rethrown silently. A `finally` calls
-  `killProcess()` (the whole tree: the CLI starts a browser) when the process is still running, which also covers the
-  cancellation of the progress. The temporary folder is deleted in a `NonCancellable` `finally`.
-- Result: success is exit code 0 and, for PPTX, an existing file; then a VFS refresh of the folder and a notification (PPTX
-  with Open, `BrowserUtil.browse(Path)`, images with Show in Folder). Failures show the tail of the output
-  (`MarpCliArgs.outputTail`: colors and blank lines removed, 15 lines, 1500 characters, HTML escaped because notification
-  content is HTML), or the exit code when there is none, `export.cli.timeout`, or `export.cli.cannotStart` (with Open
-  Settings) when the process cannot be started. The command line and the full output of a failure go to `idea.log`.
-- Tests use shell scripts in place of the CLI (`MarpCliRunnerTest`, `MarpCliExporterTest`, skipped on Windows) and pure tests
-  of `MarpCliArgs` and `MarpCliLocator`; no test needs Marp CLI or Node.js.
-- Not used: `npx`, `PathEnvironmentVariableUtil.findExecutableInPathOnAnyOS` and `findFirst`, `CapturingProcessHandler.runProcess` (blocking, not cancellable), `ProcessAdapter` (deprecated base),
-  `RevealFileAction.openDirectory(File)` (obsolete), `Row.textFieldWithBrowseButton` (experimental or deprecated),
-  `addBrowseFolderListener` with a title and description (deprecated).
-- Out of scope: title-slide `--image`, `--pptx-editable`, image scale, choosing the browser (`--browser-path`), notes export,
-  per-slide progress, PDF or HTML through the CLI, and checking for existing `deck.NNN.png` files. Not verified on Windows.
+- Trust: only trusted projects are exported. In an untrusted one a notification says so and nothing starts. The CLI is an
+  external program reading the project, and on Windows `marp.cmd` runs through `cmd.exe`, which parses `%`, `&` and `^` in
+  repository file names.
+- Config bypass: a temporary `marp-config.json` is passed as `--config-file`, so the CLI never loads the project's `.marprc*`,
+  `marp.config.*` or `package.json#marp` (no double themes, no repository JavaScript). It holds `themeSet` (absolute paths,
+  URL themes as temporary files), `html`, `allowLocalFiles` and `options.math` (the only way to set it). The process runs in
+  the temporary folder: every input is absolute and images resolve from the deck file.
+- Process (`runMarpCli`): `KillableProcessHandler`, the last 64 KB of output kept, stdin closed at once, 5 minute timeout
+  (`withTimeoutOrNull`, null exit code: a `TimeoutCancellationException` would be swallowed as a cancellation). `finally`
+  kills the tree (the CLI starts a browser), also on cancel; the folder is deleted in a `NonCancellable` `finally`. Images
+  are numbered by the CLI (`deck.001.png`), success needs exit code 0 and that first file. Failure notifications show the
+  escaped output tail (notifications are HTML).
+- PATH lookup: `MarpAppSettings.marpCliPath` is IDE level (a path in `.idea/marp.xml` would let a cloned repository pick the
+  binary). `MarpCliLocator` has its own search over `EnvironmentUtil.getValue("PATH")`: absolute entries only, executable
+  bit outside Windows, `PATHEXT` on Windows (`marp` is `marp.cmd`), because `findExecutableInPathOnAnyOS` is deprecated for
+  removal and `findFirst` is experimental. No `npx`. Not verified on Windows; tests use shell scripts (skipped there).
 
 ## Present (Kotlin and webview)
 

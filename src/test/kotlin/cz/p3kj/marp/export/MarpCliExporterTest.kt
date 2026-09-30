@@ -35,6 +35,7 @@ class MarpCliExporterTest : MarpLightTestCase() {
         work = Files.createTempDirectory("marp-cli-test")
         deck = work.resolve("deck.md")
         Files.writeString(deck, "---\nmarp: true\n---\n# One\n")
+        MarpCliExporter.trustedProvider = { true }
         project.messageBus.connect(testRootDisposable).subscribe(Notifications.TOPIC, object : Notifications {
             override fun notify(notification: Notification) {
                 notifications += notification
@@ -44,6 +45,7 @@ class MarpCliExporterTest : MarpLightTestCase() {
 
     override fun tearDown() {
         try {
+            MarpCliExporter.trustedProvider = { true }
             MarpAppSettings.getInstance().update { marpCliPath = null }
             MarpSettings.getInstance(project).update {
                 themes.clear()
@@ -66,14 +68,16 @@ class MarpCliExporterTest : MarpLightTestCase() {
             #!/bin/sh
             dir=${'$'}(dirname "${'$'}0")
             printf '%s\n' "${'$'}@" > "${'$'}dir/args"
-            pwd > "${'$'}dir/cwd"
+            pwd -P > "${'$'}dir/cwd"
             cp "${'$'}2" "${'$'}dir/config.json"
             echo "${'$'}2" > "${'$'}dir/config-path"
             cp "${'$'}(dirname "${'$'}2")"/url-theme-*.css "${'$'}dir/" 2>/dev/null
             while [ ${'$'}# -gt 0 ]; do
               if [ "${'$'}1" = "-o" ]; then out="${'$'}2"; fi
+              if [ "${'$'}1" = "--images" ]; then images=1; fi
               shift
             done
+            if [ -n "${'$'}images" ]; then out="${'$'}{out%.*}.001.${'$'}{out##*.}"; fi
             echo data > "${'$'}out"
             $afterwards
             """.trimIndent() + "\n",
@@ -105,7 +109,10 @@ class MarpCliExporterTest : MarpLightTestCase() {
             listOf("--config-file", configPath, "--pptx", "-o", target.toString(), "--", deck.toString()),
             recorded("args").lines().filter { it.isNotEmpty() },
         )
-        assertEquals("the CLI runs in the folder of the deck", work.toRealPath(), Path.of(recorded("cwd").trim()).toRealPath())
+        // Everything the CLI gets is an absolute path, so it runs in its own temporary folder, not in the project.
+        val cwd = Path.of(recorded("cwd").trim())
+        assertEquals(Path.of(configPath).parent.fileName, cwd.fileName)
+        assertFalse("not the folder of the deck", work.toRealPath() == cwd)
         assertTrue(Files.isRegularFile(target))
         assertFalse("the temporary config folder is removed", Files.exists(Path.of(configPath).parent))
 
@@ -117,7 +124,7 @@ class MarpCliExporterTest : MarpLightTestCase() {
 
     fun testImageExportOffersToShowTheFolder() {
         if (SystemInfo.isWindows) return
-        // The CLI writes deck.001.png, ..., not the name it was given, but the fake one writes that name: it must not matter.
+        // Like the CLI, the fake one writes deck.001.png, not the name it was given.
         fakeMarp()
         export(MarpCliFormat.PNG, work.resolve("deck.png"))
 
@@ -128,11 +135,23 @@ class MarpCliExporterTest : MarpLightTestCase() {
         assertEquals(listOf(MarpBundle.message("export.cli.showFolder")), notification.actions.map { it.templateText })
     }
 
-    fun testImageExportSucceedsWithoutTheChosenFile() {
+    fun testImageExportSucceedsWithoutTheChosenFileButNeedsTheFirstImage() {
         if (SystemInfo.isWindows) return
-        fakeMarp(afterwards = "rm -f \"\$out\"")
+        fakeMarp()
         export(MarpCliFormat.JPEG, work.resolve("deck.jpg"))
+        assertFalse("the CLI does not write the chosen name", Files.exists(work.resolve("deck.jpg")))
+        assertTrue(Files.isRegularFile(work.resolve("deck.001.jpg")))
         assertEquals(NotificationType.INFORMATION, onePlainNotification().type)
+    }
+
+    fun testImageExportWithoutImagesIsAFailure() {
+        if (SystemInfo.isWindows) return
+        // Exit code 0, but nothing was written: the CLI said something else instead.
+        fakeMarp(afterwards = "rm -f \"\$out\"; echo 'nothing to convert'")
+        export(MarpCliFormat.PNG, work.resolve("deck.png"))
+        val notification = onePlainNotification()
+        assertEquals(NotificationType.ERROR, notification.type)
+        assertEquals(MarpBundle.message("export.cli.failed", "deck.png", "nothing to convert"), notification.content)
     }
 
     fun testSettingsAndThemesAreHandedOverThroughTheConfig() {
@@ -178,7 +197,7 @@ class MarpCliExporterTest : MarpLightTestCase() {
         if (SystemInfo.isWindows) return
         fakeMarp(afterwards = "rm -f \"\$out\"; exit 2")
         export(MarpCliFormat.PPTX, work.resolve("deck.pptx"))
-        assertEquals(MarpBundle.message("export.cli.failed.noOutput", "deck.pptx", 2), onePlainNotification().content)
+        assertEquals(MarpBundle.message("export.cli.failed.noOutput", "deck.pptx", "2"), onePlainNotification().content)
     }
 
     fun testSuccessWithoutAPptxFileIsAFailure() {
@@ -187,7 +206,7 @@ class MarpCliExporterTest : MarpLightTestCase() {
         export(MarpCliFormat.PPTX, work.resolve("deck.pptx"))
         val notification = onePlainNotification()
         assertEquals(NotificationType.ERROR, notification.type)
-        assertEquals(MarpBundle.message("export.cli.failed.noOutput", "deck.pptx", 0), notification.content)
+        assertEquals(MarpBundle.message("export.cli.failed.noOutput", "deck.pptx", "0"), notification.content)
     }
 
     fun testAMissingConfiguredCliOffersTheSettings() {
@@ -231,5 +250,49 @@ class MarpCliExporterTest : MarpLightTestCase() {
         assertFalse("the process $pid is still running", ProcessHandle.of(pid).map { it.isAlive }.orElse(false))
         assertFalse("the temporary config folder is removed", Files.exists(Path.of(recorded("config-path").trim()).parent))
         assertTrue("a cancelled export says nothing: $notifications", notifications.isEmpty())
+    }
+
+    fun testAnUntrustedProjectStartsNoProcess() {
+        if (SystemInfo.isWindows) return
+        fakeMarp()
+        MarpCliExporter.trustedProvider = { false }
+        export(MarpCliFormat.PPTX, work.resolve("deck.pptx"))
+
+        val notification = onePlainNotification()
+        assertEquals(NotificationType.WARNING, notification.type)
+        assertEquals(MarpBundle.message("export.cli.untrusted"), notification.content)
+        assertFalse("the CLI must not run", Files.exists(work.resolve("bin").resolve("args")))
+        assertFalse(Files.exists(work.resolve("deck.pptx")))
+    }
+
+    fun testAnUntrustedProjectIsNotAskedWhereToSave() {
+        // The save dialog would block this test, so nothing may be shown before the trust check.
+        MarpCliExporter.trustedProvider = { false }
+        val file = myFixture.addFileToProject("deck.md", "---\nmarp: true\n---\n# One\n").virtualFile
+        for (format in MarpCliFormat.entries) MarpCliExporter.export(project, file, format)
+        assertEquals(MarpCliFormat.entries.size, notifications.size)
+        assertTrue(notifications.all { it.content == MarpBundle.message("export.cli.untrusted") })
+    }
+
+    fun testPathsAndMessagesAreEscapedInNotifications() {
+        if (SystemInfo.isWindows) return
+        val gone = work.resolve("<b>x</b>").resolve("marp")
+        MarpAppSettings.getInstance().update { marpCliPath = gone.toString() }
+        export(MarpCliFormat.PPTX, work.resolve("deck.pptx"))
+        val content = onePlainNotification().content
+        assertTrue(content, content.contains("&lt;b&gt;x&lt;/b&gt;"))
+        assertFalse(content, content.contains("<b>"))
+    }
+
+    fun testTheExecutableIsEscapedWhenItCannotBeStarted() {
+        if (SystemInfo.isWindows) return
+        val script = work.resolve("a&b").resolve("marp")
+        Files.createDirectories(script.parent)
+        Files.writeString(script, "#!/bin/sh\n")
+        assertTrue(script.toFile().setExecutable(false))
+        MarpAppSettings.getInstance().update { marpCliPath = script.toString() }
+        export(MarpCliFormat.PPTX, work.resolve("deck.pptx"))
+        val content = onePlainNotification().content
+        assertTrue(content, content.startsWith("Marp CLI (${work.resolve("a&amp;b").resolve("marp")}) could not be started"))
     }
 }

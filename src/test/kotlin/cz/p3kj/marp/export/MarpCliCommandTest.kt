@@ -10,6 +10,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeFalse
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -149,49 +150,49 @@ class MarpCliCommandTest {
     fun anEmptySettingLooksUpMarpOnThePath() {
         val marp = temp.newFile("marp").toPath()
         val path = FakePath(mapOf("marp" to marp))
-        assertEquals(MarpCliLocation.Found(marp), MarpCliLocator.locate("", path))
-        assertEquals(MarpCliLocation.Found(marp), MarpCliLocator.locate("   ", path))
+        assertEquals(MarpCliLocation.Found(marp), MarpCliLocator.locate("", path, windowsExtensions = null))
+        assertEquals(MarpCliLocation.Found(marp), MarpCliLocator.locate("   ", path, windowsExtensions = null))
         assertEquals(listOf("marp", "marp"), path.asked)
     }
 
     @Test
     fun nothingOnThePathIsMissingWithoutAConfiguredPath() {
-        assertEquals(MarpCliLocation.Missing(null), MarpCliLocator.locate("", FakePath()))
+        assertEquals(MarpCliLocation.Missing(null), MarpCliLocator.locate("", FakePath(), windowsExtensions = null))
     }
 
     @Test
     fun anAbsolutePathThatExistsIsUsedWithoutTheLookup() {
         val marp = temp.newFile("marp").toPath()
         val path = FakePath()
-        assertEquals(MarpCliLocation.Found(marp), MarpCliLocator.locate("  $marp  ", path))
+        assertEquals(MarpCliLocation.Found(marp), MarpCliLocator.locate("  $marp  ", path, windowsExtensions = null))
         assertTrue(path.asked.isEmpty())
     }
 
     @Test
     fun anAbsolutePathThatDoesNotExistIsMissing() {
         val gone = temp.root.toPath().resolve("gone")
-        assertEquals(MarpCliLocation.Missing(gone.toString()), MarpCliLocator.locate(gone.toString(), FakePath()))
+        assertEquals(MarpCliLocation.Missing(gone.toString()), MarpCliLocator.locate(gone.toString(), FakePath(), windowsExtensions = null))
     }
 
     @Test
     fun aFolderIsNotAnExecutable() {
         val folder = temp.newFolder("bin").toPath()
         assertTrue(Files.isDirectory(folder))
-        assertEquals(MarpCliLocation.Missing(folder.toString()), MarpCliLocator.locate(folder.toString(), FakePath()))
+        assertEquals(MarpCliLocation.Missing(folder.toString()), MarpCliLocator.locate(folder.toString(), FakePath(), windowsExtensions = null))
     }
 
     @Test
     fun aRelativeNameIsLookedUpOnThePath() {
         val cmd = temp.newFile("marp.cmd").toPath()
         val path = FakePath(mapOf("marp.cmd" to cmd))
-        assertEquals(MarpCliLocation.Found(cmd), MarpCliLocator.locate("marp.cmd", path))
+        assertEquals(MarpCliLocation.Found(cmd), MarpCliLocator.locate("marp.cmd", path, windowsExtensions = null))
         assertEquals(listOf("marp.cmd"), path.asked)
-        assertEquals(MarpCliLocation.Missing("other"), MarpCliLocator.locate("other", path))
+        assertEquals(MarpCliLocation.Missing("other"), MarpCliLocator.locate("other", path, windowsExtensions = null))
     }
 
     @Test
     fun anInvalidPathIsMissing() {
-        assertEquals(MarpCliLocation.Missing("a\u0000b"), MarpCliLocator.locate("a\u0000b", FakePath()))
+        assertEquals(MarpCliLocation.Missing("a\u0000b"), MarpCliLocator.locate("a\u0000b", FakePath(), windowsExtensions = null))
     }
 
     // The PATH search itself, on real files.
@@ -253,5 +254,46 @@ class MarpCliCommandTest {
     fun onWindowsTheScriptWithoutAnExtensionIsNotAProgram() {
         file("npm", "marp")
         assertNull(MarpCliLocator.findExecutable("marp", pathOf("npm"), listOf(".exe", ".cmd")))
+    }
+
+    @Test
+    fun relativePathEntriesAreSkipped() {
+        val marp = file("bin", "marp")
+        val relative = try {
+            Path.of("").toAbsolutePath().relativize(marp.parent)
+        } catch (_: IllegalArgumentException) {
+            null // another drive or root
+        }
+        assumeTrue(relative != null && !relative.isAbsolute)
+        // The same directory: found by its absolute path, skipped by its path from the working directory.
+        assertEquals(marp, MarpCliLocator.findExecutable("marp", marp.parent.toString(), null))
+        assertNull(MarpCliLocator.findExecutable("marp", relative.toString(), null))
+        assertEquals(marp, MarpCliLocator.findExecutable("marp", relative.toString() + File.pathSeparator + marp.parent, null))
+    }
+
+    @Test
+    fun dotAndEmptyEntriesAreSkipped() {
+        assertNull(MarpCliLocator.findExecutable("marp", listOf(".", "\"\"", "", "  ", "..").joinToString(File.pathSeparator), null))
+    }
+
+    @Test
+    fun aQuotedDirectoryIsUsed() {
+        val marp = file("quoted dir", "marp")
+        assertEquals(marp, MarpCliLocator.findExecutable("marp", "\"" + marp.parent + "\"", null))
+    }
+
+    @Test
+    fun onWindowsAnExtensionlessConfiguredPathStandsForItsCmdSibling() {
+        val script = file("npm", "marp")
+        val cmd = file("npm", "marp.cmd")
+        val extensions = listOf(".exe", ".cmd")
+        assertEquals(MarpCliLocation.Found(cmd), MarpCliLocator.locate(script.toString(), FakePath(), extensions))
+        assertEquals(MarpCliLocation.Found(cmd), MarpCliLocator.locate(cmd.toString(), FakePath(), extensions))
+    }
+
+    @Test
+    fun onWindowsAConfiguredScriptWithoutASiblingIsNotAProgram() {
+        val script = file("npm", "marp")
+        assertEquals(MarpCliLocation.Missing(script.toString()), MarpCliLocator.locate(script.toString(), FakePath(), listOf(".exe", ".cmd")))
     }
 }

@@ -72,6 +72,17 @@ class MarpCliRunnerTest {
         assertFalse("the process $pid is still running", ProcessHandle.of(pid).map { it.isAlive }.orElse(false))
     }
 
+    @Test
+    fun onlyTheEndOfALongOutputIsKept() {
+        val script = "i=0; while [ \$i -lt 4000 ]; do echo \"line \$i xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"; i=\$((i+1)); done; echo END"
+        val result = runBlocking { runMarpCli(sh(script), 60_000) }
+        assertEquals(0, result.exitCode)
+        assertEquals(MARP_CLI_OUTPUT_LIMIT, result.output.length)
+        assertTrue(result.output.trimEnd().endsWith("END"))
+        assertTrue("line 3999 " in result.output)
+        assertFalse("line 0 " in result.output)
+    }
+
     @Test(expected = ExecutionException::class)
     fun aProgramThatDoesNotExistCannotBeStarted() {
         runBlocking { runMarpCli(GeneralCommandLine(temp.root.toPath().resolve("missing").toString()), 30_000) }
