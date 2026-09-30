@@ -13,9 +13,9 @@ import cz.p3kj.marp.slides.MarpSlideReorder
 import org.jetbrains.concurrency.CancellablePromise
 
 /**
- * Moves the slide under the caret one place up or down in the text of a Marp deck (Move Slide Up / Down). The edit
- * itself is computed by [MarpSlideReorder]; this object reads the deck like the navigation does and applies the edit as
- * one undoable command.
+ * Moves the slide under the caret one place up or down in the text of a Marp deck: Move Slide Up / Down here, and Move
+ * Statement Up / Down on a separator line in [MarpSlideStatementMover]. The edit itself is computed by
+ * [MarpSlideReorder]; this object reads the deck like the navigation does and applies the edit as one undoable command.
  */
 object MarpSlideReordering {
 

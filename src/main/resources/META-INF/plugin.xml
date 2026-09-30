@@ -63,6 +63,11 @@
         <!-- One folding region per slide of a Marp deck. First, so it wins over Markdown heading regions that cross a slide boundary -->
         <lang.foldingBuilder language="Markdown" order="first" implementationClass="cz.p3kj.marp.folding.MarpSlideFoldingBuilder"/>
 
+        <!-- Move Statement Up / Down on a separator line moves the whole slide. Everywhere else it returns false and lines move as usual -->
+        <statementUpDownMover id="marpSlide"
+                              implementation="cz.p3kj.marp.navigation.MarpSlideStatementMover"
+                              order="first"/>
+
         <!-- Settings and themes -->
         <projectConfigurable
                 parentId="tools"
@@ -168,7 +173,8 @@
             <add-to-group group-id="GoToMenu" anchor="last"/>
         </group>
 
-        <!-- Code | Move Slide Up / Down, after Move Line Up. No default shortcut, every candidate clashes with something in one of the keymaps. -->
+        <!-- Code | Move Slide Up / Down, after Move Line Up. No default shortcut, every candidate clashes with something in one of the keymaps.
+             Move Statement Up / Down on a separator line (the mover above) is the keyboard route. -->
         <group id="Marp.SlideReordering">
             <separator/>
             <action id="Marp.MoveSlideUp" class="cz.p3kj.marp.navigation.MarpMoveSlideUpAction">
