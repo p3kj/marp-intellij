@@ -113,7 +113,7 @@
             <reference ref="Marp.ExportPdf"/>
         </group>
 
-        <!-- Shown in the floating toolbar of the Marp editor, see MarpSplitEditor.createRightToolbarActionGroup. The synonyms make the toggles findable by "marp" in Find Action. -->
+        <!-- Shown in the floating toolbar of the Marp editor, see MarpSplitEditor.createRightToolbarActionGroup. The synonyms make the toggles and Present Deck findable by "marp" in Find Action. -->
         <group id="Marp.PreviewToolbar">
             <action id="Marp.ToggleScrollSync"
                     class="cz.p3kj.marp.editor.MarpScrollSyncToggleAction"
@@ -124,6 +124,12 @@
                     class="cz.p3kj.marp.editor.MarpPresenterNotesToggleAction"
                     icon="AllIcons.General.Note">
                 <synonym key="action.Marp.TogglePresenterNotes.synonym"/>
+            </action>
+            <action id="Marp.Present"
+                    class="cz.p3kj.marp.export.MarpPresentAction"
+                    icon="AllIcons.Actions.Execute">
+                <synonym key="action.Marp.Present.synonym"/>
+                <synonym key="action.Marp.Present.synonym.slideshow"/>
             </action>
             <reference ref="Marp.Export"/>
             <separator/>

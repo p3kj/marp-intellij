@@ -59,7 +59,7 @@ class MarpPreviewToolbarActionsTest : MarpLightTestCase() {
 
     fun testGroupHoldsTheToolbarActions() {
         val ids = toolbarIds()
-        assertEquals(listOf("Marp.ToggleScrollSync", "Marp.TogglePresenterNotes", "Marp.Export", "Marp.OpenSettings"), ids)
+        assertEquals(listOf("Marp.ToggleScrollSync", "Marp.TogglePresenterNotes", "Marp.Present", "Marp.Export", "Marp.OpenSettings"), ids)
         for (id in ids) {
             val action = actions.getAction(id)
             assertTrue("$id must be dumb-aware", action.isDumbAware)

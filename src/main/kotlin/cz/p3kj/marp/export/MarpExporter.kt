@@ -41,13 +41,16 @@ internal object MarpExporter {
 
     private const val NOTIFICATION_GROUP = "Marp Export"
 
-    /** The preview editor of the deck the action was invoked for, from the split editor in the data context or the file's selected editor. */
-    fun previewOf(e: AnActionEvent): MarpPreviewFileEditor? {
-        (e.getData(PlatformCoreDataKeys.FILE_EDITOR) as? MarpSplitEditor)?.let { return it.preview }
+    /** The Marp split editor of the deck the action was invoked for, from the data context or the file's selected editor. */
+    fun splitEditorOf(e: AnActionEvent): MarpSplitEditor? {
+        (e.getData(PlatformCoreDataKeys.FILE_EDITOR) as? MarpSplitEditor)?.let { return it }
         val project = e.project ?: return null
         val file = e.getData(CommonDataKeys.VIRTUAL_FILE) ?: return null
-        return (FileEditorManager.getInstance(project).getSelectedEditor(file) as? MarpSplitEditor)?.preview
+        return FileEditorManager.getInstance(project).getSelectedEditor(file) as? MarpSplitEditor
     }
+
+    /** The preview editor of the deck the action was invoked for, see [splitEditorOf]. */
+    fun previewOf(e: AnActionEvent): MarpPreviewFileEditor? = splitEditorOf(e)?.preview
 
     /** EDT. Asks where to save, then exports in the background. Nothing happens when the dialog is cancelled. */
     fun export(project: Project, preview: MarpPreviewFileEditor, format: MarpExportFormat) {
@@ -111,7 +114,7 @@ internal object MarpExporter {
     }
 
     /** The user-facing part of a failure. [MarpExportException] messages are for the log. */
-    private fun reason(e: Exception, format: MarpExportFormat): String = when {
+    fun reason(e: Exception, format: MarpExportFormat): String = when {
         e is MarpExportException && e.timedOut -> MarpBundle.message("export.error.timeout")
         e is MarpExportException && e.pageGone -> MarpBundle.message("export.error.pageGone")
         e is MarpExportException && format == MarpExportFormat.PDF -> MarpBundle.message("export.error.pdf")
@@ -127,7 +130,7 @@ internal object MarpExporter {
             .notify(project)
     }
 
-    private fun notify(project: Project, type: NotificationType, content: String) {
+    fun notify(project: Project, type: NotificationType, content: String) {
         if (project.isDisposed) return
         NotificationGroupManager.getInstance().getNotificationGroup(NOTIFICATION_GROUP)
             .createNotification(content, type)

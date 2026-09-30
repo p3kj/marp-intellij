@@ -285,11 +285,15 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
 
     /**
      * The current deck as a standalone HTML document, rendered by the preview page (see `exportHtml` in
-     * `docs/ARCHITECTURE.md`). [title] is used when the deck has no `title:` directive. The page has to be ready and to
-     * hold the current text, so callers render first. Throws [MarpExportException].
+     * `docs/ARCHITECTURE.md`). [title] is used when the deck has no `title:` directive. With [present] the document is
+     * a presentation (one slide at a time, keyboard navigation) instead. The page has to be ready and to hold the
+     * current text, so callers render first. Throws [MarpExportException].
      */
-    suspend fun exportHtml(title: String): String {
-        val reply = sendCommand(MarpBridgeState.EXPORT_HTML, EXPORT_HTML_TIMEOUT_MS) { addProperty("title", title) }
+    suspend fun exportHtml(title: String, present: MarpPresentOptions? = null): String {
+        val reply = sendCommand(MarpBridgeState.EXPORT_HTML, EXPORT_HTML_TIMEOUT_MS) {
+            addProperty("title", title)
+            present?.let { add("present", it.toJson()) }
+        }
         return reply.string("html") ?: throw MarpExportException("The preview page answered without a document")
     }
 
