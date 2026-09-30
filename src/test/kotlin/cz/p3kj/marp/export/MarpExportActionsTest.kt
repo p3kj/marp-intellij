@@ -56,7 +56,8 @@ class MarpExportActionsTest : MarpLightTestCase() {
 
         val export = actions.getAction("Marp.Export") as ActionGroup
         assertTrue("shown as a popup button", export.isPopup)
-        assertTrue("stays usable while indexing", export is DumbAware)
+        // A plain group without an update override is dumb-aware, so the popup is not greyed out while indexing.
+        assertTrue("stays usable while indexing", export.isDumbAware)
         assertNotNull("the popup button needs an icon", export.templatePresentation.icon)
         assertEquals(listOf("Marp.ExportHtml", "Marp.ExportPdf"), childIds(export))
         assertEquals("Export Deck", export.templatePresentation.text)

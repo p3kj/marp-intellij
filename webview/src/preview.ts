@@ -10,6 +10,7 @@ import { insertNotes } from './notes'
 import { parseFragment, patchSlides } from './patch'
 import { createScrollReporter } from './scroll-reporter'
 import { collectCodeLines, lineForViewportPosition, offsetForLine, type CodeLine } from './scroll-sync'
+import { assetsSettled } from './settle'
 import { defaultStrings, formatMessage, mergeStrings } from './strings'
 import type { MarpBridge, PreviewStrings, RenderOptions, ThemeInput } from './types'
 
@@ -41,6 +42,9 @@ let lastUpdate: UpdateArg | undefined
 let lastCss = ''
 let slideHtml: string[] = []
 let shownErrors = new Set<string>()
+
+/** How long `flushRender` waits for fonts and images at most. */
+const ASSET_WAIT_MS = 5000
 
 let renderPending = false
 let pendingScrollLine: number | undefined
@@ -204,12 +208,15 @@ const bridge: MarpBridge = {
 
   flushRender({ id }) {
     if (renderPending) render()
-    // The frame lets the browser lay out what render() inserted before Kotlin prints the page. The render that is still
-    // queued from scheduleRender runs later with the same argument, and patchSlides makes that a no-op.
+    // The frame lets the browser lay out what render() inserted, so that fonts are requested and images start loading.
+    // Printing does not wait for either, so the reply waits for them (capped, Kotlin's timeout is 10 s). The render that
+    // is still queued from scheduleRender runs later with the same argument, and patchSlides makes that a no-op.
     nextFrame(() => {
-      if (!lastUpdate) host.post({ type: 'reply', id, error: 'There is nothing to print yet' })
-      else if (renderError !== undefined) host.post({ type: 'reply', id, error: renderError })
-      else host.post({ type: 'reply', id })
+      void assetsSettled(document, root, ASSET_WAIT_MS).then(() => {
+        if (!lastUpdate) host.post({ type: 'reply', id, error: 'There is nothing to print yet' })
+        else if (renderError !== undefined) host.post({ type: 'reply', id, error: renderError })
+        else host.post({ type: 'reply', id })
+      })
     })
   },
 }

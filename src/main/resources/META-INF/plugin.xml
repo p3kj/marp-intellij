@@ -108,7 +108,7 @@
         <action id="Marp.ExportPdf" class="cz.p3kj.marp.export.MarpExportPdfAction">
             <add-to-group group-id="FileExportGroup" anchor="last"/>
         </action>
-        <group id="Marp.Export" class="cz.p3kj.marp.export.MarpExportGroup" popup="true" icon="AllIcons.ToolbarDecorator.Export">
+        <group id="Marp.Export" popup="true" icon="AllIcons.ToolbarDecorator.Export">
             <reference ref="Marp.ExportHtml"/>
             <reference ref="Marp.ExportPdf"/>
         </group>

@@ -140,6 +140,22 @@ describe('export commands', () => {
     expect(replies(20)).toHaveLength(1)
   })
 
+  it('flushRender waits for images that are still loading, then replies', async () => {
+    await render('# Img\n\n![](https://marp.localhost/doc/pic.png)\n')
+    const img = document.querySelector<HTMLImageElement>('#marp-root img[src$="pic.png"]')
+    expect(img).not.toBeNull()
+    Object.defineProperty(img, 'complete', { value: false, configurable: true })
+
+    bridge.flushRender({ id: 22 })
+    await frame()
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    expect(replies(22)).toHaveLength(0)
+
+    img?.dispatchEvent(new Event('load'))
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(replies(22)).toEqual([{ type: 'reply', id: 22 }])
+  })
+
   it('flushRender with nothing pending still replies once', async () => {
     await render('# Idle\n')
     bridge.flushRender({ id: 21 })

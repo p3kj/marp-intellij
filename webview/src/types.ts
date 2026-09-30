@@ -39,7 +39,7 @@ export interface MarpBridge {
    * standalone HTML document (`html`), or with an `error`. `title` is the fallback when the deck has no `title:`.
    */
   exportHtml(arg: { id: number; title: string }): void
-  /** Command: renders a pending update right now, then replies once the frame is done (`error` when the render failed). */
+  /** Command: renders a pending update right now, then replies once the frame is done and the fonts and images have loaded (at most 5 s), `error` when the render failed. */
   flushRender(arg: { id: number }): void
 }
 

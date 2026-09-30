@@ -2,8 +2,6 @@ package cz.p3kj.marp.export
 
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
-import com.intellij.openapi.actionSystem.DefaultActionGroup
-import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.DumbAwareAction
 
 /**
@@ -30,6 +28,3 @@ class MarpExportHtmlAction : MarpExportAction(MarpExportFormat.HTML)
 
 /** Marp deck to a PDF with one page per slide. */
 class MarpExportPdfAction : MarpExportAction(MarpExportFormat.PDF)
-
-/** The `Marp.Export` popup of the preview toolbar. A plain `DefaultActionGroup` is not dumb-aware, and would grey the popup while indexing. */
-class MarpExportGroup : DefaultActionGroup(), DumbAware

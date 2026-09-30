@@ -33,15 +33,26 @@ internal class MarpPageReplies {
         if (error != null) reply.completeExceptionally(MarpExportException(error)) else reply.complete(json)
     }
 
+    /**
+     * Completes [id] like a reply would, for work that the page does not answer by message (the PDF print callback of
+     * the browser). With an [error] it fails like an error reply.
+     */
+    fun complete(id: Int, error: String? = null) {
+        onReply(JsonObject().apply {
+            addProperty("id", id)
+            if (error != null) addProperty("error", error)
+        })
+    }
+
     /** Forgets the command, for example after a timeout. A late reply is ignored. */
     fun cancel(id: Int) {
         pending.remove(id)?.cancel()
     }
 
-    /** The page is gone (reload, crash, dispose): every command that still waits fails with [reason]. */
+    /** The page is gone (reload, crash, dispose): every command that still waits fails with [reason] and `pageGone` set. */
     fun failAll(reason: String) {
         for (id in pending.keys.toList()) {
-            pending.remove(id)?.completeExceptionally(MarpExportException(reason))
+            pending.remove(id)?.completeExceptionally(MarpExportException(reason, pageGone = true))
         }
     }
 }

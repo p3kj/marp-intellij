@@ -52,6 +52,7 @@ class MarpPageRepliesTest {
         catch (e: MarpExportException) {
             assertEquals("boom", e.message)
             assertFalse(e.timedOut)
+            assertFalse("an error of the page is not a lost page", e.pageGone)
         }
     }
 
@@ -94,7 +95,9 @@ class MarpPageRepliesTest {
         assertFalse(done.getCompletionExceptionOrNull() != null)
         for (waiting in listOf(waiting1, waiting2)) {
             assertEquals("page is gone", waiting.getCompletionExceptionOrNull()?.message)
-            assertTrue(waiting.getCompletionExceptionOrNull() is MarpExportException)
+            val failure = waiting.getCompletionExceptionOrNull() as MarpExportException
+            assertTrue("a lost page is told apart from a page error", failure.pageGone)
+            assertFalse(failure.timedOut)
         }
     }
 
@@ -105,6 +108,29 @@ class MarpPageRepliesTest {
         replies.onReply(json("""{"type":"reply","id":$id}"""))
         assertTrue(reply.isCompleted)
         assertEquals(null, reply.getCompletionExceptionOrNull())
+    }
+
+    @Test
+    fun completeAnswersLikeAReplyForWorkWithoutAPageMessage() {
+        val (okId, ok) = replies.open()
+        replies.complete(okId)
+        assertTrue(ok.isCompleted)
+        assertEquals(null, ok.getCompletionExceptionOrNull())
+
+        val (failedId, failed) = replies.open()
+        replies.complete(failedId, error = "cannot print")
+        val failure = failed.getCompletionExceptionOrNull() as MarpExportException
+        assertEquals("cannot print", failure.message)
+        assertFalse(failure.pageGone)
+    }
+
+    @Test
+    fun aLostPageEndsAWaitingPrintBeforeItsCallbackArrives() {
+        val (id, print) = replies.open()
+        replies.failAll("the preview was closed")
+        // The browser's callback may still come, and must not change the outcome.
+        replies.complete(id)
+        assertTrue((print.getCompletionExceptionOrNull() as MarpExportException).pageGone)
     }
 
     @Test

@@ -29,8 +29,8 @@ import com.intellij.ui.jcef.JBCefJSQuery
 import cz.p3kj.marp.MarpBundle
 import cz.p3kj.marp.themes.MarpThemeSet
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -300,17 +300,27 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
 
     /**
      * Prints the preview page to a PDF file with Chromium: one page per slide, sized like the deck (see [MarpPdfSettings]).
-     * Call [flushRender] first. Throws [MarpExportException].
+     * Call [flushRender] first. The wait is registered like a command, so a reload, a lost page or closing the preview ends it
+     * at once ([MarpPageReplies.failAll]) instead of printing the loading page or waiting for the timeout. Throws
+     * [MarpExportException].
      */
     suspend fun printToPdf(path: Path) {
-        val browser = browser ?: throw MarpExportException("The preview browser does not exist")
-        val done = CompletableDeferred<Boolean>()
-        withContext(UI_ANY_MODALITY) {
-            browser.cefBrowser.printToPDF(path.toString(), MarpPdfSettings.create(), CefPdfPrintCallback { _, ok -> done.complete(ok) })
+        val browser = browser ?: throw MarpExportException("The preview browser does not exist", pageGone = true)
+        val (id, done) = replies.open()
+        try {
+            withContext(UI_ANY_MODALITY) {
+                // The page may have started to reload while this switched threads: printing now would print the loading page.
+                if (!bridge.isReady) throw MarpExportException("The preview page is not ready to be printed", pageGone = true)
+                val callback = CefPdfPrintCallback { _, ok ->
+                    replies.complete(id, error = if (ok) null else "The browser could not print the page to $path")
+                }
+                browser.cefBrowser.printToPDF(path.toString(), MarpPdfSettings.create(), callback)
+            }
+            awaitReply(done, PDF_TIMEOUT_MS, "Printing the page")
         }
-        val ok = withTimeoutOrNull(PDF_TIMEOUT_MS) { done.await() }
-            ?: throw MarpExportException("The browser did not finish printing within ${PDF_TIMEOUT_MS / 1000} s", timedOut = true)
-        if (!ok) throw MarpExportException("The browser could not print the page to $path")
+        finally {
+            replies.cancel(id)
+        }
     }
 
     /** Sends [method] with a fresh id (plus [fill]) and waits for the page's reply. */
@@ -321,14 +331,17 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
                 addProperty("id", id)
                 fill()
             }
-            if (!bridge.command(method, argument.toString())) throw MarpExportException("The preview page is not ready")
-            return withTimeoutOrNull(timeoutMs) { reply.await() }
-                ?: throw MarpExportException("The preview page did not answer $method within ${timeoutMs / 1000} s", timedOut = true)
+            if (!bridge.command(method, argument.toString())) throw MarpExportException("The preview page is not ready", pageGone = true)
+            return awaitReply(reply, timeoutMs, "The preview page's answer to $method")
         }
         finally {
             replies.cancel(id)
         }
     }
+
+    private suspend fun awaitReply(reply: Deferred<JsonObject>, timeoutMs: Long, what: String): JsonObject =
+        withTimeoutOrNull(timeoutMs) { reply.await() }
+            ?: throw MarpExportException("$what took longer than ${timeoutMs / 1000} s", timedOut = true)
 
     /** The page's own texts; `{0}`, `{1}` stay placeholders that the page fills in. */
     private fun sendStrings() {

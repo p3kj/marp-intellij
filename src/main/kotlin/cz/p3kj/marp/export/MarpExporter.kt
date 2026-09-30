@@ -113,6 +113,7 @@ internal object MarpExporter {
     /** The user-facing part of a failure. [MarpExportException] messages are for the log. */
     private fun reason(e: Exception, format: MarpExportFormat): String = when {
         e is MarpExportException && e.timedOut -> MarpBundle.message("export.error.timeout")
+        e is MarpExportException && e.pageGone -> MarpBundle.message("export.error.pageGone")
         e is MarpExportException && format == MarpExportFormat.PDF -> MarpBundle.message("export.error.pdf")
         e is MarpExportException -> MarpBundle.message("export.error.render")
         else -> e.message ?: e.javaClass.simpleName

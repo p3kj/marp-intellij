@@ -10,7 +10,6 @@ import com.intellij.openapi.actionSystem.Separator
 import com.intellij.openapi.actionSystem.ToggleAction
 import com.intellij.openapi.actionSystem.impl.SimpleDataContext
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.project.DumbAware
 import com.intellij.testFramework.TestActionEvent
 import cz.p3kj.marp.MarpBundle
 import cz.p3kj.marp.MarpLightTestCase
@@ -63,7 +62,7 @@ class MarpPreviewToolbarActionsTest : MarpLightTestCase() {
         assertEquals(listOf("Marp.ToggleScrollSync", "Marp.TogglePresenterNotes", "Marp.Export", "Marp.OpenSettings"), ids)
         for (id in ids) {
             val action = actions.getAction(id)
-            assertTrue("$id must be DumbAware", action is DumbAware)
+            assertTrue("$id must be dumb-aware", action.isDumbAware)
             val kind = if (action is ActionGroup) "group" else "action"
             assertEquals(MarpBundle.message("$kind.$id.text"), action.templatePresentation.text)
             assertEquals(MarpBundle.message("$kind.$id.description"), action.templatePresentation.description)

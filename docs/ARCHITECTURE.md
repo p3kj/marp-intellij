@@ -161,9 +161,11 @@ interface MarpBridge {
    */
   exportHtml(arg: { id: number; title: string }): void
   /**
-   * Renders a pending update right away (`if (renderPending) render()`), then replies after the next frame. Used before
-   * printing the page to PDF. Replies with an `error` when there was no update or the last render failed. The render
-   * that is still queued in the page runs later with the same argument, and the slide diff makes that a no-op.
+   * Renders a pending update right away (`if (renderPending) render()`), then replies after the next frame and once the
+   * web fonts and the `<img>` elements of the slides have loaded or failed, at most 5 s later (printing does not wait for
+   * either). Used before printing the page to PDF. Replies with an `error` when there was no update or the last render
+   * failed. The render that is still queued in the page runs later with the same argument, and the slide diff makes that
+   * a no-op. CSS background images (`![bg]`) are not waited for.
    */
   flushRender(arg: { id: number }): void
 }
@@ -534,13 +536,14 @@ Package `cz.p3kj.marp.export` (#12): File | Export | Marp Deck to HTML and Marp 
 
 - Both formats go through the LIVE preview page (`MarpPreviewFileEditor.panel`). It already has the current themes (trust
   rules applied), the effective `html` / `math` options and reaches local images through the resource handler, so there is
-  no second or offscreen browser, no Node.js and no Kotlin-side Marp. The price: the preview has to be loaded. When
-  `MarpPreviewPanel.isPageReady` is false the export shows the warning `export.notReady` and stops, and the actions are
-  hidden without a panel (JCEF missing).
+  no second or offscreen browser, no Node.js and no Kotlin-side Marp. The price: the preview has to be loaded. The actions
+  are shown whenever the deck is open in the Marp editor and the IDE has JCEF (a panel exists). When
+  `MarpPreviewPanel.isPageReady` is false the export shows the warning `export.notReady` and stops.
 - `MarpExportAction` (`DumbAwareAction`, `BGT`) finds the preview from `PlatformCoreDataKeys.FILE_EDITOR` when that is the
   `MarpSplitEditor` (its `preview` property), otherwise from `FileEditorManager.getSelectedEditor(file)` of
-  `CommonDataKeys.VIRTUAL_FILE` (with the caret in the text editor the data key is the inner text editor). `MarpExportGroup`
-  is a `DumbAware` `DefaultActionGroup`: a plain one is not, and a popup group would be greyed out while indexing.
+  `CommonDataKeys.VIRTUAL_FILE` (with the caret in the text editor the data key is the inner text editor). The
+  `Marp.Export` popup is a plain `<group popup="true">`: a `DefaultActionGroup` without an `update` override is
+  dumb-aware in 2026.2, so it is not greyed out while indexing (tests assert `isDumbAware`).
 - `MarpExporter.export` (EDT) opens the save dialog (`FileChooserFactory.createSaveFileDialog`, `FileSaverDescriptor` with
   one extension), starting in the folder of the deck with `<deck>.html` / `<deck>.pdf`: relative image paths and theme
   `url()`s of an HTML file resolve from where it is saved, so the deck's folder is the natural default. A missing extension
@@ -549,7 +552,8 @@ Package `cz.p3kj.marp.export` (#12): File | Export | Marp Deck to HTML and Marp 
   `MarpPreviewFileEditor.renderNow()` first sends the current editor text and settings to the page (unsaved changes count,
   and the 150 ms throttle cannot leave the page behind), then the format specific part, then a VFS refresh of the file. The result is
   a balloon notification (group `Marp Export`) with an Open action (`BrowserUtil.browse(Path)`), or an error notification.
-  `MarpExportException` messages are log text; the user sees `export.error.timeout`, `export.error.pdf` or
+  `MarpExportException` messages are log text; the user sees `export.error.timeout` (`timedOut`),
+  `export.error.pageGone` (`pageGone`: the preview was closed or reloaded meanwhile, or was not ready), `export.error.pdf` or
   `export.error.render`, and for other exceptions (disk errors) their message.
 - HTML: `exportHtml` (a bridge command, see Commands above) renders the last `update` with a separate export Marp instance
   (`createExportMarp` in `webview/src/export-html.ts`) and returns a complete document; Kotlin only writes the string. The
@@ -565,7 +569,11 @@ Package `cz.p3kj.marp.export` (#12): File | Export | Marp Deck to HTML and Marp 
   resolve against the saved file, Twemoji (jsDelivr), KaTeX CSS and fonts and Google Fonts stay remote. Nothing is inlined
   or copied.
 - PDF: `MarpPreviewPanel.printToPdf` calls `CefBrowser.printToPDF` on the live preview browser (a public JCEF API, on
-  `Dispatchers.UI`), after `flushRender` made the page render the current text. `MarpPdfSettings` sets every field of
+  `Dispatchers.UI`), after `flushRender` made the page render the current text and wait for its images and fonts.
+  Right before the call `printToPdf` checks `bridge.isReady` again (a reload while switching threads would print the
+  loading page) and throws `MarpExportException(pageGone = true)` otherwise. The print is registered in `MarpPageReplies`
+  like a command (its callback calls `replies.complete`), so a reload, a lost page or closing the preview fails it at once.
+  `MarpPdfSettings` sets every field of
   `CefPdfPrintSettings` (the constructor leaves `margin_type` and the strings null): background on, scale 1, no margins, no
   header or footer, `prefer_css_page_size`. marp-core's CSS contains `@page { size: <w>px <h>px; margin: 0 }`, which follows
   the `size` directive (a 4:3 deck gives 960px 720px), and `@media print` rules for one slide per page and exact colors,
@@ -579,7 +587,8 @@ Package `cz.p3kj.marp.export` (#12): File | Export | Marp Deck to HTML and Marp 
   the same allowed-roots rule as the preview, because the images in a PDF come through the page.
 - Timeouts (`MarpPreviewPanel`): `exportHtml` 30 s, `flushRender` 10 s, `printToPDF` 120 s. They throw
   `MarpExportException(timedOut = true)`, not `TimeoutCancellationException`, which is a `CancellationException` and would
-  look like the user cancelling.
+  look like the user cancelling. `MarpPageReplies.failAll` (page reload, crash, dispose) and every not-ready path set
+  `pageGone` instead.
 - Not used: `BrowserUtil.browse(File)` (obsolete), the vararg `FileSaverDescriptor` constructor (deprecated),
   `JBCefBrowserBase.isCefBrowserCreated` (internal), `FileEditorManager.getSelectedEditorWithRemotes` and
   `getSelectedEditorFlow` (experimental), `CefBrowser.print()` (system print dialog), a second or offscreen browser.
@@ -604,7 +613,7 @@ Package `cz.p3kj.marp.export` (#12): File | Export | Marp Deck to HTML and Marp 
   If the browser cannot be created, the placeholder shows the "JCEF not available" text.
 - Export commands wait for the page's `reply` in `MarpPageReplies` (`CompletableDeferred` per id). `onLoadStart`, `onPageGone`
   and the dispose hook fail every waiting command, so an export never waits for a page that is gone. `printToPDF` is called
-  on `Dispatchers.UI` and its callback completes a deferred; nothing blocks the EDT.
+  on `Dispatchers.UI` and its callback completes the same kind of deferred (`replies.complete`); nothing blocks the EDT.
 - Everything is `DumbAware`. No components. Apart from the class described under Platform API note, no `@Internal` /
   deprecated / experimental APIs, so the plugin stays dynamic. `verifyPlugin` in CI checks this against the recommended
   IDEs and the next EAP, and fails on any finding (`failureLevel = ALL`). The settings page's list toolbar still gets
