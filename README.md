@@ -78,6 +78,7 @@ For a bigger example open the `samples/` folder of this repository as a project.
 - Emoji support through Twemoji
 - The IDE spellchecker knows Marp words such as `marp`, Marpit and Twemoji, so `marp: true` is not flagged as a typo
 - Inline HTML in slides: off, Marp's allow list or all
+- Export a deck to a standalone HTML file or to a PDF with one page per slide (File | Export or the preview toolbar), without Node.js
 - The preview follows the IDE light or dark theme
 - Locked-down preview page (Content Security Policy, no navigation away) and a restricted mode for untrusted projects
 - Works in every IntelliJ-based IDE, no IDE-specific APIs
@@ -95,12 +96,22 @@ A Markdown file is treated as a Marp deck when its front matter contains `marp: 
 - **Front matter**: the same completion, documentation and inspection work on the top-level keys of the front matter of a deck, which also offers `marp` and does not offer a key that is already there (a repeated key makes Marp ignore the whole front matter). The keys of the Markdown plugin's front matter schema, such as `title`, keep working next to the Marp keys. Keys that are not Marp directives (`title`, `author`, ...) are left alone by the inspection, unless one is a near miss of a directive (`pagiante`), which is a weak warning. Nested values and lists are left to the YAML support. Like everything else, this needs a deck: the file has to contain `marp: true` already.
 - **Image syntax**: in the alt text of an image in a deck (`![bg left:40% blur](photo.png)`), basic completion (Ctrl+Space) offers the keywords Marp reads there, and quick documentation (Ctrl+Q, F1 on macOS) and hovering explain the one under the caret, with the default Marp uses when you leave the argument out. Without `bg` in the alt text it offers `bg`, the sizes `w:`, `h:`, `width:`, `height:` and the filters (`blur`, `sepia`, ...). With `bg` it also offers `left`, `right`, `fit`, `contain`, `cover`, `auto`, `vertical` and `horizontal`, and leaves out `bg` and the keywords the alt text already has. Values are not completed: `w:` stops at the colon, and a filter or `left` is inserted bare, so Marp uses its default (`blur` is `blur:10px`). The popup opens by itself while you type, but only while every other word of the alt text is a keyword, so `![bg co` opens it and a description such as `![A photo of a cat]` does not. Ctrl+Space works in a description too. It is limited to Markdown text of a deck: code, HTML comments and the front matter are left alone, and so is an alt text that spans several lines. Inside the alt text the `bg` live template no longer expands on Tab, so typing `![bg` and pressing Tab does not turn it into a second image.
 - **Double-click** a slide to move the caret to its source line and focus the editor.
-- **Toolbar**: move the mouse over the editor or the preview and a small toolbar appears in the top-right corner. It toggles scroll sync and presenter notes and opens Settings | Tools | Marp. Turning scroll sync back on realigns the preview with the editor.
+- **Toolbar**: move the mouse over the editor or the preview and a small toolbar appears in the top-right corner. It toggles scroll sync and presenter notes, exports the deck (see [Export](#export)) and opens Settings | Tools | Marp. Turning scroll sync back on realigns the preview with the editor.
 - **Links**: links to files inside the project open in the IDE. `http(s)` and `mailto` links open in the system browser. Everything else is ignored. The preview page itself never navigates away.
 - **Errors** (a theme that cannot be loaded, a render error, a `theme:` directive that names an unknown theme) show as a banner in the preview that you can dismiss.
 - **Theme CSS edits** are picked up while you type.
 - **IDE theme**: the area around the slides follows the IDE light or dark theme. The slides keep the colors of their Marp theme.
 - **Untrusted projects**: raw HTML in slides is off, and no custom themes are loaded until you trust the project. This is the same idea as restricted mode in Marp for VS Code.
+
+## Export
+
+Export the deck that is open in the editor to HTML or PDF. Use File | Export | Marp Deck to HTML... or Marp Deck to PDF..., or the Export Deck button in the preview toolbar. The actions are only there while a Marp deck is in the editor and its preview is loaded. A save dialog asks where to put the file (it starts in the deck's folder), and a notification tells you when the file is ready, with an Open button.
+
+- **What is exported** is what the preview shows: the same themes, math library and HTML setting, including changes you have not saved yet. The export goes through the preview page, so the preview has to be loaded (open the Split or Preview layout and wait for the slides). Presenter notes and the slide outline are not part of the export.
+- **HTML** is one standalone file: marp-core's own markup and CSS, the same as the file Marp CLI writes, opened as slides stacked on a grey page. Images and other files keep the paths you wrote, so relative images (`images/diagram.png`) only show when the HTML file sits where they resolve from. That is why the save dialog starts in the deck's folder: keep the HTML next to the deck, or copy the images with it. Twemoji emoji, KaTeX styles and fonts, and web fonts from a theme still load from the network when you open the file. Nothing is inlined. If the deck has a `title:` in the front matter it becomes the page title, otherwise the file name does, and `lang:` becomes the page language.
+- **PDF** has one page per slide, sized like the deck (16:9 by default, the `size` directive such as `size: 4:3` is followed), with backgrounds and local images, printed by the IDE's built-in browser. There is no outline and no presenter notes.
+- **Trust and HTML in slides**: the file contains what the preview renders. In an untrusted project raw HTML is off and custom themes are not loaded, so the export lacks them too. With HTML set to All in a trusted project, the deck's own HTML and scripts are in the exported HTML file, the same as `marp --html`. Only open exported decks you trust.
+- **PPTX and images** need Marp CLI (`marp deck.md --pptx`) and are not part of this plugin. Marp CLI is a fine second tool for anything the export does not cover.
 
 ## Settings
 
@@ -153,6 +164,10 @@ If you used the Marp for VS Code extension:
 
 **My theme is not applied.** The CSS file must start with a `/* @theme name */` comment and be listed in Settings | Tools | Marp, or be part of the `themeSet` of a `.marprc.yml` in the project root. The name is case-sensitive. A `theme:` directive with an unknown name shows a warning in the preview, and the editor marks it too: press Alt+Enter for fixes.
 
+**Export to HTML or PDF is missing or does nothing.** The actions only appear for a Marp deck that has its preview loaded: show the Split or Preview layout and wait for the slides. If the notification says the preview is not loaded, or the preview is empty, see the JCEF entry above. An error in the deck (banner in the preview) can also stop an export, fix it and export again.
+
+**Images are missing in the exported HTML.** The file keeps the image paths as written. Save it next to the deck (the dialog starts there), or keep the folder structure when you move it. A PDF has the images inside.
+
 **Images do not show.** Relative paths resolve from the Markdown file's folder. Only files inside the project (content roots or the deck's folder) are served. Remote images need https: plain http images are mixed content in Chromium and are upgraded or blocked.
 
 **Inline HTML is stripped.** Set "HTML in slides" to Default or All. In an untrusted project HTML stays off until you trust the project. Scripts in slides never run.
@@ -174,7 +189,8 @@ If you used the Marp for VS Code extension:
 | Math (MathJax / KaTeX), Twemoji, fitting headers | yes (marp-core) | yes (marp-core) |
 | Inline HTML modes off / default / all | yes | yes |
 | Restricted mode for untrusted projects | yes | yes |
-| Export to PDF, PPTX, HTML, images | not yet | yes |
+| Export to HTML and PDF | yes, no Node.js | yes |
+| Export to PPTX and images | no, use Marp CLI | yes |
 | Directive completion and diagnostics | yes, in comments and the front matter | yes |
 | Toggle Marp feature command | not yet | yes |
 
@@ -187,17 +203,16 @@ The bundled Markdown plugin renders a document, not a deck. It has no notion of 
 ## Known limitations
 
 - Twemoji images and KaTeX fonts are loaded from a CDN. Offline you lose emoji and KaTeX glyphs. MathJax works offline, so prefer it if you work without a network.
-- Export is not available yet.
+- Export covers HTML and PDF only, and needs the preview to be loaded. PPTX and images are not supported, use Marp CLI for them. HTML files keep image paths as written and load Twemoji, KaTeX and web fonts from the network.
 - Speaker notes are not shown in the preview.
 - JCEF is required. Without it the preview shows a message instead of the slides.
 - Remote Development (JetBrains Gateway thin client) is untested.
 
 ## Roadmap
 
-- Export through Marp CLI (HTML, PDF, PPTX, images)
+- Export to PPTX and images through Marp CLI
 - Presenter notes in the preview
 - Toggle Marp action
-- PDF export through JCEF, without Node.js
 
 These are plans, not promises. Ideas and votes go to the [issue tracker](https://github.com/p3kj/marp-intellij/issues).
 

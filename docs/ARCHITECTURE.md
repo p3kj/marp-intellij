@@ -36,7 +36,8 @@ avoids internal, deprecated and experimental APIs.
 | `cz.p3kj.marp.directives` | directives in comments and the front matter: catalog of the Marp directives, comment and front matter parser, highlighting and color page (comments), completion, documentation, theme navigation, inspection |
 | `cz.p3kj.marp.images` | image syntax in alt text: catalog of the Marp image keywords, alt text finder, completion (contributor and confidence), documentation |
 | `cz.p3kj.marp.editor` | file editor provider, split editor, preview file editor, preview toolbar actions (group `Marp.PreviewToolbar`) |
-| `cz.p3kj.marp.preview` | JCEF panel, JS bridge, resource request handler |
+| `cz.p3kj.marp.preview` | JCEF panel, JS bridge (state setters and export commands with their replies), resource request handler, PDF print settings |
+| `cz.p3kj.marp.export` | File \| Export \| Marp Deck to HTML / PDF, the toolbar popup, save dialog, progress and notifications |
 | `cz.p3kj.marp.sync` | editor <-> preview scroll sync, caret -> active slide |
 | `cz.p3kj.marp.notifications` | "Marp deck detected, reopen with preview" banner |
 | `cz.p3kj.marp.settings` | project settings (`.idea/marp.xml`), settings page |
@@ -525,6 +526,66 @@ to Marp decks (`MarpDirectiveComments.isMarpDeck`), all `DumbAware`.
   would expand on Tab in `![bg`.
 - Out of scope: inspections for unknown keywords or bad values, completion of values, the color image `![bg](red)`.
 
+## Export (Kotlin and webview)
+
+Package `cz.p3kj.marp.export` (#12): File | Export | Marp Deck to HTML and Marp Deck to PDF (`Marp.ExportHtml`,
+`Marp.ExportPdf`, in `FileExportGroup`) and the same two in the `Marp.Export` popup of the preview toolbar. PPTX and images
+(Marp CLI) are out of scope: they need Node.js and a process, which this plugin does not have.
+
+- Both formats go through the LIVE preview page (`MarpPreviewFileEditor.panel`). It already has the current themes (trust
+  rules applied), the effective `html` / `math` options and reaches local images through the resource handler, so there is
+  no second or offscreen browser, no Node.js and no Kotlin-side Marp. The price: the preview has to be loaded. When
+  `MarpPreviewPanel.isPageReady` is false the export shows the warning `export.notReady` and stops, and the actions are
+  hidden without a panel (JCEF missing).
+- `MarpExportAction` (`DumbAwareAction`, `BGT`) finds the preview from `PlatformCoreDataKeys.FILE_EDITOR` when that is the
+  `MarpSplitEditor` (its `preview` property), otherwise from `FileEditorManager.getSelectedEditor(file)` of
+  `CommonDataKeys.VIRTUAL_FILE` (with the caret in the text editor the data key is the inner text editor). `MarpExportGroup`
+  is a `DumbAware` `DefaultActionGroup`: a plain one is not, and a popup group would be greyed out while indexing.
+- `MarpExporter.export` (EDT) opens the save dialog (`FileChooserFactory.createSaveFileDialog`, `FileSaverDescriptor` with
+  one extension), starting in the folder of the deck with `<deck>.html` / `<deck>.pdf`: relative image paths and theme
+  `url()`s of an HTML file resolve from where it is saved, so the deck's folder is the natural default. A missing extension
+  is appended (`MarpExportFormat.withExtension`), and an overwrite of the changed name is asked about, because the dialog
+  only confirmed the name the user typed. The work then runs in `MarpProjectScope` under `withBackgroundProgress`:
+  `MarpPreviewFileEditor.renderNow()` first sends the current editor text and settings to the page (unsaved changes count,
+  and the 150 ms throttle cannot leave the page behind), then the format specific part, then a VFS refresh of the file. The result is
+  a balloon notification (group `Marp Export`) with an Open action (`BrowserUtil.browse(Path)`), or an error notification.
+  `MarpExportException` messages are log text; the user sees `export.error.timeout`, `export.error.pdf` or
+  `export.error.render`, and for other exceptions (disk errors) their message.
+- HTML: `exportHtml` (a bridge command, see Commands above) renders the last `update` with a separate export Marp instance
+  (`createExportMarp` in `webview/src/export-html.ts`) and returns a complete document; Kotlin only writes the string. The
+  instance uses marp-core's defaults (container `div.marpit`, `inlineSVG`, minified CSS, and the default `script`: marp-core's
+  inline helper script that fits headers and scales text), plus the same `html` / `math` mapping (`htmlOption`,
+  `mathOption` in `marp-factory.ts`) and the same themes as the preview. It has no line-number or content-section plugins and
+  no presenter notes, and a theme that marp-core rejects is skipped (the preview reports it). `title` is not a Marpit
+  directive, so it is registered as a custom global directive that adds nothing to the markup, which keeps the value in
+  Marpit's protected `lastGlobalDirectives` (read inside a try/catch like the theme probe). The document title is that
+  `title:` or the Markdown file's name, and `lang:` becomes the `lang` attribute. `standaloneHtml` escapes the title and the
+  language and turns `</style` in the CSS into `<\/style`. A small `@media screen` block stacks the slides on a grey page;
+  printing the file from a browser uses marp-core's own print rules. URLs stay as written, like Marp CLI: relative images
+  resolve against the saved file, Twemoji (jsDelivr), KaTeX CSS and fonts and Google Fonts stay remote. Nothing is inlined
+  or copied.
+- PDF: `MarpPreviewPanel.printToPdf` calls `CefBrowser.printToPDF` on the live preview browser (a public JCEF API, on
+  `Dispatchers.UI`), after `flushRender` made the page render the current text. `MarpPdfSettings` sets every field of
+  `CefPdfPrintSettings` (the constructor leaves `margin_type` and the strings null): background on, scale 1, no margins, no
+  header or footer, `prefer_css_page_size`. marp-core's CSS contains `@page { size: <w>px <h>px; margin: 0 }`, which follows
+  the `size` directive (a 4:3 deck gives 960px 720px), and `@media print` rules for one slide per page and exact colors,
+  so every slide is one page of the deck's own size. `preview.css` adds `@media print` rules that remove the preview chrome
+  (background, scrollbars, slide margins and shadows, the active-slide outline, presenter notes, the error banner and the empty
+  hint). The PDF has no outline and no notes.
+- Security: nothing in the preview page changes (CSP, navigation rules, allowed roots). The exported file lives outside the
+  CSP, so it holds exactly what the preview renders under the same effective settings: in an untrusted project HTML is off and
+  no custom themes are loaded, and with `html: all` in a trusted project the deck's own HTML and scripts stay in the file, like
+  Marp CLI `--html`. The only script the export adds is marp-core's helper. Reading the deck's files (images) is limited by
+  the same allowed-roots rule as the preview, because the images in a PDF come through the page.
+- Timeouts (`MarpPreviewPanel`): `exportHtml` 30 s, `flushRender` 10 s, `printToPDF` 120 s. They throw
+  `MarpExportException(timedOut = true)`, not `TimeoutCancellationException`, which is a `CancellationException` and would
+  look like the user cancelling.
+- Not used: `BrowserUtil.browse(File)` (obsolete), the vararg `FileSaverDescriptor` constructor (deprecated),
+  `JBCefBrowserBase.isCefBrowserCreated` (internal), `FileEditorManager.getSelectedEditorWithRemotes` and
+  `getSelectedEditorFlow` (experimental), `CefBrowser.print()` (system print dialog), a second or offscreen browser.
+- Out of scope: PPTX and PNG through Marp CLI, inlining or copying local images, the presenter template and notes in the
+  exports, a PDF outline, export without a loaded preview, per-slide image export.
+
 ## Threading and lifecycle rules
 
 - No blocking work on the EDT; document text read in read actions; file I/O and HTTP on `Dispatchers.IO`.
@@ -541,6 +602,9 @@ to Marp decks (`MarpDirectiveComments.isMarpDeck`), all `DumbAware`.
   service requests `ProxyMigrationService` from inside that class initializer, and the platform reports a SEVERE
   "`JBCefApp$Holder <clinit> requests ... ProxyMigrationService instance`" blaming the plugin that created the browser.
   If the browser cannot be created, the placeholder shows the "JCEF not available" text.
+- Export commands wait for the page's `reply` in `MarpPageReplies` (`CompletableDeferred` per id). `onLoadStart`, `onPageGone`
+  and the dispose hook fail every waiting command, so an export never waits for a page that is gone. `printToPDF` is called
+  on `Dispatchers.UI` and its callback completes a deferred; nothing blocks the EDT.
 - Everything is `DumbAware`. No components. Apart from the class described under Platform API note, no `@Internal` /
   deprecated / experimental APIs, so the plugin stays dynamic. `verifyPlugin` in CI checks this against the recommended
   IDEs and the next EAP, and fails on any finding (`failureLevel = ALL`). The settings page's list toolbar still gets
@@ -558,15 +622,19 @@ to Marp decks (`MarpDirectiveComments.isMarpDeck`), all `DumbAware`.
   theme service including trust, `.marprc` confinement and download limits), plus plain unit tests for logic that does
   not need the platform: `MarpDetector`, `MarpSlideSplitter` and `MarpHeadingDivider` (slide splitting, tricky cases by
   hand-built blocks; `MarpSlideParserTest` and `MarpStructureViewTest` cover the PSI adapter and the tree), the slide navigation
-  (actions, Go to Slide with a replaced test input dialog, status bar widget, inlay hints called through a recording sink), slide folding (regions from the builder, and the real fold model after the initial folding pass next to the Markdown regions), `MarpBridgeState`, `MarpScrollEchoGuard`, `MarpLinkPolicy` (and request
+  (actions, Go to Slide with a replaced test input dialog, status bar widget, inlay hints called through a recording sink), slide folding (regions from the builder, and the real fold model after the initial folding pass next to the Markdown regions), `MarpBridgeState` (state setters and commands), `MarpPageReplies`, `MarpPdfSettings`, `MarpExportFormat`, `MarpScrollEchoGuard`, `MarpLinkPolicy` (and request
   routing), `MarpResourcePaths`, `MarpJcefStartup`, the `.marprc` parser, `MarpThemePaths`, `MarpThemeFolder`,
   `MarpThemeWatch`, `MarpThemeNames` and the theme URL validation of the settings page. The directive features have plain
   unit tests for the catalog and the comment parser, and light platform tests for highlighting, completion (including
   the automatic popup with `CompletionAutoPopupTester`), documentation and the inspection. The image syntax has a
   plain unit test for the catalog and the alt text finder and light platform tests for completion, the automatic popup
   and documentation.
+- Export: `MarpExportActionsTest` (both actions registered, in `FileExportGroup` and in the toolbar popup, hidden without a
+  Marp editor, the preview found from a split editor). Headless tests have no JCEF page, so there is no end-to-end test of the
+  save dialog, the HTML file or the PDF: see the manual checks in the pull request.
 - Webview (`webview/test`, vitest with jsdom): the host bridge and message queue, marp-core plugins and render options,
-  scroll sync, active slide, link and click handling, the unknown-theme warning and the string table.
+  scroll sync, active slide, link and click handling, the unknown-theme warning and the string table, the standalone export
+  document (`export-html.test.ts`) and the `exportHtml` / `flushRender` commands with their replies (`preview.test.ts`).
 - `./gradlew check` runs all of them plus `tsc --noEmit` and the NOTICE freshness check. `verifyPlugin` covers binary
   compatibility with the recommended IDEs and the next EAP.
 
