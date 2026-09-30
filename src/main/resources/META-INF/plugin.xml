@@ -90,6 +90,8 @@
                          implementationClass="cz.p3kj.marp.directives.MarpUnknownThemeInspection"/>
 
         <!-- Image syntax -->
+        <completion.contributor language="any" order="first" implementationClass="cz.p3kj.marp.images.MarpImageCompletionContributor"/>
+        <completion.confidence language="any" order="first" implementationClass="cz.p3kj.marp.images.MarpImageCompletionConfidence"/>
         <platform.backend.documentation.targetProvider implementation="cz.p3kj.marp.images.MarpImageDocumentationTargetProvider"/>
     </extensions>
 
