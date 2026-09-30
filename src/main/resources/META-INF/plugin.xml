@@ -18,7 +18,7 @@
             <li><b>Inline HTML</b> in slides: off, Marp's safe allow list, or all. Untrusted projects render without HTML and without remote themes.</li>
             <li><b>Slide navigation</b>: current slide in the status bar, Next / Previous Slide and Go to Slide, slide numbers in the editor, and folding of each slide.</li>
             <li><b>Reorder slides</b>: Move Slide Up / Down in the Code menu, or Move Statement Up / Down with the caret on a slide's <code>---</code> line.</li>
-            <li><b>Export</b> to a standalone HTML file or to a PDF with one page per slide, from File | Export or the preview toolbar. It needs no Node.js.</li>
+            <li><b>Export</b> to a standalone HTML file or to a PDF with one page per slide, from File | Export or the preview toolbar. It needs no Node.js. PowerPoint and PNG or JPEG images are exported with <a href="https://github.com/marp-team/marp-cli">Marp CLI</a>, which you install yourself (it needs Node.js and Chrome, Edge or Firefox).</li>
             <li><b>Present</b> the deck in the system browser one slide at a time, starting at the slide under the caret, with keyboard navigation and full screen (Present Deck in the preview toolbar).</li>
             <li><b>New deck and live templates</b>: File | New | Marp Presentation, and <code>slide</code>, <code>lead</code>, <code>bg</code> and <code>notes</code> live templates in Marp decks.</li>
             <li>The preview follows the IDE light or dark theme. Links open in the IDE (project files) or in the system browser.</li>
@@ -108,16 +108,29 @@
     </extensions>
 
     <actions>
-        <!-- Export to HTML and PDF: File | Export and, as a popup, the preview toolbar. Only shown while a Marp deck with a preview is in the editor. -->
+        <!-- Export to HTML and PDF (through the preview page) and to PowerPoint and images (through Marp CLI): File | Export and, as a popup, the preview toolbar. Only shown while a Marp deck is in the Marp editor. -->
         <action id="Marp.ExportHtml" class="cz.p3kj.marp.export.MarpExportHtmlAction">
             <add-to-group group-id="FileExportGroup" anchor="last"/>
         </action>
         <action id="Marp.ExportPdf" class="cz.p3kj.marp.export.MarpExportPdfAction">
             <add-to-group group-id="FileExportGroup" anchor="last"/>
         </action>
+        <action id="Marp.ExportPptx" class="cz.p3kj.marp.export.MarpExportPptxAction">
+            <add-to-group group-id="FileExportGroup" anchor="last"/>
+        </action>
+        <action id="Marp.ExportPng" class="cz.p3kj.marp.export.MarpExportPngAction">
+            <add-to-group group-id="FileExportGroup" anchor="last"/>
+        </action>
+        <action id="Marp.ExportJpeg" class="cz.p3kj.marp.export.MarpExportJpegAction">
+            <add-to-group group-id="FileExportGroup" anchor="last"/>
+        </action>
         <group id="Marp.Export" popup="true" icon="AllIcons.ToolbarDecorator.Export">
             <reference ref="Marp.ExportHtml"/>
             <reference ref="Marp.ExportPdf"/>
+            <separator/>
+            <reference ref="Marp.ExportPptx"/>
+            <reference ref="Marp.ExportPng"/>
+            <reference ref="Marp.ExportJpeg"/>
         </group>
 
         <!-- Shown in the floating toolbar of the Marp editor, see MarpSplitEditor.createRightToolbarActionGroup. The synonyms make the toggles and Present Deck findable by "marp" in Find Action. -->

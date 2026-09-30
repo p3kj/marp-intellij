@@ -8,6 +8,7 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.actionSystem.DefaultActionGroup
+import com.intellij.openapi.actionSystem.Separator
 import com.intellij.openapi.actionSystem.PlatformCoreDataKeys
 import com.intellij.openapi.actionSystem.impl.SimpleDataContext
 import com.intellij.openapi.project.DumbAware
@@ -27,8 +28,13 @@ class MarpExportActionsTest : MarpLightTestCase() {
     private fun event(action: AnAction, context: DataContext = SimpleDataContext.getProjectContext(project)): AnActionEvent =
         TestActionEvent.createTestEvent(action, context)
 
+    private val cliIds = listOf("Marp.ExportPptx", "Marp.ExportPng", "Marp.ExportJpeg")
+
+    /** The ids of the children of [group], `-` for a separator. */
     private fun childIds(group: ActionGroup): List<String> =
-        (group as DefaultActionGroup).getChildren(actions).map { actions.getId(it) ?: "<unregistered ${it.javaClass.name}>" }
+        (group as DefaultActionGroup).getChildren(actions).map {
+            if (it is Separator) "-" else actions.getId(it) ?: "<unregistered ${it.javaClass.name}>"
+        }
 
     fun testBothActionsAreRegisteredWithTheirTexts() {
         for (id in listOf("Marp.ExportHtml", "Marp.ExportPdf")) {
@@ -43,11 +49,24 @@ class MarpExportActionsTest : MarpLightTestCase() {
         assertTrue(actions.getAction("Marp.ExportPdf") is MarpExportPdfAction)
     }
 
+    fun testTheCliActionsAreRegisteredWithTheirTexts() {
+        val classes = listOf(MarpExportPptxAction::class.java, MarpExportPngAction::class.java, MarpExportJpegAction::class.java)
+        for ((id, type) in cliIds.zip(classes)) {
+            val action = actions.getAction(id)
+            assertNotNull("$id is not registered", action)
+            assertInstanceOf(action, type)
+            assertTrue("$id must be DumbAware", action is DumbAware)
+            assertEquals(ActionUpdateThread.BGT, action.actionUpdateThread)
+            assertEquals(MarpBundle.message("action.$id.text"), action.templatePresentation.text)
+            assertEquals(MarpBundle.message("action.$id.description"), action.templatePresentation.description)
+            assertTrue(action.templatePresentation.text, action.templatePresentation.text.contains("Marp CLI"))
+        }
+    }
+
     fun testActionsAreInFileExport() {
         val fileExport = actions.getAction("FileExportGroup") as ActionGroup
         val ids = childIds(fileExport)
-        assertTrue(ids.toString(), "Marp.ExportHtml" in ids)
-        assertTrue(ids.toString(), "Marp.ExportPdf" in ids)
+        for (id in listOf("Marp.ExportHtml", "Marp.ExportPdf") + cliIds) assertTrue(ids.toString(), id in ids)
     }
 
     fun testToolbarHoldsTheExportPopup() {
@@ -59,12 +78,13 @@ class MarpExportActionsTest : MarpLightTestCase() {
         // A plain group without an update override is dumb-aware, so the popup is not greyed out while indexing.
         assertTrue("stays usable while indexing", export.isDumbAware)
         assertNotNull("the popup button needs an icon", export.templatePresentation.icon)
-        assertEquals(listOf("Marp.ExportHtml", "Marp.ExportPdf"), childIds(export))
+        // The Marp CLI formats are set apart: they need an external tool.
+        assertEquals(listOf("Marp.ExportHtml", "Marp.ExportPdf", "-") + cliIds, childIds(export))
         assertEquals("Export Deck", export.templatePresentation.text)
     }
 
     fun testHiddenWithoutAMarpEditor() {
-        for (id in listOf("Marp.ExportHtml", "Marp.ExportPdf")) {
+        for (id in listOf("Marp.ExportHtml", "Marp.ExportPdf") + cliIds) {
             val action = actions.getAction(id)
             val withProject = event(action)
             action.update(withProject)
@@ -110,5 +130,16 @@ class MarpExportActionsTest : MarpLightTestCase() {
         val e = event(action, context)
         action.update(e)
         assertEquals(editor.preview.panel != null, e.presentation.isEnabledAndVisible)
+    }
+
+    fun testCliActionsShowForAMarpEditorWhetherOrNotThePageIsThere() {
+        val editor = splitEditor("cli.md")
+        val context = SimpleDataContext.builder().add(CommonDataKeys.PROJECT, project).add(PlatformCoreDataKeys.FILE_EDITOR, editor).build()
+        for (id in cliIds) {
+            val action = actions.getAction(id)
+            val e = event(action, context)
+            action.update(e)
+            assertTrue("$id needs the Marp editor only, not JCEF", e.presentation.isEnabledAndVisible)
+        }
     }
 }

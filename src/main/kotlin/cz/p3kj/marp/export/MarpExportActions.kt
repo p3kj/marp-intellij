@@ -28,3 +28,33 @@ class MarpExportHtmlAction : MarpExportAction(MarpExportFormat.HTML)
 
 /** Marp deck to a PDF with one page per slide. */
 class MarpExportPdfAction : MarpExportAction(MarpExportFormat.PDF)
+
+/**
+ * File | Export | Marp Deck to PowerPoint / PNG / JPEG Images (Marp CLI), and the same entries in the preview toolbar
+ * popup. Unlike the HTML and PDF export they do not need the preview page, so they show for every Marp deck in the Marp
+ * editor even where JCEF is missing. Whether Marp CLI is there is only known when the export runs: a disabled entry
+ * could not say why, the export tells (and offers the settings). What they do is in [MarpCliExporter].
+ */
+abstract class MarpCliExportAction(private val format: MarpCliFormat) : DumbAwareAction() {
+
+    override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabledAndVisible = e.project != null && MarpExporter.previewOf(e) != null
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        val preview = MarpExporter.previewOf(e) ?: return
+        MarpCliExporter.export(project, preview.file, format)
+    }
+}
+
+/** Marp deck to a PowerPoint file with Marp CLI. */
+class MarpExportPptxAction : MarpCliExportAction(MarpCliFormat.PPTX)
+
+/** Marp deck to one PNG image per slide with Marp CLI. */
+class MarpExportPngAction : MarpCliExportAction(MarpCliFormat.PNG)
+
+/** Marp deck to one JPEG image per slide with Marp CLI. */
+class MarpExportJpegAction : MarpCliExportAction(MarpCliFormat.JPEG)
