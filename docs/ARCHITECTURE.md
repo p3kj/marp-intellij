@@ -37,7 +37,7 @@ avoids internal, deprecated and experimental APIs.
 | `cz.p3kj.marp.images` | image syntax in alt text: catalog of the Marp image keywords, alt text finder, completion (contributor and confidence), documentation |
 | `cz.p3kj.marp.editor` | file editor provider, split editor, preview file editor, preview toolbar actions (group `Marp.PreviewToolbar`) |
 | `cz.p3kj.marp.preview` | JCEF panel, JS bridge (state setters and export commands with their replies), resource request handler, PDF print settings, `MarpPresentOptions` (the `present` argument of `exportHtml`) |
-| `cz.p3kj.marp.export` | File \| Export \| Marp Deck to HTML / PDF, the toolbar popup, save dialog, progress and notifications; Present Deck (`MarpPresentAction`, `MarpPresenter`, `MarpPresentFiles`) |
+| `cz.p3kj.marp.export` | File \| Export \| Marp Deck to HTML / PDF, the toolbar popup, save dialog, progress and notifications; PPTX and images through an external Marp CLI (`MarpCliExporter`, `MarpCliCommand`, `MarpCliRunner`); Present Deck (`MarpPresentAction`, `MarpPresenter`, `MarpPresentFiles`) |
 | `cz.p3kj.marp.sync` | editor <-> preview scroll sync, caret -> active slide |
 | `cz.p3kj.marp.notifications` | "Marp deck detected, reopen with preview" banner |
 | `cz.p3kj.marp.settings` | project settings (`.idea/marp.xml`), settings page |
@@ -245,8 +245,9 @@ string:
 
 - `MarpSettings` (project service, `.idea/marp.xml`): `themes`, `useMarprcThemeSet`, `html`, `math`;
   `update { }` publishes `MarpSettingsListener.TOPIC` when the block changed anything.
-- `MarpAppSettings` (application service, `options/marp.xml`, settings category Tools): `scrollSync` and
-  `presenterNotes`, personal preferences that must not travel with `.idea/marp.xml`; `update { }` publishes `MarpAppSettingsListener.TOPIC` on the
+- `MarpAppSettings` (application service, `options/marp.xml`, settings category Tools): `scrollSync`,
+  `presenterNotes` and `marpCliPath` (blank is stored as `null`), personal preferences that must not travel with
+  `.idea/marp.xml`; `update { }` publishes `MarpAppSettingsListener.TOPIC` on the
   application bus. Settings | Tools | Marp (`MarpConfigurable`) edits both.
 - `MarpThemeService` (project service): `suspend fun loadThemes(): MarpThemeSet` (cached, never on EDT);
   publishes `MarpThemeListener.TOPIC` when watched theme files, folders or `.marprc` change, or theme settings change.
@@ -635,7 +636,7 @@ to Marp decks (`MarpDirectiveComments.isMarpDeck`), all `DumbAware`.
 
 Package `cz.p3kj.marp.export` (#12): File | Export | Marp Deck to HTML and Marp Deck to PDF (`Marp.ExportHtml`,
 `Marp.ExportPdf`, in `FileExportGroup`) and the same two in the `Marp.Export` popup of the preview toolbar. PPTX and images
-(Marp CLI) are out of scope: they need Node.js and a process, which this plugin does not have.
+go through an external Marp CLI process and are a separate path, see "Marp CLI export" at the end of this section (#16).
 
 - Both formats go through the LIVE preview page (`MarpPreviewFileEditor.panel`). It already has the current themes (trust
   rules applied), the effective `html` / `math` options and reaches local images through the resource handler, so there is
@@ -697,8 +698,59 @@ Package `cz.p3kj.marp.export` (#12): File | Export | Marp Deck to HTML and Marp 
 - Not used: `BrowserUtil.browse(File)` (obsolete), the vararg `FileSaverDescriptor` constructor (deprecated),
   `JBCefBrowserBase.isCefBrowserCreated` (internal), `FileEditorManager.getSelectedEditorWithRemotes` and
   `getSelectedEditorFlow` (experimental), `CefBrowser.print()` (system print dialog), a second or offscreen browser.
-- Out of scope: PPTX and PNG through Marp CLI, inlining or copying local images, the presenter template and notes in the
-  exports, a PDF outline, export without a loaded preview, per-slide image export.
+- Out of scope: inlining or copying local images, the presenter template and notes in the
+  exports, a PDF outline, export without a loaded preview.
+
+### Marp CLI export (PPTX, PNG, JPEG)
+
+`Marp.ExportPptx`, `Marp.ExportPng` and `Marp.ExportJpeg` (`MarpCliExportAction`, in `FileExportGroup` and, after a
+separator, in the `Marp.Export` popup) run the user's Marp CLI. They do not touch the preview page, the bridge or the
+webview, and they are shown whenever a Marp editor exists (`MarpExporter.previewOf(e) != null`, no JCEF or page check). The CLI
+is not looked up in `update()`: a disabled item cannot say why, so a missing CLI is reported on click, as a warning with an
+Open Settings action.
+
+- Executable: `MarpAppSettings.marpCliPath` (IDE level, deliberately not in `.idea/marp.xml`, which a cloned repository could
+  use to pick the binary). `MarpCliLocator` (file I/O, call on `Dispatchers.IO`): empty is `marp` on the PATH, an
+  absolute path must be a regular file, any other value is a name looked up on the PATH. The lookup is our own
+  (`MarpCliLocator.findExecutable`, PATH from `EnvironmentUtil.getValue`, which is what the started process sees, executable
+  bit outside Windows, `PATHEXT` on Windows so that `marp` is `marp.cmd` and npm's extensionless shell script is skipped),
+  because `PathEnvironmentVariableUtil.findExecutableInPathOnAnyOS` is deprecated for removal in 263 and `findFirst`
+  is experimental. No `npx` (downloads on first use), no discovery of a
+  project `node_modules/.bin/marp`. Settings has a Test button (`runWithModalProgressBlocking`, then `marpCliVersion` runs
+  `--version` with a 15 s timeout).
+- Flow (`MarpCliExporter`): `export` (EDT) resolves the deck to a local `Path` (`getNioPath`, else `export.cli.notLocal`),
+  `MarpExporter.chooseTarget` (shared with HTML / PDF through the `MarpExportTarget` interface), then
+  `FileDocumentManager.saveAllDocuments()` after the dialog (the CLI reads the deck and the theme files from disk, a
+  cancelled dialog saves nothing), then `run` in `MarpProjectScope` under a cancellable `withBackgroundProgress`.
+- Configuration: a temporary folder with `marp-config.json` is passed as `--config-file`. That stops the CLI from loading
+  the project's `.marprc*`, `marp.config.*` and `package.json#marp` (no double themes, no repository JavaScript executed, the
+  same as the preview), and it is the only way to set `options.math`. `MarpCliArgs.config` writes `themeSet` (absolute paths
+  of `MarpThemeService.loadThemes()` themes; a theme from a URL is written to `url-theme-<n>.css` in that folder), `html`
+  (`MarpPreviewFileEditor.effectiveHtmlMode`: all `true`, off `false`, default omitted), `allowLocalFiles` (only in a trusted
+  project) and `options.math` (`mathjax`, `katex` or `false`, the mapping of `mathOption` in `marp-factory.ts`). Untrusted
+  projects therefore get no HTML, no local files and no custom themes (the theme service returns none), but the CLI still runs.
+  Arguments: `--config-file <cfg> <format options> -o <target> -- <deck>` with the deck folder as working directory. Formats
+  (`MarpCliFormat`): `--pptx`, `--images png`, `--images jpeg`. For images the user names `deck.png` and the CLI writes
+  `deck.001.png`, `deck.002.png`...; the exporter does not depend on those names and only offers Show in Folder
+  (`RevealFileAction.openDirectory(Path)`). Existing image files are overwritten without a check.
+- Process (`runMarpCli`, `Dispatchers.IO`): `KillableProcessHandler`, stdout and stderr collected together with a
+  `ProcessListener`, stdin closed at once (the CLI must never wait for Markdown on it), exit awaited in a
+  `CompletableDeferred`. The timeout (5 minutes) is `withTimeoutOrNull`, and the result has a `null` exit code, because a
+  `TimeoutCancellationException` is a `CancellationException` and would be rethrown silently. A `finally` calls
+  `killProcess()` (the whole tree: the CLI starts a browser) when the process is still running, which also covers the
+  cancellation of the progress. The temporary folder is deleted in a `NonCancellable` `finally`.
+- Result: success is exit code 0 and, for PPTX, an existing file; then a VFS refresh of the folder and a notification (PPTX
+  with Open, `BrowserUtil.browse(Path)`, images with Show in Folder). Failures show the tail of the output
+  (`MarpCliArgs.outputTail`: colors and blank lines removed, 15 lines, 1500 characters, HTML escaped because notification
+  content is HTML), or the exit code when there is none, `export.cli.timeout`, or `export.cli.cannotStart` (with Open
+  Settings) when the process cannot be started. The command line and the full output of a failure go to `idea.log`.
+- Tests use shell scripts in place of the CLI (`MarpCliRunnerTest`, `MarpCliExporterTest`, skipped on Windows) and pure tests
+  of `MarpCliArgs` and `MarpCliLocator`; no test needs Marp CLI or Node.js.
+- Not used: `npx`, `PathEnvironmentVariableUtil.findExecutableInPathOnAnyOS` and `findFirst`, `CapturingProcessHandler.runProcess` (blocking, not cancellable), `ProcessAdapter` (deprecated base),
+  `RevealFileAction.openDirectory(File)` (obsolete), `Row.textFieldWithBrowseButton` (experimental or deprecated),
+  `addBrowseFolderListener` with a title and description (deprecated).
+- Out of scope: title-slide `--image`, `--pptx-editable`, image scale, choosing the browser (`--browser-path`), notes export,
+  per-slide progress, PDF or HTML through the CLI, and checking for existing `deck.NNN.png` files. Not verified on Windows.
 
 ## Present (Kotlin and webview)
 
