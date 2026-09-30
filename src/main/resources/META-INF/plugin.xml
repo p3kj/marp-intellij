@@ -126,6 +126,11 @@
                     icon="AllIcons.General.Note">
                 <synonym key="action.Marp.TogglePresenterNotes.synonym"/>
             </action>
+            <action id="Marp.ToggleOverview"
+                    class="cz.p3kj.marp.editor.MarpOverviewToggleAction"
+                    icon="AllIcons.Graph.Grid">
+                <synonym key="action.Marp.ToggleOverview.synonym"/>
+            </action>
             <action id="Marp.Present"
                     class="cz.p3kj.marp.export.MarpPresentAction"
                     icon="AllIcons.Actions.Execute">

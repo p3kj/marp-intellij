@@ -8,6 +8,7 @@ import cz.p3kj.marp.preview.MarpBridgeState.Companion.REPLAY_ORDER
 import cz.p3kj.marp.preview.MarpBridgeState.Companion.SCROLL_TO_LINE
 import cz.p3kj.marp.preview.MarpBridgeState.Companion.SET_ACTIVE_LINE
 import cz.p3kj.marp.preview.MarpBridgeState.Companion.SET_IDE_THEME
+import cz.p3kj.marp.preview.MarpBridgeState.Companion.SET_OVERVIEW
 import cz.p3kj.marp.preview.MarpBridgeState.Companion.SET_STRINGS
 import cz.p3kj.marp.preview.MarpBridgeState.Companion.SET_THEMES
 import cz.p3kj.marp.preview.MarpBridgeState.Companion.STABLE_MS
@@ -39,7 +40,24 @@ class MarpBridgeStateTest {
         for (method in REPLAY_ORDER.reversed()) bridge.call(method, "\"$method\"")
         bridge.onReady()
         assertEquals(REPLAY_ORDER, executed.map { it.first })
-        assertEquals(listOf(SET_STRINGS, SET_IDE_THEME, SET_THEMES, UPDATE, SCROLL_TO_LINE, SET_ACTIVE_LINE), REPLAY_ORDER)
+        assertEquals(listOf(SET_STRINGS, SET_IDE_THEME, SET_THEMES, UPDATE, SCROLL_TO_LINE, SET_ACTIVE_LINE, SET_OVERVIEW), REPLAY_ORDER)
+    }
+
+    @Test
+    fun theOverviewIsReplayedAfterTheRenderAndTheScrollOnEveryReload() {
+        bridge.call(SET_OVERVIEW, "true")
+        bridge.call(SET_ACTIVE_LINE, "4")
+        bridge.call(SCROLL_TO_LINE, "3")
+        bridge.call(UPDATE, "u")
+        bridge.onReady()
+        assertEquals(listOf(UPDATE to "u", SCROLL_TO_LINE to "3", SET_ACTIVE_LINE to "4", SET_OVERVIEW to "true"), executed)
+
+        // Turned off while the page is up, then the page reloads: the latest value is what comes back.
+        executed.clear()
+        bridge.call(SET_OVERVIEW, "false")
+        bridge.onLoadStart()
+        bridge.onReady()
+        assertEquals(SET_OVERVIEW to "false", executed.last())
     }
 
     @Test

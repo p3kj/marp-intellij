@@ -5,6 +5,7 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParseException
 import com.google.gson.JsonParser
+import com.google.gson.JsonPrimitive
 import com.intellij.ide.BrowserUtil
 import com.intellij.ide.ui.LafManagerListener
 import com.intellij.openapi.Disposable
@@ -281,6 +282,11 @@ class MarpPreviewPanel(private val project: Project, parentScope: CoroutineScope
 
     fun setActiveLine(line: Int) {
         call(MarpBridgeState.SET_ACTIVE_LINE, line)
+    }
+
+    /** Slide overview (thumbnail grid) on or off, see `setOverview` in `docs/ARCHITECTURE.md`. Replayed after a reload. */
+    fun setOverview(on: Boolean) {
+        call(MarpBridgeState.SET_OVERVIEW, JsonPrimitive(on))
     }
 
     /**

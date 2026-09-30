@@ -95,6 +95,7 @@ internal class MarpBridgeState(
         const val UPDATE: String = "update"
         const val SCROLL_TO_LINE: String = "scrollToLine"
         const val SET_ACTIVE_LINE: String = "setActiveLine"
+        const val SET_OVERVIEW: String = "setOverview"
 
         const val EXPORT_HTML: String = "exportHtml"
         const val FLUSH_RENDER: String = "flushRender"
@@ -103,7 +104,7 @@ internal class MarpBridgeState(
         val COMMANDS: Set<String> = setOf(EXPORT_HTML, FLUSH_RENDER)
 
         /** Replay order on `ready`, as documented in `docs/ARCHITECTURE.md`. */
-        val REPLAY_ORDER: List<String> = listOf(SET_STRINGS, SET_IDE_THEME, SET_THEMES, UPDATE, SCROLL_TO_LINE, SET_ACTIVE_LINE)
+        val REPLAY_ORDER: List<String> = listOf(SET_STRINGS, SET_IDE_THEME, SET_THEMES, UPDATE, SCROLL_TO_LINE, SET_ACTIVE_LINE, SET_OVERVIEW)
 
         const val MAX_RELOADS: Int = 3
         const val STABLE_MS: Long = 10_000

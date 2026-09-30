@@ -72,6 +72,11 @@ class MarpPreviewFileEditor(val project: Project, private val file: VirtualFile)
     private val component: JComponent = panel?.component
         ?: JBPanelWithEmptyText().withEmptyText(MarpBundle.message("preview.jcef.unsupported"))
 
+    /** Slide overview (thumbnail grid) of this preview. Per editor, off for a new editor, not persisted. */
+    @Volatile
+    var overview: Boolean = false
+        private set
+
     /** Conflated, so requests sent before the collectors start are kept. `true` = render now, `false` = after [RENDER_DELAY_MS] (typing). */
     private val renderRequests = Channel<Boolean>(Channel.CONFLATED)
     private val themeRequests = Channel<Unit>(Channel.CONFLATED)
@@ -176,6 +181,12 @@ class MarpPreviewFileEditor(val project: Project, private val file: VirtualFile)
      */
     suspend fun renderNow() {
         render()
+    }
+
+    /** EDT. Switches the slide overview; the panel replays it after a page reload. */
+    fun setOverview(on: Boolean) {
+        overview = on
+        panel?.setOverview(on)
     }
 
     private class RenderInput(val markdown: String, val baseHref: String, val roots: List<Path>)
