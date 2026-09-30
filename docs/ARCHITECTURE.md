@@ -29,9 +29,9 @@ avoids internal, deprecated and experimental APIs.
 |---|---|
 | `webview/` | npm project: preview page, marp-core bundle (esbuild), vitest tests. `src/export-html.ts` is the standalone export document, `src/present.ts` the presentation CSS and the script that goes into it |
 | `cz.p3kj.marp.MarpDetector` | front-matter `marp: true` detection, and where the front matter starts and ends |
-| `cz.p3kj.marp.slides` | slide model: Markdown PSI -> blocks (`MarpSlideParser`), Marp's split rules (`MarpSlideSplitter`, `MarpHeadingDivider`), `MarpDeck` / `MarpSlide` |
+| `cz.p3kj.marp.slides` | slide model: Markdown PSI -> blocks (`MarpSlideParser`), Marp's split rules (`MarpSlideSplitter`, `MarpHeadingDivider`), `MarpDeck` / `MarpSlide`, and the pure slide swap (`MarpSlideReorder`) |
 | `cz.p3kj.marp.structure` | slide outline for the Structure tool window and the File Structure popup |
-| `cz.p3kj.marp.navigation` | slide navigation: Next / Previous / Go to Slide actions, "Slide 3 / 12" status bar widget, slide number inlay hints |
+| `cz.p3kj.marp.navigation` | slide navigation: Next / Previous / Go to Slide actions, "Slide 3 / 12" status bar widget, slide number inlay hints; slide reordering: Move Slide Up / Down actions and the Move Statement mover |
 | `cz.p3kj.marp.folding` | one fold region per slide of a Marp deck |
 | `cz.p3kj.marp.directives` | directives in comments and the front matter: catalog of the Marp directives, comment and front matter parser, highlighting and color page (comments), completion, documentation, theme navigation, inspection |
 | `cz.p3kj.marp.images` | image syntax in alt text: catalog of the Marp image keywords, alt text finder, completion (contributor and confidence), documentation |
@@ -358,6 +358,57 @@ included. Moving the caret is all they do, scroll sync then makes the preview fo
   outside Marp decks. There is no settings preview file (`inlayProviders/marp.slideNumbers/preview.md`), the platform
   shows the description alone. Chosen over a line marker (icons only) and `EditorLinePainter` (paints on the EDT, would
   need the deck there).
+
+## Slide reordering (Kotlin)
+
+Issue #15. One pure edit function and two ways to trigger it, both in Marp decks only.
+
+- `MarpSlideReorder.move(text, deck, index, down)` (package `slides`, plain Kotlin) returns an `Edit` or `null`. An `Edit`
+  replaces `[start, end)` with `text` and knows the moved piece (`movedFrom`, `movedLength`, `movedTo`) so that
+  `caretAfter(caret)` can keep a caret inside the moved piece at its place and send any other caret to the start of it.
+  Both triggers apply exactly this edit, there is no second edit path.
+- Two neighbouring slides are swapped as one range. A slide travels as the text from its separator line to the start of
+  the next slide, so separator styles (`---`, `***`, `___`), local directives and notes move with it. The front matter
+  belongs to slide 0 in `MarpDeck` but stays on top: a swap that involves slide 0 swaps the BODIES (`bodyOffset` to the
+  next separator) and the separator line of slide 1 stays between them.
+- `blankEnded` puts a blank line after a piece that is followed by a separator and does not end with one. A paragraph line
+  directly above `---` would otherwise become a setext heading and swallow the slide break. Decks with a blank line before
+  each separator are not touched by it. What follows the last slide (the line breaks at the end of the file) stays at
+  the end of the file, so moving the last slide up and back down gives the original text.
+- `supports(deck)` is `deck.headingDivider.isEmpty()`. With a `headingDivider` a swap can merge slides (a slide without a
+  divider heading at its start joins the slide before it) and reorder the competing `headingDivider` comments, so those
+  decks are not supported: `move` returns `null`, the actions show `hint.moveSlide.headingDivider` and the mover steps
+  aside. Structure view drag and drop is not offered either: the tree has no public drop hook (`StructureViewComponent` builds a
+  private `DnDAwareTree`).
+- `MarpSlideReordering` (package `navigation`) is the platform side. `move(project, editor, down)` reuses
+  `MarpSlideNavigation.withDeck` (non-blocking read of the committed PSI, continuation on the EDT), takes the slide under
+  the LIVE primary caret, and applies the edit in `WriteCommandAction.writeCommandAction(project, psiFile).withName(...)`,
+  so the file's read-only status is honoured and the move is one undo step. `apply` reads the caret first, drops
+  secondary carets and the selection, calls `document.replaceString`, moves the caret and scrolls
+  (`ScrollType.MAKE_VISIBLE`). The actions `Marp.MoveSlideUp` / `Marp.MoveSlideDown` (group `Marp.SlideReordering` in
+  `CodeMenu`, after `MoveLineUp`; `MarpMoveSlideAction` extends `MarpSlideAction`, so hidden outside decks, plus
+  disabled in a viewer) have no default shortcut: every candidate clashes with a bundled keymap.
+- `MarpSlideStatementMover` is a `StatementUpDownMover` (`com.intellij.statementUpDownMover`, `order="first"`) so that
+  Move Statement Up / Down (Ctrl+Shift+Up/Down, Cmd+Shift+Up/Down) moves a whole slide when the caret is on the
+  separator line of slide 1 or later. Nothing in the classes used is `@ApiStatus` flagged or deprecated on 2026.2.3.
+  Everywhere else `checkAvailable` returns `false` before touching `MoveInfo` (the info is shared between movers, so it
+  must only be mutated when returning `true`): several carets, a selection, a caret off a separator line, a plain
+  Markdown file, a `headingDivider` deck. Markdown has no mover of its own, so `LineMover` then moves lines as before, and
+  Move Line Up / Down (`MoveLineHandler` uses `LineMover` only) still moves just the separator line. On a separator line
+  the move is always handled here: at the end of the deck `info.prohibitMove()` (sets `toMove2 = null`, returns `true`)
+  makes it do nothing instead of sliding the separator into the last slide.
+- The platform's `MoverWrapper` only swaps two line ranges, which cannot express the first slide keeping its front
+  matter or the blank line a moved last slide needs. So the edit is made in `beforeMove` and `info.toMove2` is set to
+  the SAME `LineRange` instance as `info.toMove`: `LineRange` has no `equals`, so the wrapper's
+  `!toMove.equals(toMove2)` check skips its own swap (the documented way for movers that move in `beforeMove`, such
+  as the Python one). `indentSource` and `indentTarget` must be `false`: the wrapper indents `range2`, which stays
+  `null`. `BaseMoveHandler` still needs `toMove.startLine > 0 || down` and `toMove.endLine < lineCount || !down`, which
+  a separator line of slide 1 or later and a next slide satisfy. All of it runs inside the platform's command and write
+  action, so it is one undo step. The deck comes from the cached PSI (the handler commits the document first), read on
+  the EDT like every mover does; a caret on the separator line of a moved slide stays on it, except when slide 1 moves up
+  (its separator stays between the swapped bodies) where the caret goes to the start of the moved body.
+- Not done: reordering from the preview or the overview, moving by more than one place, several slides at once,
+  keeping the collapsed state of the slide folds (the replaced range drops the fold regions inside it).
 
 ## Slide folding (Kotlin)
 
@@ -723,7 +774,7 @@ condition as the export actions) and `MarpPresenter`.
   theme service including trust, `.marprc` confinement and download limits), plus plain unit tests for logic that does
   not need the platform: `MarpDetector`, `MarpSlideSplitter` and `MarpHeadingDivider` (slide splitting, tricky cases by
   hand-built blocks; `MarpSlideParserTest` and `MarpStructureViewTest` cover the PSI adapter and the tree), the slide navigation
-  (actions, Go to Slide with a replaced test input dialog, status bar widget, inlay hints called through a recording sink), slide folding (regions from the builder, and the real fold model after the initial folding pass next to the Markdown regions), `MarpBridgeState` (state setters and commands), `MarpPageReplies`, `MarpPdfSettings`, `MarpExportFormat`, `MarpScrollEchoGuard`, `MarpLinkPolicy` (and request
+  (actions, Go to Slide with a replaced test input dialog, status bar widget, inlay hints called through a recording sink), slide reordering (`MarpSlideReorderTest` for the pure swap, `MarpSlideReorderingTest` for the actions, undo and caret, `MarpSlideStatementMoverTest` for Move Statement through the editor actions; the tight-deck cases use hand-built blocks because the Markdown plugin's parser reads `# A` directly above `---` as a setext heading and two `---` lines in a row as no break), slide folding (regions from the builder, and the real fold model after the initial folding pass next to the Markdown regions), `MarpBridgeState` (state setters and commands), `MarpPageReplies`, `MarpPdfSettings`, `MarpExportFormat`, `MarpScrollEchoGuard`, `MarpLinkPolicy` (and request
   routing), `MarpResourcePaths`, `MarpJcefStartup`, the `.marprc` parser, `MarpThemePaths`, `MarpThemeFolder`,
   `MarpThemeWatch`, `MarpThemeNames` and the theme URL validation of the settings page. The directive features have plain
   unit tests for the catalog and the comment parser, and light platform tests for highlighting, completion (including
