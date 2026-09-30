@@ -4,7 +4,7 @@ import cz.p3kj.marp.MarpLightTestCase
 import org.intellij.plugins.markdown.lang.psi.impl.MarkdownFile
 
 /**
- * The slide swap on plain text. Every result is checked twice: the exact text, and a re-parse of it that must give the
+ * The slide swap and the move to any place on plain text. Every result is checked twice: the exact text, and a re-parse of it that must give the
  * expected slide order with the same number of slides (a lost or merged slide shows up there).
  */
 class MarpSlideReorderTest : MarpLightTestCase() {
@@ -163,6 +163,132 @@ class MarpSlideReorderTest : MarpLightTestCase() {
                 assertEquals("index $index, ending '${ending.replace("\n", "\\n")}'", text, moved(down, index + 1, down = false))
             }
         }
+    }
+
+    // Moving to any place -----------------------------------------------------------------------------------------------
+
+    private fun movedTo(text: String, from: Int, to: Int): String? =
+        MarpSlideReorder.moveTo(text, deck(text), from, to)?.let { text.replaceRange(it.start, it.end, it.text) }
+
+    private fun assertMovedTo(expected: String, text: String, from: Int, to: Int, expectedTitles: List<String>) {
+        val result = movedTo(text, from, to)
+        assertEquals(expected, result)
+        assertEquals(expectedTitles, titles(result!!))
+    }
+
+    fun testMovingByOnePlaceIsTheSameAsMove() {
+        val tight = "$front# A\n---\n# B\n---\n# C\n---\n# D\n"
+        val stars = "$front\n# One\n\n***\n\n# Two\n\n***\n\n# Three\n\n***\n\n# Four\n"
+        for (text in listOf(fourSlides, tight, stars, fourSlides.trimEnd('\n'))) {
+            for (index in 0..3) {
+                assertEquals("$index down in $text", moved(text, index, down = true), movedTo(text, index, index + 1))
+                assertEquals("$index up in $text", moved(text, index, down = false), movedTo(text, index, index - 1))
+            }
+        }
+    }
+
+    fun testMovesASlideOverSeveralSlides() {
+        assertMovedTo(
+            "$front\n# One\n\n---\n\n# Three\n\n---\n\n# Four\n\n---\n\n# Two\n",
+            fourSlides, 1, 3, listOf("One", "Three", "Four", "Two"),
+        )
+        assertMovedTo(
+            "$front\n# One\n\n---\n\n# Four\n\n---\n\n# Two\n\n---\n\n# Three\n",
+            fourSlides, 3, 1, listOf("One", "Four", "Two", "Three"),
+        )
+    }
+
+    fun testMovesOverTheFirstSlideAndKeepsTheFrontMatterAtTheTop() {
+        assertMovedTo(
+            "$front\n# Two\n\n---\n\n# Three\n\n---\n\n# Four\n\n---\n\n# One\n",
+            fourSlides, 0, 3, listOf("Two", "Three", "Four", "One"),
+        )
+        assertMovedTo(
+            "$front\n# Four\n\n---\n\n# One\n\n---\n\n# Two\n\n---\n\n# Three\n",
+            fourSlides, 3, 0, listOf("Four", "One", "Two", "Three"),
+        )
+    }
+
+    fun testMixedSeparatorsTravelWithTheirSlidesOverSeveralSlides() {
+        val text = "$front\n# One\n\n***\n\n# Two\n\n---\n\n# Three\n"
+        assertMovedTo("$front\n# Two\n\n---\n\n# Three\n\n***\n\n# One\n", text, 0, 2, listOf("Two", "Three", "One"))
+        assertMovedTo("$front\n# Three\n\n---\n\n# One\n\n***\n\n# Two\n", text, 2, 0, listOf("Three", "One", "Two"))
+    }
+
+    fun testATightDeckKeepsItsSlidesWhenMovedOverSeveralSlides() {
+        val text = "$front# A\n---\n# B\n---\n# C\n---\n# D\n"
+        assertMovedTo("$front# B\n---\n# C\n---\n# D\n\n---\n# A\n", text, 0, 3, listOf("B", "C", "D", "A"))
+        assertMovedTo("$front# A\n\n---\n# D\n\n---\n# B\n---\n# C\n", text, 3, 1, listOf("A", "D", "B", "C"))
+        assertMovedTo("$front# A\n\n---\n# C\n---\n# D\n\n---\n# B\n", text, 1, 3, listOf("A", "C", "D", "B"))
+    }
+
+    fun testAParagraphAboveASeparatorDoesNotMergeSlidesMovedOverSeveralSlides() {
+        // `***` can follow a paragraph line directly, a moved-in `---` would turn that line into a heading.
+        val text = "$front\nOne para\n***\n\n# Two\n\n---\n\n# Three\n\n---\n\n# Four\n"
+        assertEquals(listOf("-", "Two", "Three", "Four"), titles(text))
+        assertMovedTo(
+            "$front\nOne para\n\n---\n\n# Three\n\n---\n\n# Four\n\n***\n\n# Two\n",
+            text, 1, 3, listOf("-", "Three", "Four", "Two"),
+        )
+        assertMovedTo(
+            "$front\nOne para\n\n---\n\n# Four\n\n***\n\n# Two\n\n---\n\n# Three\n",
+            text, 3, 1, listOf("-", "Four", "Two", "Three"),
+        )
+    }
+
+    fun testAnEmptyFirstSlideMovesOverSeveralSlides() {
+        val text = "$front---\n\n# Two\n\n---\n\n# Three\n"
+        assertEquals(listOf("-", "Two", "Three"), titles(text))
+        val result = movedTo(text, 0, 2)
+        assertEquals(listOf("Two", "Three", "-"), titles(result!!))
+        assertEquals(listOf("-", "Two", "Three"), titles(movedTo(result, 2, 0)!!))
+    }
+
+    fun testMovesTheLastSlideUpOverSeveralSlidesWithoutATrailingNewline() {
+        val text = fourSlides.trimEnd('\n')
+        assertMovedTo(
+            "$front\n# One\n\n---\n\n# Four\n\n---\n\n# Two\n\n---\n\n# Three",
+            text, 3, 1, listOf("One", "Four", "Two", "Three"),
+        )
+    }
+
+    fun testMovesRoundTripToTheOriginalText() {
+        for (ending in listOf("\n", "", "\n\n")) {
+            val text = fourSlides.trimEnd('\n') + ending
+            for ((from, to) in listOf(1 to 3, 0 to 3, 0 to 2, 1 to 2, 2 to 3)) {
+                val there = movedTo(text, from, to)!!
+                assertEquals("$from to $to, ending '${ending.replace("\n", "\\n")}'", text, movedTo(there, to, from))
+            }
+        }
+    }
+
+    fun testMoveToReportsWhereTheMovedSlideLands() {
+        val edit = MarpSlideReorder.moveTo(fourSlides, deck(fourSlides), 1, 3)!!
+        val result = fourSlides.replaceRange(edit.start, edit.end, edit.text)
+        // A slide after the first one starts with its separator line, which is also its first non-blank line.
+        assertEquals(result.indexOf("---\n\n# Two"), edit.movedTo)
+        assertEquals(result.indexOf("---\n\n# Two"), edit.contentTo)
+        val up = MarpSlideReorder.moveTo(fourSlides, deck(fourSlides), 3, 1)!!
+        val upResult = fourSlides.replaceRange(up.start, up.end, up.text)
+        assertEquals(upResult.indexOf("---\n\n# Four"), up.movedTo)
+        assertEquals(upResult.indexOf("---\n\n# Four"), up.contentTo)
+        // The first slide has no separator line: its body lands last and the caret goes to the content.
+        val first = MarpSlideReorder.moveTo(fourSlides, deck(fourSlides), 0, 3)!!
+        val firstResult = fourSlides.replaceRange(first.start, first.end, first.text)
+        assertEquals(firstResult.indexOf("# One"), first.contentTo)
+        assertEquals(firstResult.indexOf("# One"), first.caretAfter(fourSlides.indexOf("# One")))
+        assertEquals(firstResult.indexOf("# One"), first.caretAfter(0))
+    }
+
+    fun testMoveToNeedsTwoDifferentSlidesOfASupportedDeck() {
+        val deck = deck(fourSlides)
+        assertNull(MarpSlideReorder.moveTo(fourSlides, deck, 2, 2))
+        assertNull(MarpSlideReorder.moveTo(fourSlides, deck, -1, 2))
+        assertNull(MarpSlideReorder.moveTo(fourSlides, deck, 1, 4))
+        assertNull(MarpSlideReorder.moveTo(fourSlides, deck, 4, 1))
+        assertNull(MarpSlideReorder.moveTo(fourSlides, deck, 1, -1))
+        val heading = "---\nmarp: true\nheadingDivider: 2\n---\n\n# A\n\n## B\n\n## C\n"
+        assertNull(MarpSlideReorder.moveTo(heading, deck(heading), 0, 2))
     }
 
     // Nothing to do -----------------------------------------------------------------------------------------------------

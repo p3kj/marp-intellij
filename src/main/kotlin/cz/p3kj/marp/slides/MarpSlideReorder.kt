@@ -1,13 +1,15 @@
 package cz.p3kj.marp.slides
 
 /**
- * Swaps two neighbouring slides of a [MarpDeck] in the text, as one replacement of a range. Pure text logic, so the
- * caller decides how to apply it (the editor actions and the statement mover both use [move] and nothing else).
+ * Moves a slide of a [MarpDeck] to another place in the text, as one replacement of a range. Pure text logic, so the
+ * caller decides how to apply it (the editor actions and the statement mover use [move], the drag in the slide overview
+ * uses [moveTo]). The moved slide swaps places with the slides it passes, so a move by one place is a swap of two
+ * neighbouring slides.
  *
  * A slide travels as the text from its separator line (`---`, `***`, `___`) to the start of the next slide, so its
  * separator style, its local directives and its presenter notes move with it. The front matter is the exception: it
- * belongs to the first slide in [MarpDeck] but it stays at the top. Swapping the first two slides swaps the bodies of
- * both and the separator line of the second slide stays between them.
+ * belongs to the first slide in [MarpDeck] but it stays at the top. When the first slide is involved, the bodies swap and
+ * the separator line that was between the two swapped runs stays between them.
  *
  * A separator that lands right below a paragraph line, or a paragraph line right above a separator, turns `---` into a
  * setext heading underline and the slide break is lost. So a blank line is added where a moved slide would meet a
@@ -49,28 +51,45 @@ object MarpSlideReorder {
     /**
      * The edit that moves slide [index] one place towards the start ([down] is `false`) or the end of [text], which
      * [deck] must describe. `null` when the deck is not supported, [index] is not a slide, or the slide is already the
-     * first (up) or the last (down).
+     * first (up) or the last (down). The one-place case of [moveTo].
      */
-    fun move(text: CharSequence, deck: MarpDeck, index: Int, down: Boolean): Edit? {
-        if (!supports(deck) || index !in deck.slides.indices) return null
-        val upperIndex = if (down) index else index - 1
-        if (upperIndex < 0 || upperIndex + 1 > deck.slides.lastIndex) return null
-        val upper = deck.slides[upperIndex]
-        val lower = deck.slides[upperIndex + 1]
-        val atEnd = lower.endOffset >= text.length
+    fun move(text: CharSequence, deck: MarpDeck, index: Int, down: Boolean): Edit? =
+        moveTo(text, deck, index, if (down) index + 1 else index - 1)
 
-        // The first slide swaps bodies and leaves its front matter and the separator line of the second slide in place.
-        val first = upperIndex == 0
+    /**
+     * The edit that moves slide [from] to the place of slide [to] (its index after the move) in [text], which [deck]
+     * must describe. `null` when the deck is not supported, [from] or [to] is not a slide, or they are the same.
+     *
+     * The moved slide swaps places with the run of slides it passes: moving down, the slide and the run after it up to
+     * [to]; moving up, the run from [to] up to the slide before it, and the slide. That is one swap of two neighbouring
+     * runs of slides, and [move] is the case where the run is a single slide.
+     */
+    fun moveTo(text: CharSequence, deck: MarpDeck, from: Int, to: Int): Edit? {
+        val slides = deck.slides
+        if (!supports(deck) || from !in slides.indices || to !in slides.indices || from == to) return null
+        val down = to > from
+        val firstIndex = minOf(from, to)
+        val lastIndex = maxOf(from, to)
+        // The upper run starts at firstIndex, the lower run at lowerFirst and ends with lastIndex. Whichever contains the
+        // moved slide, that slide is a run of its own, so the moved text is one piece below.
+        val lowerFirst = if (down) from + 1 else from
+        val upper = slides[firstIndex]
+        val lower = slides[lowerFirst]
+        val lowerEnd = slides[lastIndex].endOffset
+        val atEnd = lowerEnd >= text.length
+
+        // The first slide swaps bodies and leaves its front matter and the separator line of the next run in place.
+        val first = firstIndex == 0
         val start = if (first) upper.bodyOffset else upper.startOffset
         val qStart = if (first) lower.bodyOffset else lower.startOffset
         val separator = if (first) lineEnded(text.slice(lower.startOffset, lower.bodyOffset)) else ""
         val p = text.slice(start, lower.startOffset)
-        val q = text.slice(qStart, lower.endOffset)
+        val q = text.slice(qStart, lowerEnd)
 
         // The piece that lands first starts with a separator line (unless the front matter is above). Directly under a
         // paragraph line a `---` would be a setext underline and the two slides would merge, so a blank line goes between.
         // A slide without a body is preceded by a separator or the front matter fence, and neither is a paragraph.
-        val lead = if (!first && deck.slides[upperIndex - 1].bodyOffset < start && !lastLineIsBlank(lineBefore(text, start))) "\n" else ""
+        val lead = if (!first && slides[firstIndex - 1].bodyOffset < start && !lastLineIsBlank(lineBefore(text, start))) "\n" else ""
         val before = lead + blankEnded(q) + separator
         // An empty first slide that moves down would leave two separator lines in a row, so a blank line goes between.
         val after = when {
@@ -81,10 +100,10 @@ object MarpSlideReorder {
         val replacement = before + after
         return if (down) {
             val movedTo = start + before.length
-            Edit(start, lower.endOffset, replacement, start, p.length, movedTo, movedTo + firstContent(p))
+            Edit(start, lowerEnd, replacement, start, p.length, movedTo, movedTo + firstContent(p))
         } else {
             val movedTo = start + lead.length
-            Edit(start, lower.endOffset, replacement, qStart, q.length, movedTo, movedTo + firstContent(q))
+            Edit(start, lowerEnd, replacement, qStart, q.length, movedTo, movedTo + firstContent(q))
         }
     }
 
