@@ -205,8 +205,10 @@ with the grid on still gives one slide per page. In the grid:
   returns at once and the scroll listener sends no `revealLine`. `scrollToLine` still records the anchor, so the anchor
   follows the editor and turning the overview off re-applies it like after a resize (`realign`), landing on the slide
   that was clicked when scroll sync is on. Kotlin keeps sending `scrollToLine`, nothing in `MarpScrollSync` changes.
-- The active-slide highlight stays. Entering the grid and `setActiveLine` scroll the active thumbnail into view
-  (`block: 'nearest'`), a render does not (typing must not jump).
+- The active-slide highlight stays. Entering the grid scrolls the active thumbnail into view (`block: 'nearest'`; when
+  the overview is turned on before the first render, as after a page reload, the first render does it once), and so does
+  `setActiveLine` when the highlight moves to another slide. A caret move inside the same slide and a render do not
+  scroll (typing must not jump, and the user's own scrolling of the grid must not be undone).
 
 The state is per editor, not IDE-wide and not persisted: it is a view mode of one deck, like the Editor / Split / Preview
 layout, and an IDE-wide setting would flip every open preview and reopen decks as a grid after a restart.
@@ -752,5 +754,6 @@ condition as the export actions) and `MarpPresenter`.
 `http://127.0.0.1:5173/` with a mock IDE host (`window.__marpHost`). Query parameters: `deck` (absolute path of a
 Markdown file), `themes` (comma-separated absolute CSS paths), `dark=1`, and the render options such as `html` and
 `math`. The page gets the production CSP (with `'self'` for scripts and `connect-src 'self'` for the mock host). Set
-`CSP=0` in the environment to disable it. `notes=1` turns presenter notes on, `overview=1` the slide overview. The server only answers requests whose
-`Host` is `localhost` or `127.0.0.1` (DNS rebinding). Messages the page sends to the host are collected in `window.__hostLog`.
+`CSP=0` in the environment to disable it. `notes=1` turns presenter notes on, `overview=1` the slide overview. The
+server only answers requests whose `Host` is `localhost` or `127.0.0.1` (DNS rebinding). Messages the page sends to the
+host are collected in `window.__hostLog`.

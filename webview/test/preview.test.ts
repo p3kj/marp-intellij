@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi, type MockInstance } from 'vitest'
 import type { MarpBridge, RenderOptions } from '../src/types'
 
 let bridge: MarpBridge
@@ -213,12 +213,13 @@ describe('slide overview', () => {
   }
   const didClicks = () => posted.filter((m) => m.type === 'didClick')
   const scrollIntoView = vi.fn()
-  const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
   const original = Element.prototype.scrollIntoView
+  let scrollTo: MockInstance<typeof window.scrollTo>
 
   beforeAll(() => {
     // jsdom has no scrollIntoView.
     Element.prototype.scrollIntoView = scrollIntoView
+    scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
   })
 
   afterEach(() => {
@@ -337,6 +338,57 @@ describe('slide overview', () => {
     expect(slides()[2]!.classList.contains('marp-active-slide')).toBe(true)
     expect(scrollIntoView).toHaveBeenCalledTimes(2)
     expect(scrollIntoView.mock.contexts[1]).toBe(slides()[2])
+  })
+
+  it('a caret move inside the active slide does not pull the grid back', async () => {
+    await render(deck)
+    const lines = startLines()
+    bridge.setActiveLine(lines[1]!)
+    bridge.setOverview(true)
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    scrollIntoView.mockClear()
+
+    // Same slide: the lines of one slide are after its start line, up to the next slide's start.
+    bridge.setActiveLine(lines[1]! + 1)
+    bridge.setActiveLine(lines[1]!)
+    expect(slides()[1]!.classList.contains('marp-active-slide')).toBe(true)
+    expect(scrollIntoView).not.toHaveBeenCalled()
+
+    bridge.setActiveLine(lines[2]!)
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(scrollIntoView.mock.contexts[0]).toBe(slides()[2])
+  })
+
+  it('turned on while a render is pending (page reload), it shows the active slide after that render, once', async () => {
+    await render(deck)
+    const lines = startLines()
+    bridge.setActiveLine(lines[2]!)
+
+    bridge.update({ markdown: deck, baseHref: 'https://marp.localhost/doc/', options: { html: 'default', math: 'off' } })
+    bridge.setOverview(true)
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    await frame()
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(scrollIntoView.mock.contexts[0]).toBe(slides()[2])
+    expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'nearest' })
+
+    // Later renders (typing) leave the scroll position alone.
+    await render(deck.replace('# Second', '# Second, edited'))
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+  })
+
+  it('turned off again before that render, nothing scrolls', async () => {
+    await render(deck)
+    bridge.setActiveLine(startLines()[1]!)
+    bridge.update({ markdown: deck, baseHref: 'https://marp.localhost/doc/', options: { html: 'default', math: 'off' } })
+    bridge.setOverview(true)
+    bridge.setOverview(false)
+    await frame()
+    bridge.setOverview(true)
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    scrollIntoView.mockClear()
+    await render(deck.replace('# Third', '# Third, edited'))
+    expect(scrollIntoView).not.toHaveBeenCalled()
   })
 
   it('a render in the grid does not scroll, so typing never jumps', async () => {

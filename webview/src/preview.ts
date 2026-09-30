@@ -52,6 +52,8 @@ let pendingScrollLine: number | undefined
 let activeLine: number | undefined
 /** Slide overview (thumbnail grid) on: scroll sync is suspended, see `setOverview`. */
 let overview = false
+/** The overview was turned on before the first render (page reload): show the active slide once it is there. */
+let revealActiveAfterRender = false
 let entries: CodeLine[] | undefined
 const scroll = createScrollReporter((line) => host.post({ type: 'revealLine', line }))
 
@@ -110,7 +112,12 @@ function render(): void {
   showErrors()
 
   entries = undefined
-  if (activeLine !== undefined) markActiveSlide(root, activeLine)
+  const active = activeLine !== undefined ? markActiveSlide(root, activeLine) : undefined
+  // Only for the render after turning the overview on, not for every edit: typing must not jump.
+  if (revealActiveAfterRender) {
+    revealActiveAfterRender = false
+    if (overview) active?.scrollIntoView({ block: 'nearest' })
+  }
   // A `scrollToLine` that arrived before this render was measured against the old markup, and the new markup can move
   // slides (one added above the viewport), so re-align with the editor instead of keeping the pixel offset.
   const anchor = scroll.anchor
@@ -196,17 +203,20 @@ const bridge: MarpBridge = {
   setActiveLine(line) {
     activeLine = line
     if (renderPending) return
+    const before = root.querySelector(`.${activeSlideClass}`)
     const wrapper = markActiveSlide(root, line)
-    // Not from render(): that would jump on every edit.
-    if (overview) wrapper?.scrollIntoView({ block: 'nearest' })
+    // Only when the highlight moved to another slide: a caret move inside the same slide must not pull the grid back
+    // after the user scrolled it. Not from render() either, that would jump on every edit.
+    if (overview && wrapper !== before) wrapper?.scrollIntoView({ block: 'nearest' })
   },
 
   setOverview(on) {
     if (on === overview) return
     overview = on
     root.classList.toggle(overviewClass, on)
-    if (on) root.querySelector<HTMLElement>(`.${activeSlideClass}`)?.scrollIntoView({ block: 'nearest' })
-    else realign()
+    revealActiveAfterRender = on && renderPending
+    if (!on) realign()
+    else if (!renderPending) root.querySelector<HTMLElement>(`.${activeSlideClass}`)?.scrollIntoView({ block: 'nearest' })
   },
 
   setIdeTheme({ dark, background, foreground }) {

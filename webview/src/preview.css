@@ -120,7 +120,7 @@ body {
 @media screen {
   #marp-root.marp-overview #__marp-preview {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr));
     gap: 24px;
     align-items: start;
     padding: 16px 20px;
@@ -131,6 +131,8 @@ body {
     max-width: none;
     margin: 0;
     cursor: pointer;
+    /* Keeps the active-slide outline (inset -7px) inside the viewport when the thumbnail is scrolled into view. */
+    scroll-margin: 12px;
   }
 
   #marp-root.marp-overview svg[data-marpit-svg] {
