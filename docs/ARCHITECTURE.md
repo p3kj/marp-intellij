@@ -187,6 +187,8 @@ string:
   application bus. Settings | Tools | Marp (`MarpConfigurable`) edits both.
 - `MarpThemeService` (project service): `suspend fun loadThemes(): MarpThemeSet` (cached, never on EDT);
   publishes `MarpThemeListener.TOPIC` when watched theme files, folders or `.marprc` change, or theme settings change.
+  It also restarts the daemon (`DaemonCodeAnalyzer.restart(PsiFile, Object)`) for the open Markdown files after every
+  publish and after a load that `themeNamesForInspection()` started, because the unknown-theme warnings depend on the set.
 - Theme sources: settings `themes` entries (file / folder / `http(s)` URL; relative paths resolve against the project
   dir, and are reported as invalid when there is none) plus, when enabled, `themeSet` from `.marprc.yml` /
   `.marprc.yaml` / `.marprc.json` / `.marprc` (no extension) in the project root (string or list; relative to the
@@ -304,7 +306,26 @@ The front matter is covered in the "Front matter" bullet at the end of this sect
 - `MarpDirectiveInspection` (`LocalInspectionTool`, `DumbAware`, short name `MarpDirective`) reports unknown keys, globals
   written with `_`, and invalid `paginate`, `math` and `headingDivider` values (inline values only). A comment that Marp
   reads as a note is only reported, as a weak warning, when a key is a near miss of a directive (`Class: lead`), so `Note: text` stays
-  quiet. Unknown theme names are not checked, the preview page warns about them.
+  quiet. Unknown theme names are left to `MarpUnknownThemeInspection` (below).
+- `MarpUnknownThemeInspection` (#7, `LocalInspectionTool`, `DumbAware`, short name `MarpUnknownTheme`) reports a `theme`
+  value (front matter and comments, `_theme` is the directive inspection's) that is neither in
+  `MarpDirectiveCatalog.BUILT_IN_THEMES` nor a custom theme name, case-sensitive like Marpit. It is a separate inspection
+  because it depends on external state and must be switchable alone. It reads `MarpThemeService.themeNamesForInspection()`
+  (cached set only, never blocks) and is quiet when that is `null`: nothing cached yet (loading starts and the service
+  restarts the highlighting when done), an untrusted project, or any error in the set (missing file, failed download, bad
+  `.marprc`), because the theme may be missing for that reason and the preview banner names it. The service is only asked
+  once a theme directive with a value is found, so a deck without one never triggers a load.
+  - Quick fixes (`MarpThemeQuickFixes`) are plain `LocalQuickFix`es, not ModCommand: they show a file chooser or a dialog
+    and write settings, so `startInWriteAction()` and `availableInBatchMode()` are false and `generatePreview` is
+    `IntentionPreviewInfo.EMPTY`. They keep strings only, never PSI. (A) add a chosen CSS file or folder to
+    `MarpSettings.themes` (project-relative when inside the project, no duplicates), (B) only while `useMarprcThemeSet` is
+    on: create `.marprc.yml` with `themeSet` for a file or folder chosen inside the project (chooser rooted at the project
+    dir, outside choices are refused like the loader would), or, when a `.marprc*` exists, open it, (C) open Settings |
+    Tools | Marp. An existing `.marprc` is never edited, in-place YAML or JSON editing is fragile. The chooser goes through
+    `MarpThemeChooser.choose` so tests can replace it.
+  - Not used: `DaemonCodeAnalyzer.restart()` and `restart(PsiFile)` (deprecated),
+    `FileChooserDescriptorFactory.createSingleFileOrFolderDescriptor*` (obsolete), `FileEditorManager.openFile` overloads
+    (experimental flags, `OpenFileDescriptor` instead).
 - Front matter (#6) reuses the code above on the front matter TEXT, not on a schema and not on the front matter PSI:
   - Located by `MarpDetector.findFrontMatter` (the rule that decides whether the file is a deck, and that the slide model
     uses; `FrontMatter.bodyStart` is the offset in the original text, byte order mark included), then read by
@@ -346,7 +367,8 @@ The front matter is covered in the "Front matter" bullet at the end of this sect
     (no compile dependency on the YAML plugin), `InjectedLanguageManager.injectedToHost(..., boolean)`, and
     `LENIENT_INSPECTIONS`.
   - Out of scope: marp-cli metadata keys, TOML front matter (`+++`), highlighting in the front matter (YAML colors it),
-    duplicate keys and YAML syntax errors (the YAML plugin reports them), unknown theme names, completion popup docs.
+    duplicate keys and YAML syntax errors (the YAML plugin reports them), completion popup docs. Unknown theme names in the
+    front matter are reported by `MarpUnknownThemeInspection`, like in comments.
 
 ## Threading and lifecycle rules
 
