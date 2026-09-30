@@ -1,7 +1,7 @@
 import { Marp } from '@marp-team/marp-core'
 import contentSection from './content-section'
 import lineNumber from './line-number'
-import type { RenderOptions, ThemeInput } from './types'
+import type { HtmlMode, MathMode, RenderOptions, ThemeInput } from './types'
 
 /** A custom theme marp-core rejected; formatted for the banner with the current strings. */
 export interface ThemeError {
@@ -24,6 +24,16 @@ export interface MarpBuild {
 const globalDirectivesRule = 'marpit_directives_global_parse'
 let probeWarned = false
 
+/** marp-core's `html` option for an HTML mode: `off` -> false, `all` -> true, otherwise its default allowlist (omitted). */
+export function htmlOption(mode: HtmlMode): { html?: boolean } {
+  return mode === 'off' ? { html: false } : mode === 'all' ? { html: true } : {}
+}
+
+/** marp-core's `math` option for a math mode: `off` -> false, otherwise the library name. */
+export function mathOption(mode: MathMode): false | 'mathjax' | 'katex' {
+  return mode === 'off' ? false : mode
+}
+
 /** Same options as marp-vscode's preview, see docs/ARCHITECTURE.md. */
 export function createMarp(options: RenderOptions, themes: ThemeInput[]): MarpBuild {
   const marp = new Marp({
@@ -31,10 +41,9 @@ export function createMarp(options: RenderOptions, themes: ThemeInput[]): MarpBu
     // like marp-vscode's `__marp-vscode`.
     container: { tag: 'div', id: '__marp-preview' },
     slideContainer: { tag: 'div', 'data-marp-slide-wrapper': '' },
-    // Leaving `html` out keeps marp-core's default allowlist.
-    ...(options.html === 'off' ? { html: false } : options.html === 'all' ? { html: true } : {}),
+    ...htmlOption(options.html),
     inlineSVG: { backdropSelector: false },
-    math: options.math === 'off' ? false : options.math,
+    math: mathOption(options.math),
     minifyCSS: false,
     script: false,
   })

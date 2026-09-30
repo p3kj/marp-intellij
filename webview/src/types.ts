@@ -34,6 +34,13 @@ export interface MarpBridge {
   scrollToLine(line: number): void
   setActiveLine(line: number): void
   setIdeTheme(arg: { dark: boolean; background: string; foreground: string }): void
+  /**
+   * Command, not a state setter: renders the last `update` with an export Marp instance and replies with the complete
+   * standalone HTML document (`html`), or with an `error`. `title` is the fallback when the deck has no `title:`.
+   */
+  exportHtml(arg: { id: number; title: string }): void
+  /** Command: renders a pending update right now, then replies once the frame is done (`error` when the render failed). */
+  flushRender(arg: { id: number }): void
 }
 
 export type HostMessage =
@@ -42,3 +49,5 @@ export type HostMessage =
   | { type: 'didClick'; line: number }
   | { type: 'openLink'; href: string }
   | { type: 'error'; message: string }
+  /** The one answer to a command (`exportHtml`, `flushRender`) with the same `id`. */
+  | { type: 'reply'; id: number; html?: string; error?: string }

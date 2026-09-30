@@ -105,7 +105,7 @@ lists `http:`. Only the bundled `/app/` script runs; inline `<script>`, event ha
 The page defines `window.marpBridge`. Kotlin calls it with `executeJavaScript` and JSON-encoded arguments, only after
 the page sent `ready`. Line numbers are 0-based editor lines; fractional values mean "part way into that line".
 
-Every method is a state setter. `MarpBridgeState` keeps the latest argument per method; calls made while the page is
+Every method in the interface below is a state setter, except the two commands described after it. `MarpBridgeState` keeps the latest argument per method; calls made while the page is
 loading are only recorded, and on every `ready` (also after a reload) the latest arguments are replayed in the order
 listed under `ready` below. When the renderer process dies, or the main frame shows anything but an `/app/` page, the
 preview page is loaded again, at most 3 times in a row (a page that stayed up for 10 s starts a new row).
@@ -141,6 +141,30 @@ interface MarpBridge {
   setActiveLine(line: number): void
   /** IDE look and feel. Colors are CSS hex strings. */
   setIdeTheme(arg: { dark: boolean; background: string; foreground: string }): void
+}
+```
+
+### Commands (Kotlin -> JS)
+
+`exportHtml` and `flushRender` are not state setters: `MarpBridgeState.command` never records them and never replays
+them on `ready`, and only sends them while the page is ready (it returns `false` otherwise, and after dispose). Every
+command carries a numeric `id` and gets exactly one `reply` message with that id (see JS -> Kotlin messages). Kotlin
+tracks the ids in `MarpPageReplies`; a reload, a lost page or dispose fails the commands still waiting.
+
+```ts
+interface MarpBridge {
+  /**
+   * Renders the last `update` (markdown, options, current themes) with a separate export Marp instance and replies with
+   * the complete standalone HTML document. `title` is used when the deck has no `title:` directive. Replies with an
+   * `error` when there was no update yet or marp-core threw.
+   */
+  exportHtml(arg: { id: number; title: string }): void
+  /**
+   * Renders a pending update right away (`if (renderPending) render()`), then replies after the next frame. Used before
+   * printing the page to PDF. Replies with an `error` when there was no update or the last render failed. The render
+   * that is still queued in the page runs later with the same argument, and the slide diff makes that a no-op.
+   */
+  flushRender(arg: { id: number }): void
 }
 ```
 
@@ -180,6 +204,7 @@ string:
 | `{"type":"didClick","line":n}` | double-click in a slide; move the caret to line `n` and focus the editor |
 | `{"type":"openLink","href":"..."}` | a link was clicked (the page always prevents navigation). `https://marp.localhost/doc/...` inside the allowed roots -> open that file in the IDE; `http(s)`/`mailto` -> `BrowserUtil.browse`; anything else ignored (see Page security) |
 | `{"type":"error","message":"..."}` | render/theme error, already shown in the preview; Kotlin logs it |
+| `{"type":"reply","id":n,"html"?:"...","error"?:"..."}` | the one answer to the command with that `id` (`exportHtml`: `html` is the document; `flushRender`: no payload). `error` means it failed, the text is for the log |
 
 ## Kotlin contracts
 

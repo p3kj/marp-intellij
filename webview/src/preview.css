@@ -167,3 +167,34 @@ body {
 #marp-error-banner .marp-error-close:hover {
   background: rgb(127 127 127 / 30%);
 }
+
+/* Printing the page to PDF (the export command): only the slides, one per page. marp-core's own print rules size the
+   pages and break between slides, see docs/ARCHITECTURE.md. */
+@media print {
+  html,
+  body {
+    background: #fff !important;
+    overflow: visible !important;
+  }
+
+  #marp-root {
+    padding: 0;
+  }
+
+  #marp-root [data-marp-slide-wrapper] {
+    width: auto;
+    max-width: none;
+    margin: 0;
+  }
+
+  #marp-root svg[data-marpit-svg] {
+    box-shadow: none;
+  }
+
+  #marp-root [data-marp-slide-wrapper].marp-active-slide::before,
+  #marp-root .marp-notes,
+  #marp-empty-hint,
+  #marp-error-banner {
+    display: none !important;
+  }
+}

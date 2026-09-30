@@ -2,6 +2,7 @@ import { browser } from '@marp-team/marp-core/browser'
 import { markActiveSlide } from './active-slide'
 import { isEmptyDeck } from './empty-deck'
 import { createErrorBanner } from './error-banner'
+import { exportDocument } from './export-html'
 import { createHostChannel } from './host'
 import { findLink } from './links'
 import { createMarp, marpKey, type MarpBuild } from './marp-factory'
@@ -186,6 +187,30 @@ const bridge: MarpBridge = {
     html.classList.toggle('ide-light', !dark)
     html.style.setProperty('--ide-bg', background)
     html.style.setProperty('--ide-fg', foreground)
+  },
+
+  exportHtml({ id, title }) {
+    const arg = lastUpdate
+    if (!arg) {
+      host.post({ type: 'reply', id, error: 'There is nothing to export yet' })
+      return
+    }
+    try {
+      host.post({ type: 'reply', id, html: exportDocument(arg.markdown, arg.options, themes, title) })
+    } catch (e) {
+      host.post({ type: 'reply', id, error: e instanceof Error ? e.message : String(e) })
+    }
+  },
+
+  flushRender({ id }) {
+    if (renderPending) render()
+    // The frame lets the browser lay out what render() inserted before Kotlin prints the page. The render that is still
+    // queued from scheduleRender runs later with the same argument, and patchSlides makes that a no-op.
+    nextFrame(() => {
+      if (!lastUpdate) host.post({ type: 'reply', id, error: 'There is nothing to print yet' })
+      else if (renderError !== undefined) host.post({ type: 'reply', id, error: renderError })
+      else host.post({ type: 'reply', id })
+    })
   },
 }
 window.marpBridge = bridge
