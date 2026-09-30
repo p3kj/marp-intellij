@@ -1,6 +1,6 @@
 # Marp Preview user guide
 
-The [README](../README.md) lists the features and gets you started. This guide explains how they behave, what they need and where their limits are.
+The [README](../README.md) lists the features and gets you started, and the [screenshots](SCREENSHOTS.md) show them. This guide explains how they behave, what they need and where their limits are.
 
 - [Decks and the preview](#decks-and-the-preview)
 - [Slide overview](#slide-overview)

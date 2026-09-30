@@ -7,9 +7,9 @@
 -->
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Marp Preview renders [Marp](https://marp.app/) slide decks inside your JetBrains IDE. The slides appear next to the Markdown editor and refresh while you type, with no Node.js needed.
+![Marp Preview: write Markdown, get slides, live in every JetBrains IDE](docs/media/social-preview.png)
 
-![Typing a new slide: the preview adds it while you type, and completing `_class: lead` restyles it](docs/media/live-editing.gif)
+Marp Preview renders [Marp](https://marp.app/) slide decks inside your JetBrains IDE. The slides appear next to the Markdown editor and refresh while you type, with no Node.js needed.
 
 ## Features
 
@@ -53,22 +53,9 @@ Marp Preview renders [Marp](https://marp.app/) slide decks inside your JetBrains
 - Locked-down preview page (Content Security Policy, no navigation away) and a restricted mode for untrusted projects
 - Works in every IntelliJ-based IDE, no IDE-specific APIs
 
-![Dragging a thumbnail in the slide overview moves the slide in the Markdown source](docs/media/drag-reorder.gif)
+![Typing a new slide: the preview adds it while you type, and completing `_class: lead` restyles it](docs/media/live-editing.gif)
 
-## Screenshots
-
-| | |
-| --- | --- |
-| ![Split view: Markdown on the left, slides on the right, the slide under the caret outlined](docs/media/split.png) | ![Slide overview: the deck as a grid of thumbnails](docs/media/overview.png) |
-| Split view with scroll sync | Slide overview |
-| ![Directive completion shows where each directive applies](docs/media/completion.png) | ![Hover docs for a directive, next to the live preview](docs/media/hover-docs.png) |
-| Directive completion | Hover docs |
-| ![Completion of image keywords in alt text](docs/media/image-keywords.png) | ![Quick fixes for an unknown theme name](docs/media/quick-fix.png) |
-| Image keywords | Unknown theme quick fixes |
-| ![Slides in the Structure tool window](docs/media/structure.png) | ![Export menu of the preview toolbar](docs/media/export.png) |
-| Structure view | Export to HTML, PDF, PPTX and images |
-
-The deck in these pictures is [docs/showcase/marp-preview.md](docs/showcase/marp-preview.md), a presentation about the plugin written with the plugin. Open `docs/showcase` as a project to try it.
+More in the [screenshots](docs/SCREENSHOTS.md): slide overview and drag to reorder, completion, hover docs, quick fixes, Structure view, export and settings.
 
 ## Installation
 
