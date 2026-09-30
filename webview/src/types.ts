@@ -58,6 +58,11 @@ export type HostMessage =
   | { type: 'ready' }
   | { type: 'revealLine'; line: number }
   | { type: 'didClick'; line: number }
+  /**
+   * A thumbnail was dropped on another place in the slide overview: `from` and `to` are 0-based slide indices (`to` the
+   * index after the move), `line` the dragged slide's content start line and `count` the number of thumbnails on the page.
+   */
+  | { type: 'didMoveSlide'; from: number; to: number; line: number; count: number }
   | { type: 'openLink'; href: string }
   | { type: 'error'; message: string }
   /** The one answer to a command (`exportHtml`, `flushRender`) with the same `id`. */

@@ -399,4 +399,254 @@ describe('slide overview', () => {
     await render(deck.replace('# Second', '# Second, edited'))
     expect(scrollIntoView).not.toHaveBeenCalled()
   })
+
+  describe('reordering by dragging thumbnails', () => {
+    const mouse = (type: string, target: EventTarget, x: number, y: number, init: MouseEventInit = {}) => {
+      const e = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, ...init })
+      target.dispatchEvent(e)
+      return e
+    }
+    const down = (target: Element, x: number, y: number) => mouse('mousedown', target, x, y, { buttons: 1 })
+    const move = (x: number, y: number) => mouse('mousemove', document.body, x, y, { buttons: 1 })
+    const up = (x: number, y: number) => mouse('mouseup', document.body, x, y)
+    /** Three thumbnails in a row (100x60, 24px apart), shifted by `dx`. jsdom has no layout. */
+    const layOut = (dx = 0) => {
+      slides().forEach((w, i) => {
+        const left = dx + i * 124
+        ;(w as HTMLElement).getBoundingClientRect = () =>
+          ({ left, top: 0, right: left + 100, bottom: 60, width: 100, height: 60, x: left, y: 0, toJSON() {} }) as DOMRect
+      })
+    }
+    const moves = () => posted.filter((m) => m.type === 'didMoveSlide')
+    const marked = (cls: string) => slides().filter((w) => w.classList.contains(cls))
+    const noMarks = () => {
+      expect(root().classList.contains('marp-slide-drag')).toBe(false)
+      for (const cls of ['marp-dragging', 'marp-drop-before', 'marp-drop-after']) expect(marked(cls), cls).toEqual([])
+    }
+
+    async function ready(markdown = deck): Promise<void> {
+      await render(markdown)
+      bridge.setOverview(true)
+      layOut()
+    }
+
+    it('drops a thumbnail on another place: one didMoveSlide, the mark while dragging, no didClick after', async () => {
+      await ready()
+      down(slides()[0]!, 50, 30)
+      move(340, 30)
+      expect(root().classList.contains('marp-slide-drag')).toBe(true)
+      expect(marked('marp-dragging')).toEqual([slides()[0]])
+      expect(marked('marp-drop-after')).toEqual([slides()[2]])
+      expect(marked('marp-drop-before')).toEqual([])
+
+      up(340, 30)
+      noMarks()
+      // The click that ends the drag moves no caret; the next click is an ordinary one again.
+      const swallowed = click(slides()[0]!)
+      expect(swallowed.defaultPrevented).toBe(true)
+      click(slides()[1]!)
+      expect(posted).toEqual([
+        { type: 'didMoveSlide', from: 0, to: 2, line: startLines()[0], count: 3 },
+        { type: 'didClick', line: startLines()[1] },
+      ])
+    })
+
+    it('moves up too, the mark goes before the thumbnail the slide lands on', async () => {
+      await ready()
+      down(slides()[2]!, 298, 30)
+      move(20, 30)
+      expect(marked('marp-drop-before')).toEqual([slides()[0]])
+      expect(marked('marp-drop-after')).toEqual([])
+      up(20, 30)
+      click(slides()[2]!)
+      expect(posted).toEqual([{ type: 'didMoveSlide', from: 2, to: 0, line: startLines()[2], count: 3 }])
+    })
+
+    it('shows no mark and posts nothing where the slide already is', async () => {
+      await ready()
+      down(slides()[1]!, 174, 30)
+      // Both slots next to the slide itself.
+      move(130, 30)
+      expect(marked('marp-dragging')).toEqual([slides()[1]])
+      expect(marked('marp-drop-before')).toEqual([])
+      expect(marked('marp-drop-after')).toEqual([])
+      move(210, 30)
+      expect(marked('marp-drop-after')).toEqual([])
+      up(210, 30)
+      click(slides()[1]!)
+      noMarks()
+      expect(posted).toEqual([])
+    })
+
+    it('follows the pointer from place to place', async () => {
+      await ready()
+      down(slides()[0]!, 50, 30)
+      move(340, 30)
+      expect(marked('marp-drop-after')).toEqual([slides()[2]])
+      move(214, 30)
+      expect(marked('marp-drop-after')).toEqual([slides()[1]])
+      expect(marked('marp-drop-before')).toEqual([])
+      up(214, 30)
+      click(slides()[0]!)
+      expect(moves()).toEqual([{ type: 'didMoveSlide', from: 0, to: 1, line: startLines()[0], count: 3 }])
+    })
+
+    it('a scroll during the drag moves the mark with the thumbnails', async () => {
+      await ready()
+      down(slides()[2]!, 298, 30)
+      move(60, 30)
+      expect(marked('marp-drop-after')).toEqual([slides()[0]])
+      // The thumbnails moved under the pointer.
+      layOut(100)
+      window.dispatchEvent(new Event('scroll'))
+      expect(marked('marp-drop-before')).toEqual([slides()[0]])
+      expect(marked('marp-drop-after')).toEqual([])
+      up(60, 30)
+      click(slides()[2]!)
+      expect(moves()).toEqual([{ type: 'didMoveSlide', from: 2, to: 0, line: startLines()[2], count: 3 }])
+    })
+
+    it('Escape cancels the drag: nothing is posted, not even the click after it', async () => {
+      await ready()
+      down(slides()[0]!, 50, 30)
+      move(340, 30)
+      const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+      document.body.dispatchEvent(escape)
+      expect(escape.defaultPrevented).toBe(true)
+      noMarks()
+      move(340, 30)
+      up(340, 30)
+      click(slides()[0]!)
+      expect(posted).toEqual([])
+    })
+
+    it('Escape without a drag does nothing to the click', async () => {
+      await ready()
+      down(slides()[0]!, 50, 30)
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      up(50, 30)
+      click(slides()[0]!)
+      expect(posted).toEqual([{ type: 'didClick', line: startLines()[0] }])
+    })
+
+    it('a move of a few pixels is a click', async () => {
+      await ready()
+      down(slides()[0]!, 50, 30)
+      move(53, 33)
+      noMarks()
+      up(53, 33)
+      click(slides()[0]!)
+      expect(posted).toEqual([{ type: 'didClick', line: startLines()[0] }])
+    })
+
+    it('a release outside the page ends the drag when the pointer comes back without the button', async () => {
+      await ready()
+      down(slides()[0]!, 50, 30)
+      move(340, 30)
+      mouse('mousemove', document.body, 340, 30, { buttons: 0 })
+      noMarks()
+      up(340, 30)
+      expect(moves()).toEqual([])
+    })
+
+    it('losing the window focus cancels the drag', async () => {
+      await ready()
+      down(slides()[0]!, 50, 30)
+      move(340, 30)
+      window.dispatchEvent(new Event('blur'))
+      noMarks()
+      up(340, 30)
+      expect(moves()).toEqual([])
+    })
+
+    it('only the primary button drags, and only on a thumbnail', async () => {
+      await ready()
+      mouse('mousedown', slides()[0]!, 50, 30, { button: 2, buttons: 2 })
+      move(340, 30)
+      up(340, 30)
+      down(document.getElementById('__marp-preview')!, 112, 30)
+      move(340, 30)
+      up(340, 30)
+      noMarks()
+      expect(posted).toEqual([])
+    })
+
+    it('does nothing outside the overview', async () => {
+      await render(deck)
+      layOut()
+      down(slides()[0]!, 50, 30)
+      move(340, 30)
+      noMarks()
+      up(340, 30)
+      expect(moves()).toEqual([])
+    })
+
+    it('does nothing in a deck with headingDivider, and drags again once the divider is gone', async () => {
+      const divided = '---\nmarp: true\nheadingDivider: 1\n---\n\n# A\n\n# B\n\n# C\n'
+      await ready(divided)
+      expect(slides()).toHaveLength(3)
+      down(slides()[0]!, 50, 30)
+      move(340, 30)
+      noMarks()
+      up(340, 30)
+      click(slides()[0]!)
+      expect(moves()).toEqual([])
+      // The click is an ordinary one: no drag happened.
+      expect(didClicks()).toHaveLength(1)
+
+      await render(deck)
+      layOut()
+      down(slides()[0]!, 50, 30)
+      move(340, 30)
+      up(340, 30)
+      expect(moves()).toHaveLength(1)
+    })
+
+    it('does nothing when the last render failed', async () => {
+      await ready()
+      // Options the renderer cannot use make render() throw; the slides of the render before stay on the page.
+      bridge.update({ markdown: deck, baseHref: 'https://marp.localhost/doc/', options: null as any })
+      await frame()
+      expect(posted.some((m) => m.type === 'error')).toBe(true)
+      layOut()
+      down(slides()[0]!, 50, 30)
+      move(340, 30)
+      noMarks()
+      up(340, 30)
+      expect(moves()).toEqual([])
+    })
+
+    it('ends when a render replaced the thumbnails meanwhile', async () => {
+      await ready()
+      down(slides()[0]!, 50, 30)
+      move(340, 30)
+      await render('# Only\n')
+      layOut()
+      move(300, 30)
+      noMarks()
+      up(300, 30)
+      expect(moves()).toEqual([])
+    })
+
+    it('stops the drag when the overview is turned off', async () => {
+      await ready()
+      down(slides()[0]!, 50, 30)
+      move(340, 30)
+      bridge.setOverview(false)
+      noMarks()
+      up(340, 30)
+      expect(moves()).toEqual([])
+    })
+
+    it('no native drag starts in the overview, so it cannot interrupt the mouse drag', async () => {
+      await ready()
+      const inGrid = new Event('dragstart', { bubbles: true, cancelable: true })
+      slides()[0]!.dispatchEvent(inGrid)
+      expect(inGrid.defaultPrevented).toBe(true)
+      bridge.setOverview(false)
+      const outside = new Event('dragstart', { bubbles: true, cancelable: true })
+      slides()[0]!.dispatchEvent(outside)
+      expect(outside.defaultPrevented).toBe(false)
+    })
+  })
 })

@@ -147,6 +147,47 @@ body {
   #marp-root.marp-overview .marp-notes {
     display: none;
   }
+
+  /* Dragging a thumbnail to another place (slide-drag.ts): no text selection, a grabbing cursor, the dragged slide
+     dimmed and a mark in the gap where it lands. `::after` because `::before` draws the active-slide outline. */
+  #marp-root.marp-overview {
+    user-select: none;
+  }
+
+  #marp-root.marp-slide-drag,
+  #marp-root.marp-slide-drag [data-marp-slide-wrapper],
+  #marp-root.marp-slide-drag * {
+    cursor: grabbing;
+  }
+
+  #marp-root.marp-slide-drag [data-marp-slide-wrapper]:hover > svg {
+    box-shadow: 0 2px 6px var(--marp-shadow);
+  }
+
+  #marp-root.marp-overview .marp-dragging > svg {
+    opacity: 0.4;
+  }
+
+  #marp-root.marp-overview .marp-drop-before::after,
+  #marp-root.marp-overview .marp-drop-after::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    border-radius: 2px;
+    background: var(--marp-accent);
+    pointer-events: none;
+  }
+
+  /* Centre of the 24px gap between thumbnails. */
+  #marp-root.marp-overview .marp-drop-before::after {
+    left: -13.5px;
+  }
+
+  #marp-root.marp-overview .marp-drop-after::after {
+    right: -13.5px;
+  }
 }
 
 #marp-empty-hint {

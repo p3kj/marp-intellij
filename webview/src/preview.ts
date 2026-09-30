@@ -12,6 +12,7 @@ import { parseFragment, patchSlides } from './patch'
 import { createScrollReporter } from './scroll-reporter'
 import { collectCodeLines, lineForViewportPosition, offsetForLine, type CodeLine } from './scroll-sync'
 import { assetsSettled } from './settle'
+import { installSlideDrag, usesHeadingDivider } from './slide-drag'
 import { defaultStrings, formatMessage, mergeStrings } from './strings'
 import type { MarpBridge, PreviewStrings, RenderOptions, ThemeInput } from './types'
 
@@ -52,10 +53,19 @@ let pendingScrollLine: number | undefined
 let activeLine: number | undefined
 /** Slide overview (thumbnail grid) on: scroll sync is suspended, see `setOverview`. */
 let overview = false
+/** The last render was of a deck whose slides can be reordered by dragging (no `headingDivider`), see slide-drag.ts. */
+let reorderable = false
 /** The overview was turned on before the first render (page reload): show the active slide once it is there. */
 let revealActiveAfterRender = false
 let entries: CodeLine[] | undefined
 const scroll = createScrollReporter((line) => host.post({ type: 'revealLine', line }))
+// Reordering slides by dragging their thumbnails in the overview: the host applies (or refuses) the move and the page
+// then re-renders from the changed document, so nothing is reordered here.
+const drag = installSlideDrag(document, {
+  root,
+  enabled: () => overview && reorderable,
+  post: (move) => host.post({ type: 'didMoveSlide', ...move }),
+})
 
 /** rAF, with a timer fallback in case the browser pauses animation frames (hidden tab, offscreen). */
 function nextFrame(fn: () => void): void {
@@ -103,11 +113,14 @@ function render(): void {
   if (baseEl.getAttribute('href') !== arg.baseHref) baseEl.setAttribute('href', arg.baseHref)
 
   try {
-    const { html, css, comments } = ensureMarp(arg.options).marp.render(arg.markdown)
+    const { marp } = ensureMarp(arg.options)
+    const { html, css, comments } = marp.render(arg.markdown)
     inject(html, css, arg.options.notes === true ? comments : undefined)
     renderError = undefined
+    reorderable = !usesHeadingDivider(marp)
   } catch (e) {
     renderError = e instanceof Error ? e.message : String(e)
+    reorderable = false
   }
   showErrors()
 
@@ -214,6 +227,7 @@ const bridge: MarpBridge = {
     if (on === overview) return
     overview = on
     root.classList.toggle(overviewClass, on)
+    if (!on) drag.cancel()
     revealActiveAfterRender = on && renderPending
     if (!on) realign()
     else if (!renderPending) root.querySelector<HTMLElement>(`.${activeSlideClass}`)?.scrollIntoView({ block: 'nearest' })
@@ -307,6 +321,10 @@ document.addEventListener('auxclick', onLinkClick)
 // A file or link dropped on the preview would navigate the page to it. Kotlin cancels that navigation, but for an
 // http(s) link dropped by the user it opens the system browser instead; the preview is no drop target at all.
 for (const type of ['dragover', 'drop']) document.addEventListener(type, (e) => e.preventDefault())
+// The slide drag of the overview is built from mouse events (slide-drag.ts): no native drag may start and interrupt it.
+document.addEventListener('dragstart', (e) => {
+  if (overview) e.preventDefault()
+})
 
 document.addEventListener('dblclick', (e) => {
   if (overview) return // the two clicks already posted didClick
