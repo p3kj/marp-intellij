@@ -4,27 +4,46 @@
     <name>Marp Preview</name>
     <vendor email="p3k.jaros@gmail.com" url="https://github.com/p3kj/marp-intellij">p3kj</vendor>
     <description><![CDATA[
-        <p>Live preview for <a href="https://marp.app">Marp</a> slide decks, right next to the Markdown editor, in every JetBrains IDE.</p>
-        <p>Open a Markdown file whose front matter contains <code>marp: true</code> and it gets an Editor / Split / Preview toggle. The preview refreshes while you type, no save needed.</p>
-        <p><b>Features</b></p>
+        <p>Live preview for <a href="https://marp.app">Marp</a> slide decks, next to the Markdown editor, in every JetBrains IDE.</p>
+        <p>Open a Markdown file whose front matter contains <code>marp: true</code> and it gets an Editor / Split / Preview toggle. The slides refresh while you type, no save needed. The preview is rendered by <a href="https://github.com/marp-team/marp-core">marp-core</a> inside the IDE, so it needs no Node.js.</p>
+        <p><b>Preview</b></p>
         <ul>
-            <li><b>Live preview</b> rendered by <a href="https://github.com/marp-team/marp-core">marp-core</a> inside the IDE's built-in browser (JCEF). No Node.js, no Marp CLI, no external process.</li>
-            <li><b>Scroll sync</b> in both directions, the slide under the caret is highlighted, double-click a slide to jump to its source line. Toolbar toggles for scroll sync and presenter notes.</li>
-            <li><b>Custom themes</b> from CSS files, folders or URLs (the same entries as <code>markdown.marp.themes</code> in VS Code), plus automatic pickup of <code>themeSet</code> from <code>.marprc.yml</code>. Theme edits show up live.</li>
-            <li><b>Directives</b> in HTML comments and in the front matter: completion, hover docs and an inspection (unknown names, <code>_theme</code>, invalid <code>paginate</code>, <code>math</code> and <code>headingDivider</code> values), and highlighting in comments. Unknown theme names are reported with quick fixes to add a theme.</li>
-            <li><b>Image syntax</b>: completion and hover docs for the Marp keywords in the alt text of images (<code>bg</code>, <code>left:40%</code>, <code>w:400</code>, <code>sepia</code>, ...).</li>
-            <li><b>Local images</b> with relative paths, <code>![bg](...)</code> backgrounds, fitting headers, Twemoji.</li>
-            <li><b>Math</b> with MathJax (works offline) or KaTeX.</li>
-            <li><b>Inline HTML</b> in slides: off, Marp's safe allow list, or all. Untrusted projects render without HTML and without remote themes.</li>
-            <li><b>Slide navigation</b>: current slide in the status bar, Next / Previous Slide and Go to Slide, slide numbers in the editor, and folding of each slide.</li>
-            <li><b>Reorder slides</b>: Move Slide Up / Down in the Code menu, or Move Statement Up / Down with the caret on a slide's <code>---</code> line.</li>
-            <li><b>Export</b> to a standalone HTML file or to a PDF with one page per slide, from File | Export or the preview toolbar. It needs no Node.js. PowerPoint and PNG or JPEG images are exported with <a href="https://github.com/marp-team/marp-cli">Marp CLI</a>, which you install yourself (it needs Node.js and Chrome, Edge or Firefox).</li>
-            <li><b>Present</b> the deck in the system browser one slide at a time, starting at the slide under the caret (Present Deck in the preview toolbar). With <a href="https://github.com/marp-team/marp-cli">Marp CLI</a> installed it is Marp's own presentation with presenter view, notes, timer and overview, otherwise a built-in page with keyboard navigation and full screen.</li>
-            <li><b>New deck and live templates</b>: File | New | Marp Presentation, and <code>slide</code>, <code>lead</code>, <code>bg</code> and <code>notes</code> live templates in Marp decks.</li>
-            <li>The preview follows the IDE light or dark theme. Links open in the IDE (project files) or in the system browser.</li>
+            <li>Scroll sync in both directions, the slide under the caret is highlighted, double-click a slide to jump to its source.</li>
+            <li>Slide overview: all slides as thumbnails. Click one to jump to it, drag one to reorder the deck.</li>
+            <li>The preview follows the IDE light or dark theme. Links open in the IDE or in the system browser.</li>
+        </ul>
+        <p><b>Editing</b></p>
+        <ul>
+            <li>Completion, hover docs and an inspection for directives, in HTML comments and in the front matter. Every directive says whether it applies to the whole deck, to this and the following slides, or to this slide only.</li>
+            <li>Completion and docs for the image keywords in alt text: <code>bg</code>, <code>left:40%</code>, <code>w:400</code>, <code>sepia</code> and more.</li>
+            <li>Unknown theme names are marked, with quick fixes to add a theme. Ctrl+click a theme name to open its CSS.</li>
+            <li>File | New | Marp Presentation, and the live templates <code>slide</code>, <code>lead</code>, <code>bg</code> and <code>notes</code>.</li>
+        </ul>
+        <p><b>Navigation</b></p>
+        <ul>
+            <li>Slides in the Structure tool window and the File Structure popup.</li>
+            <li>"Slide 3 / 12" in the status bar, Next / Previous Slide, Go to Slide, slide numbers and folding per slide.</li>
+            <li>Move Slide Up / Down, or Move Statement Up / Down with the caret on a slide's <code>---</code> line.</li>
+        </ul>
+        <p><b>Themes and content</b></p>
+        <ul>
+            <li>Custom themes from CSS files, folders or URLs (the same entries as <code>markdown.marp.themes</code> in VS Code), and <code>themeSet</code> from <code>.marprc.yml</code>. Theme edits show up live.</li>
+            <li>Local images and <code>![bg](...)</code> backgrounds, math with MathJax (works offline) or KaTeX, Twemoji, fitting headers.</li>
+            <li>Inline HTML in slides: off, Marp's allow list, or all.</li>
+        </ul>
+        <p><b>Export and present</b></p>
+        <ul>
+            <li>HTML and PDF (one page per slide) are built in and need no Node.js.</li>
+            <li>PowerPoint, PNG and JPEG through <a href="https://github.com/marp-team/marp-cli">Marp CLI</a>, which you install yourself.</li>
+            <li>Present Deck opens the deck in the system browser, starting at the slide under the caret. With Marp CLI it is Marp's own presentation with presenter view, notes, timer and overview.</li>
+        </ul>
+        <p><b>Safety</b></p>
+        <ul>
+            <li>The preview page is locked down (Content Security Policy, no navigation away). Untrusted projects render without HTML and without custom themes.</li>
         </ul>
         <p>Settings: <b>Settings | Tools | Marp</b>.</p>
         <p><a href="https://github.com/p3kj/marp-intellij">Source code</a> (MIT) |
+        <a href="https://github.com/p3kj/marp-intellij#readme">Documentation</a> |
         <a href="https://github.com/p3kj/marp-intellij/issues">Issues</a> |
         <a href="https://github.com/p3kj/marp-intellij/blob/main/CHANGELOG.md">Changelog</a></p>
         <p>Marp Preview is an independent project and is not affiliated with the Marp team.</p>

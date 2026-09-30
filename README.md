@@ -9,7 +9,7 @@
 
 Marp Preview renders [Marp](https://marp.app/) slide decks inside your JetBrains IDE. The slides appear in a JCEF preview next to the Markdown editor and refresh while you type.
 
-![Marp Preview: Markdown on the left, the rendered slides on the right, the slide under the caret outlined](docs/screenshot.png)
+![Typing a new slide: the preview adds it while you type, and completing `_class: lead` restyles it](docs/media/live-editing.gif)
 
 The plugin works in all IntelliJ-based IDEs on the 2026.2 platform and newer (IntelliJ IDEA, PhpStorm, WebStorm, PyCharm, GoLand, CLion, Rider, RubyMine and others). It depends only on the bundled Markdown plugin and JCEF. No Node.js is needed for the preview, nor for the HTML and PDF export. PowerPoint and image export use Marp CLI, which you install yourself.
 
@@ -62,30 +62,61 @@ For a bigger example open the `samples/` folder of this repository as a project.
 
 ## Features
 
-- Live preview of Marp decks next to the Markdown editor, refreshed while typing
-- Two-way scroll sync, highlight of the slide under the caret, double-click a slide to jump to its source line
-- Slide overview: the preview as a grid of thumbnails, click one to jump to its source, drag one to reorder the slides (preview toolbar)
-- Slide outline in the Structure tool window and the File Structure popup (Ctrl+F12 / Cmd+F12), with each slide's headings; click a slide to jump to it
-- Slide navigation: "Slide 3 / 12" in the status bar (click to go to a slide), Next / Previous Slide (Ctrl+Alt+PageDown / Ctrl+Alt+PageUp, Cmd+Opt on macOS) and Go to Slide in the Navigate menu, slide numbers in the editor, and folding of each slide
-- Reorder slides: Move Slide Up / Down in the Code menu, Move Statement Up / Down (Ctrl+Shift+Up / Down, Cmd+Shift+Up / Down on macOS) with the caret on a slide's `---` line, or drag a thumbnail in the slide overview
-- File | New | Marp Presentation starter deck, and live templates `slide`, `lead`, `bg` and `notes` (type the abbreviation and press Tab)
-- Directives in comments and in the front matter: completion, hover docs and an inspection for unknown directives, `_theme` and invalid values, and highlighting in comments
-- Image syntax: completion and hover docs for the keywords in image alt text (`bg`, `left:40%`, `w:400`, `sepia`, ...)
-- Unknown theme names are marked in the editor, with quick fixes to add a theme file or folder
-- Ctrl+click a theme name to open its CSS file
-- Custom themes from files, folders and URLs, and automatic pickup of `themeSet` from `.marprc.yml`
+**Preview**
+
+- Live preview next to the Markdown editor, rendered by marp-core and refreshed while you type
+- Two-way scroll sync, the slide under the caret is highlighted, double-click a slide to jump to its source
+- Slide overview: all slides as thumbnails, click one to jump to it, drag one to reorder the deck
+- Follows the IDE light or dark theme
+
+**Editing**
+
+- Completion, hover docs and inspections for directives, in HTML comments and in the front matter
+- Completion and docs for the image keywords in alt text (`bg`, `left:40%`, `w:400`, `sepia`, ...)
+- Unknown theme names are marked, with quick fixes to add a theme; Ctrl+click a theme name to open its CSS
+- File | New | Marp Presentation, and live templates `slide`, `lead`, `bg` and `notes`
+- The spellchecker knows Marp words, so `marp: true` is not a typo
+
+**Navigation**
+
+- Slides in the Structure tool window and the File Structure popup (Ctrl+F12 / Cmd+F12)
+- "Slide 3 / 12" in the status bar, Next / Previous Slide, Go to Slide, slide numbers and folding per slide
+- Move Slide Up / Down, Move Statement Up / Down on a slide's `---` line, or drag a thumbnail
+
+**Themes and content**
+
+- Custom themes from CSS files, folders and URLs, and `themeSet` from `.marprc.yml`, picked up automatically
 - Theme CSS edits show up live, before the file is saved
-- Local images with relative paths, including `![bg](...)` backgrounds
-- Math with MathJax (works offline) or KaTeX
-- Emoji support through Twemoji
-- The IDE spellchecker knows Marp words such as `marp`, Marpit and Twemoji, so `marp: true` is not flagged as a typo
+- Local images and `![bg](...)` backgrounds, math with MathJax (works offline) or KaTeX, Twemoji
 - Inline HTML in slides: off, Marp's allow list or all
-- Export a deck to a standalone HTML file or to a PDF with one page per slide (File | Export or the preview toolbar), without Node.js
-- Export a deck to PowerPoint (PPTX) or to PNG or JPEG images through [Marp CLI](https://github.com/marp-team/marp-cli), which you install yourself
-- Present a deck in the system browser, one slide at a time, starting at the slide under the caret (Present Deck in the preview toolbar). With [Marp CLI](https://github.com/marp-team/marp-cli) it is Marp's own presentation with presenter view, notes, timer and overview, without it a built-in page with keyboard navigation and full screen
-- The preview follows the IDE light or dark theme
+
+**Export and present**
+
+- HTML and PDF (one page per slide) built in, no Node.js needed
+- PowerPoint (PPTX), PNG and JPEG through [Marp CLI](https://github.com/marp-team/marp-cli), which you install yourself
+- Present Deck in the system browser, from the slide under the caret. With Marp CLI it is Marp's own presentation with presenter view, notes, timer and overview
+
+**Safety and compatibility**
+
 - Locked-down preview page (Content Security Policy, no navigation away) and a restricted mode for untrusted projects
 - Works in every IntelliJ-based IDE, no IDE-specific APIs
+
+![Dragging a thumbnail in the slide overview moves the slide in the Markdown source](docs/media/drag-reorder.gif)
+
+### Screenshots
+
+| | |
+| --- | --- |
+| ![Split view: Markdown on the left, slides on the right, the slide under the caret outlined](docs/media/split.png) | ![Slide overview: the deck as a grid of thumbnails](docs/media/overview.png) |
+| Split view with scroll sync | Slide overview |
+| ![Directive completion shows where each directive applies](docs/media/completion.png) | ![Hover docs for a directive, next to the live preview](docs/media/hover-docs.png) |
+| Directive completion | Hover docs |
+| ![Completion of image keywords in alt text](docs/media/image-keywords.png) | ![Quick fixes for an unknown theme name](docs/media/quick-fix.png) |
+| Image keywords | Unknown theme quick fixes |
+| ![Slides in the Structure tool window](docs/media/structure.png) | ![Export menu of the preview toolbar](docs/media/export.png) |
+| Structure view | Export to HTML, PDF, PPTX and images |
+
+The deck in these pictures is [docs/showcase/marp-preview.md](docs/showcase/marp-preview.md), a presentation about the plugin written with the plugin. Open `docs/showcase` as a project to try it.
 
 A Markdown file is treated as a Marp deck when its front matter contains `marp: true`. Other Markdown files keep the regular Markdown preview.
 

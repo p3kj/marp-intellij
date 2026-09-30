@@ -1,0 +1,144 @@
+/* @theme showcase */
+/* Theme of the Marp Preview showcase deck. Colors follow the plugin icon. */
+@import 'default';
+
+:root {
+  --blue: #3d6fe0;
+  --blue-soft: #e8efff;
+  --ink: #1f2937;
+  --muted: #5b6678;
+  --night: #111827;
+}
+
+section {
+  background: #ffffff;
+  color: var(--ink);
+  font-family: 'Inter', 'Noto Sans', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  font-size: 30px;
+  padding: 64px 80px;
+  justify-content: flex-start;
+}
+
+section h1,
+section h2 {
+  color: var(--night);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+section h2 {
+  font-size: 1.5em;
+  margin-bottom: 0.6em;
+}
+
+section h2::before {
+  content: '';
+  display: block;
+  width: 64px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--blue);
+  margin-bottom: 0.45em;
+}
+
+section strong {
+  color: var(--blue);
+}
+
+section ul {
+  padding-left: 1.1em;
+}
+
+section li {
+  margin: 0.25em 0;
+}
+
+section li::marker {
+  color: var(--blue);
+}
+
+section code {
+  background: var(--blue-soft);
+  color: #1d3f99;
+  border-radius: 6px;
+  padding: 0.05em 0.3em;
+}
+
+section pre {
+  background: #f5f8ff;
+  border: 2px solid #dbe5ff;
+  border-radius: 14px;
+  font-size: 0.8em;
+}
+
+section pre code {
+  background: transparent;
+  color: var(--ink);
+}
+
+section::after {
+  color: var(--muted);
+  font-size: 0.6em;
+  font-weight: 600;
+}
+
+header,
+footer {
+  color: var(--muted);
+  font-size: 0.55em;
+}
+
+section.lead {
+  background:
+    radial-gradient(circle at 85% 20%, rgba(61, 111, 224, 0.55), transparent 45%),
+    linear-gradient(135deg, #0b1220, #1f2937);
+  color: #dbe4f5;
+  justify-content: center;
+}
+
+section.lead h1 {
+  color: #ffffff;
+  font-size: 2.6em;
+  margin: 0;
+}
+
+section.lead h2 {
+  color: #ffffff;
+}
+
+section.lead h2::before {
+  display: none;
+}
+
+section.lead p {
+  font-size: 1.15em;
+}
+
+section.lead strong {
+  color: #9db8ff;
+}
+
+section.lead code {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+/* `class: two`: the list of the slide flows in two columns, no HTML needed. */
+section.two ul {
+  columns: 2;
+  column-gap: 56px;
+}
+
+section.two li {
+  break-inside: avoid;
+}
+
+table {
+  font-size: 0.8em;
+  border-collapse: collapse;
+}
+
+th {
+  background: var(--night);
+  color: #ffffff;
+}

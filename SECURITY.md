@@ -8,7 +8,7 @@ Only the latest release on the JetBrains Marketplace receives fixes.
 
 Please do not open a public issue for security problems.
 
-Use GitHub's private vulnerability reporting: https://github.com/p3kj/marp-intellij/security/advisories/new (available once the repository has it enabled). You can also email p3k.jaros@gmail.com. You should get an acknowledgement within 7 days. Fixes ship as a plugin update. The advisory is published after the update is available.
+Use GitHub's private vulnerability reporting: https://github.com/p3kj/marp-intellij/security/advisories/new. You can also email p3k.jaros@gmail.com. You should get an acknowledgement within 7 days. Fixes ship as a plugin update. The advisory is published after the update is available.
 
 ## What counts
 

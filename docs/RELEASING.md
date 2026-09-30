@@ -1,6 +1,6 @@
 # Release process
 
-Releases are built and published by GitHub Actions. Tags have no `v` prefix: the tag is the version string (`0.1.0`, `0.2.0-beta.1`). Never create `v0.1.0` tags by hand.
+Releases are built and published by GitHub Actions. Tags have no `v` prefix: the tag is the version string (`0.9.0`, `1.0.0-beta.1`). Never create `v0.9.0` tags by hand.
 
 ## One-time setup
 
@@ -47,5 +47,4 @@ A version like `0.2.0-beta.1` is published to the `beta` channel. Users subscrib
 
 - README: in the Installation section, make the Marketplace path the main one and drop the "not on the Marketplace yet" sentence.
 - README: uncomment the Marketplace version and downloads badges and replace `NNNNN` with the numeric plugin id.
-- Replace the screenshot line with the image if that has not happened yet.
 - Node: `NODE_VERSION` in the workflows is 24. Node 26 becomes LTS on 2026-10-28, bump it then (Dependabot does not change `env:` values).
