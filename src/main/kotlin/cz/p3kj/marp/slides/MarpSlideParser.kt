@@ -20,6 +20,10 @@ import org.intellij.plugins.markdown.lang.psi.impl.MarkdownHeader
  * multi-line HTML comment or `<style>`, thematic breaks inside blockquotes and lists. The Marp rules on top of it live
  * in [MarpSlideSplitter]. The front matter is located by [MarpDetector.findFrontMatter], not by the PSI, so that it
  * follows the same rules as deck detection.
+ *
+ * One place where the Markdown plugin is not CommonMark: it builds a setext heading from any single line above `---` or
+ * `===`, not only from a paragraph line. `# Title` and `---` directly above a `---` are an ATX heading and a thematic
+ * break for markdown-it, so those setext nodes are read as what markdown-it makes of them, see [Misread].
  */
 object MarpSlideParser {
 
@@ -58,7 +62,7 @@ object MarpSlideParser {
             when {
                 type == MarkdownTokenTypes.HORIZONTAL_RULE -> out += MarpBlock.Break(start)
                 type in HEADER_TYPES -> {
-                    out += heading(child, start)
+                    headerBlocks(child, start, out)
                     collectNested(child, start, out)
                 }
                 type == MarkdownElementTypes.HTML_BLOCK && isComment(child) -> out += MarpBlock.Comment(start, child.text)
@@ -82,7 +86,7 @@ object MarpSlideParser {
             val type = child.elementType
             when {
                 type in HEADER_TYPES -> {
-                    out += heading(child, start)
+                    heading(child, start)?.let { out += it }
                     collectNested(child, start, out)
                 }
                 (type == MarkdownElementTypes.HTML_BLOCK || type == MarkdownTokenTypes.HTML_TAG) && isComment(child) ->
@@ -92,10 +96,50 @@ object MarpSlideParser {
         }
     }
 
-    private fun heading(node: ASTNode, start: Int): MarpBlock.Heading {
-        val header = node.psi as MarkdownHeader
-        return MarpBlock.Heading(start, header.level, headingText(node))
+    /** What markdown-it makes of the single content line of a setext node, when that is not a setext heading. */
+    private sealed interface Misread {
+        /** A thematic break (`---`, `***`, `_ _ _`) above the underline: markdown-it reads a break, then the underline itself. */
+        data object Rule : Misread
+
+        /** An ATX heading (`# Title`) above the underline: markdown-it reads that heading, then the underline itself. */
+        data class Atx(val level: Int) : Misread
     }
+
+    private val THEMATIC_BREAK = Regex("^ {0,3}([-*_])(?:[ \\t]*\\1){2,}[ \\t]*$")
+    private val ATX_OPENING = Regex("^ {0,3}(#{1,6})(?:[ \\t]|$)")
+    private val ATX_LEADING_MARKER = Regex("^\\s*#{1,6}")
+    private val ATX_CLOSING_MARKER = Regex("(?:^|[ \\t])#+[ \\t]*$")
+
+    /** `null` for an ATX heading and for a real setext heading: one whose content is a paragraph, or several lines. */
+    private fun misread(setext: ASTNode): Misread? {
+        val line = setext.findChildByType(MarkdownTokenTypes.SETEXT_CONTENT)?.text ?: return null
+        if ('\n' in line) return null
+        if (THEMATIC_BREAK.matches(line)) return Misread.Rule
+        return ATX_OPENING.find(line)?.let { Misread.Atx(it.groupValues[1].length) }
+    }
+
+    /**
+     * The blocks of a top-level heading node. A real heading is one block. A misread setext node is split as markdown-it
+     * reads it: a break or an ATX heading first, and for `---` the underline is a thematic break of its own, which is a
+     * slide separator (`===` is only text).
+     */
+    private fun headerBlocks(node: ASTNode, start: Int, out: MutableList<MarpBlock>) {
+        out += heading(node, start) ?: MarpBlock.Break(start)
+        if (node.elementType != MarkdownElementTypes.SETEXT_2 || misread(node) == null) return
+        val underline = node.findChildByType(MarkdownTokenTypes.SETEXT_2) ?: return
+        out += MarpBlock.Break(start + underline.startOffsetInParent)
+    }
+
+    /** The heading of [node] with the level and text markdown-it gives it, `null` when it is a thematic break instead. */
+    private fun heading(node: ASTNode, start: Int): MarpBlock.Heading? = when (val misread = misread(node)) {
+        null -> MarpBlock.Heading(start, (node.psi as MarkdownHeader).level, headingText(node))
+        Misread.Rule -> null
+        is Misread.Atx -> MarpBlock.Heading(start, misread.level, atxText(headingText(node)))
+    }
+
+    /** Drops the `#` markers (opening, and the optional closing sequence) that a setext node keeps in its content text. */
+    private fun atxText(text: String): String =
+        text.replaceFirst(ATX_LEADING_MARKER, "").replace(ATX_CLOSING_MARKER, "")
 
     private fun isComment(node: ASTNode): Boolean = node.text.trimStart().startsWith("<!--")
 

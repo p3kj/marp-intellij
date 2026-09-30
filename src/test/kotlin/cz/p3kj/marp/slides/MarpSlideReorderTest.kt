@@ -1,6 +1,5 @@
 package cz.p3kj.marp.slides
 
-import cz.p3kj.marp.MarpDetector
 import cz.p3kj.marp.MarpLightTestCase
 import org.intellij.plugins.markdown.lang.psi.impl.MarkdownFile
 
@@ -17,44 +16,23 @@ class MarpSlideReorderTest : MarpLightTestCase() {
         return MarpSlideParser.deck(myFixture.file as MarkdownFile)
     }
 
-    /**
-     * A deck for text that the Markdown parser does not read like CommonMark: it takes `# A` directly above `---` for a
-     * setext heading and two `---` lines in a row for no break at all. Every `---` line after the front matter is a break here.
-     */
-    private fun handDeck(text: String): MarpDeck {
-        val frontMatter = MarpDetector.findFrontMatter(text)
-        val blocks = ArrayList<MarpBlock>()
-        var offset = 0
-        for (line in text.split("\n")) {
-            when {
-                offset < (frontMatter?.endOffset ?: 0) -> Unit
-                line == "---" -> blocks += MarpBlock.Break(offset)
-                line.startsWith("# ") -> blocks += MarpBlock.Heading(offset, 1, line.drop(2))
-                line.isNotBlank() -> blocks += MarpBlock.Content(offset)
-            }
-            offset += line.length + 1
-        }
-        return MarpSlideSplitter.split(text, frontMatter, blocks)
-    }
-
-    private fun edit(text: String, index: Int, down: Boolean, parse: (String) -> MarpDeck = ::deck): MarpSlideReorder.Edit? =
-        MarpSlideReorder.move(text, parse(text), index, down)
+    private fun edit(text: String, index: Int, down: Boolean): MarpSlideReorder.Edit? =
+        MarpSlideReorder.move(text, deck(text), index, down)
 
     /** [text] after moving slide [index], `null` when there is nothing to move. */
-    private fun moved(text: String, index: Int, down: Boolean, parse: (String) -> MarpDeck = ::deck): String? =
-        edit(text, index, down, parse)?.let { text.replaceRange(it.start, it.end, it.text) }
+    private fun moved(text: String, index: Int, down: Boolean): String? =
+        edit(text, index, down)?.let { text.replaceRange(it.start, it.end, it.text) }
 
     /** Slide titles, "-" for slides without one. */
-    private fun titles(text: String, parse: (String) -> MarpDeck = ::deck): List<String> =
-        parse(text).slides.map { it.title ?: "-" }
+    private fun titles(text: String): List<String> =
+        deck(text).slides.map { it.title ?: "-" }
 
     private fun assertMoved(
         expected: String, text: String, index: Int, down: Boolean, expectedTitles: List<String>,
-        parse: (String) -> MarpDeck = ::deck,
     ) {
-        val result = moved(text, index, down, parse)
+        val result = moved(text, index, down)
         assertEquals(expected, result)
-        assertEquals(expectedTitles, titles(result!!, parse))
+        assertEquals(expectedTitles, titles(result!!))
     }
 
     private val threeSlides = "$front\n# One\n\n---\n\n# Two\n\n---\n\n# Three\n"
@@ -150,7 +128,7 @@ class MarpSlideReorderTest : MarpLightTestCase() {
 
     fun testTightDeckGetsBlankLinesAroundMovedSlides() {
         val text = "$front# A\n---\n# B\n---\n# C\n"
-        assertMoved("$front# A\n\n---\n# C\n\n---\n# B\n", text, 1, down = true, listOf("A", "C", "B"), ::handDeck)
+        assertMoved("$front# A\n\n---\n# C\n\n---\n# B\n", text, 1, down = true, listOf("A", "C", "B"))
     }
 
     fun testEmptyLastSlideMovesUp() {

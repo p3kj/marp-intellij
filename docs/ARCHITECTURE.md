@@ -299,6 +299,17 @@ slide navigation and slide folding.
   markers, inline HTML and comments, images left out, links reduced to their text), not from
   `MarkdownHeader.buildVisibleText` (`@ApiStatus.Experimental`). Only `MarkdownFile`, `MarkdownHeader.level` and the
   element and token type constants are used from the Markdown plugin.
+- The one place where the Markdown plugin's parser (JetBrains/markdown) is not CommonMark: it builds `SETEXT_1` /
+  `SETEXT_2` from ANY single line above `===` / `---`, not only from a paragraph line, while markdown-it (Marpit) reads
+  an ATX heading or a thematic break there. `# A` directly above `---` is an `h1` and a break for Marp (the plugin says
+  one `h2`), and `---` directly above `---` is two breaks (the plugin says one heading titled "---"). `MarpSlideParser`
+  therefore reads a setext node whose content is a single line as what markdown-it makes of it: a content line that is
+  a thematic break becomes a `Break`, one that starts an ATX heading becomes a `Heading` with the level of the `#`
+  markers and the text without the markers (also the closing ones), and for `---` the underline is a `Break` of its own
+  (`===` is only text). Inside blockquotes and lists the same correction gives the heading its real level, or no
+  heading, but no break, because Marpit splits at top-level `hr` only. Real setext headings (a paragraph line above the
+  underline) are unchanged. Not covered: a paragraph of several lines above `---`, which the plugin already reads as a
+  paragraph and a rule (a break) while Marp makes a setext heading of it; that misread is still open.
 - `MarpSlideSplitter.split` (pure, unit-tested) mirrors Marpit's `markdown/slide.js` (split at every top-level `hr`)
   and `markdown/heading_divider.js` (a hidden `hr` before headings of the `headingDivider` levels, only when something
   visible precedes it, so a real `---` followed by a divider heading leaves an empty slide between them). This has to
@@ -778,7 +789,7 @@ condition as the export actions) and `MarpPresenter`.
   theme service including trust, `.marprc` confinement and download limits), plus plain unit tests for logic that does
   not need the platform: `MarpDetector`, `MarpSlideSplitter` and `MarpHeadingDivider` (slide splitting, tricky cases by
   hand-built blocks; `MarpSlideParserTest` and `MarpStructureViewTest` cover the PSI adapter and the tree), the slide navigation
-  (actions, Go to Slide with a replaced test input dialog, status bar widget, inlay hints called through a recording sink), slide reordering (`MarpSlideReorderTest` for the pure swap, `MarpSlideReorderingTest` for the actions, undo and caret, `MarpSlideStatementMoverTest` for Move Statement through the editor actions; the tight-deck cases use hand-built blocks because the Markdown plugin's parser reads `# A` directly above `---` as a setext heading and two `---` lines in a row as no break), slide folding (regions from the builder, and the real fold model after the initial folding pass next to the Markdown regions), `MarpBridgeState` (state setters and commands), `MarpPageReplies`, `MarpPdfSettings`, `MarpExportFormat`, `MarpScrollEchoGuard`, `MarpLinkPolicy` (and request
+  (actions, Go to Slide with a replaced test input dialog, status bar widget, inlay hints called through a recording sink), slide reordering (`MarpSlideReorderTest` for the pure swap, `MarpSlideReorderingTest` for the actions, undo and caret, `MarpSlideStatementMoverTest` for Move Statement through the editor actions; the tight-deck cases use real parsed decks, including a `# A` directly above `---` and two `---` lines in a row, see "Slide model"), slide folding (regions from the builder, and the real fold model after the initial folding pass next to the Markdown regions), `MarpBridgeState` (state setters and commands), `MarpPageReplies`, `MarpPdfSettings`, `MarpExportFormat`, `MarpScrollEchoGuard`, `MarpLinkPolicy` (and request
   routing), `MarpResourcePaths`, `MarpJcefStartup`, the `.marprc` parser, `MarpThemePaths`, `MarpThemeFolder`,
   `MarpThemeWatch`, `MarpThemeNames` and the theme URL validation of the settings page. The directive features have plain
   unit tests for the catalog and the comment parser, and light platform tests for highlighting, completion (including

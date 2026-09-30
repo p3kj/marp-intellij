@@ -69,6 +69,86 @@ class MarpSlideParserTest : MarpLightTestCase() {
         assertEquals(listOf("-", "-"), titles("${front}Title\n\n---\nText\n"))
     }
 
+    // The Markdown plugin builds a setext heading from any single line above `---`, markdown-it only from paragraph lines.
+
+    fun testAtxHeadingDirectlyAboveABreakIsAHeadingAndABreak() {
+        val text = "$front\n# A\n---\n# B\n"
+        val deck = deck(text)
+        assertEquals(listOf("A", "B"), deck.slides.map { it.title })
+        assertEquals(listOf(1), deck.slides[0].headings.map { it.level })
+        assertEquals(text.indexOf("---", front.length), deck.slides[1].startOffset)
+        assertEquals(text.indexOf("# B"), deck.slides[1].contentOffset)
+        assertEquals(listOf("A", "B"), titles("$front# A\n***\n# B\n"))
+        assertEquals(listOf("A", "B"), titles("$front# A\n- - -\n# B\n"))
+        // Closing markers and the level come from the ATX line, not from the setext underline.
+        val closed = deck("$front## A ##\n---\n# B\n")
+        assertEquals(listOf("A", "B"), closed.slides.map { it.title })
+        assertEquals(listOf(2), closed.slides[0].headings.map { it.level })
+    }
+
+    fun testATitleWithMarkupAboveABreakKeepsTheTitleClean() {
+        assertEquals(listOf("Bold title", "Link text"), titles("$front# **Bold** title\n---\n# [Link](x) text\n"))
+        assertEquals(listOf("snake_case", "B"), titles("$front# snake_case\n---\n# B\n"))
+        assertEquals(listOf("#hashtag"), titles("$front# #hashtag\n"))
+    }
+
+    fun testABreakDirectlyAboveABreakIsTwoBreaks() {
+        val text = "$front\n# A\n\n---\n---\n\n# B\n"
+        assertEquals(listOf("A", "-", "B"), titles(text))
+        assertEquals(listOf("A", "-", "B"), titles("$front# A\n\n***\n---\n\n# B\n"))
+        val deck = deck(text)
+        assertEquals(text.indexOf("---", front.length), deck.slides[1].startOffset)
+        assertEquals(text.indexOf("---", text.indexOf("---", front.length) + 1), deck.slides[2].startOffset)
+    }
+
+    fun testABreakDirectlyAfterTheFrontMatterAndAnotherBreakGiveTwoEmptySlides() {
+        assertEquals(listOf("-", "-", "B"), titles("$front---\n---\n\n# B\n"))
+    }
+
+    fun testThreeBreaksInARowGiveFourSlides() {
+        assertEquals(listOf("A", "-", "-", "B"), titles("$front\n# A\n\n---\n---\n---\n\n# B\n"))
+    }
+
+    fun testParagraphAboveABreakIsStillASetextHeading() {
+        assertEquals(listOf("text"), titles("$front\ntext\n---\n# B\n"))
+        assertEquals(1, deck("$front\ntext\n---\n\nB\n").slides.size)
+    }
+
+    fun testATxHeadingAboveASetextEqualsLineHasTheLevelOfTheAtxLine() {
+        val one = deck("$front# A\n===\n\ntext\n")
+        assertEquals(1, one.slides.size)
+        assertEquals(listOf(MarpHeading(1, "A", front.length)), one.slides[0].headings)
+        val two = deck("$front## A\n===\n")
+        assertEquals(listOf(2), two.slides.single().headings.map { it.level })
+        assertEquals("A", two.slides.single().title)
+    }
+
+    fun testHeadingDividerUsesTheLevelOfAnAtxLineAboveABreak() {
+        val divider = "---\nmarp: true\nheadingDivider: 2\n---\n"
+        // Marp: [text] [## A] [text] [## B], the break after "## A" starts the third slide.
+        val deck = deck("${divider}text\n\n## A\n---\ntext\n\n## B\n")
+        assertEquals(listOf("-", "A", "-", "B"), deck.slides.map { it.title ?: "-" })
+        assertEquals(listOf("-", "A", "-", "B"), titles("${divider}text\n\n## A ##\n---\ntext\n\n## B\n"))
+        // A level that is not a divider level starts no slide, the break still does.
+        assertEquals(listOf("A", "-"), titles("${divider}text\n\n### A\n---\ntext\n"))
+    }
+
+    fun testMisreadSetextInsideAQuoteIsNotABreak() {
+        val divider = "---\nmarp: true\nheadingDivider: 2\n---\n"
+        // Marp: the quote holds a heading and a rule, neither is a top-level break.
+        assertEquals(1, deck("$front> # A\n> ---\n\n# B\n").slides.size)
+        assertEquals(1, deck("$front> ---\n> ---\n\n# B\n").slides.size)
+        // The ATX line in the quote divides at its own level.
+        assertEquals(listOf("-", "Quoted"), titles("${divider}text\n\n> ## Quoted\n> ---\n"))
+        // A rule in the quote is no heading.
+        assertEquals(listOf("-"), titles("${divider}text\n\n> ---\n> ---\n"))
+    }
+
+    fun testABreakAboveAnEqualsLineIsABreak() {
+        // markdown-it: a rule, then the paragraph "===".
+        assertEquals(listOf("A", "-"), titles("$front# A\n\n---\n===\n\ntext\n"))
+    }
+
     fun testBreaksInBlockquotesAndListsDoNotSplit() {
         assertEquals(listOf("A"), titles("$front# A\n\n> ---\n\n> quote\n> ---\n"))
         assertEquals(listOf("A"), titles("$front# A\n\n- item\n\n  ---\n\n- other\n"))
