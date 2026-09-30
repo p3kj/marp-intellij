@@ -31,6 +31,7 @@ avoids internal, deprecated and experimental APIs.
 | `cz.p3kj.marp.MarpDetector` | front-matter `marp: true` detection, and where the front matter starts and ends |
 | `cz.p3kj.marp.slides` | slide model: Markdown PSI -> blocks (`MarpSlideParser`), Marp's split rules (`MarpSlideSplitter`, `MarpHeadingDivider`), `MarpDeck` / `MarpSlide` |
 | `cz.p3kj.marp.structure` | slide outline for the Structure tool window and the File Structure popup |
+| `cz.p3kj.marp.navigation` | slide navigation: Next / Previous / Go to Slide actions, "Slide 3 / 12" status bar widget, slide number inlay hints |
 | `cz.p3kj.marp.directives` | directives in comments and the front matter: catalog of the Marp directives, comment and front matter parser, highlighting and color page (comments), completion, documentation, theme navigation, inspection |
 | `cz.p3kj.marp.editor` | file editor provider, split editor, preview file editor, preview toolbar actions (group `Marp.PreviewToolbar`) |
 | `cz.p3kj.marp.preview` | JCEF panel, JS bridge, resource request handler |
@@ -221,7 +222,7 @@ string:
 `MarpDeck` (package `cz.p3kj.marp.slides`) is the Kotlin side's view of a deck: a list of `MarpSlide`s that partition the
 whole text (`startOffset` / `endOffset`, the front matter belongs to slide 1, a `---` line belongs to the slide it
 starts), the headings of each slide, and `slideIndexAt(offset)`. Features that need slides use it: the Structure view
-today, slide navigation and folding later.
+and slide navigation today, folding later.
 
 - `MarpSlideParser.deck(MarkdownFile)` (cached per PSI modification, call in a read action) walks the Markdown plugin's
   PSI for the blocks that matter: top-level thematic breaks, headings at any depth, HTML comments (block and inline,
@@ -253,6 +254,48 @@ today, slide navigation and folding later.
   `OpenFileDescriptor`, which the split editor routes to its text editor; the caret listener of the scroll sync then
   highlights the slide in the preview. The tree follows the caret through `getCurrentEditorElement`. It does not
   implement `ExpandInfoProvider` (experimental).
+
+## Slide navigation (Kotlin)
+
+Package `cz.p3kj.marp.navigation` (#9). Three features on top of `MarpDeck`, all `DumbAware`, all limited to Marp decks
+(`MarpDirectiveComments.isMarpDeck`), so the slides are the ones of the preview and the Structure view, `headingDivider`
+included. Moving the caret is all they do, scroll sync then makes the preview follow.
+
+- `MarpSlideNavigation` holds the logic. `withDeck` reads the deck in a non-blocking read action
+  (`ReadAction.nonBlocking(...).withDocumentsCommitted(project)`, expires when the editor is disposed) and calls the
+  continuation on the EDT (`finishOnUiThread`). The deck comes from the committed PSI, and a write action that lands
+  before the continuation restarts the read, so inside the continuation the deck matches `editor.document` and the LIVE
+  caret offset (read there, not in the background part) can be compared with it. That makes quick repeated presses each
+  advance one slide and makes an edit that is not committed yet count. Documents are never committed on the EDT.
+  `moveTo` puts the caret at `MarpSlide.contentOffset`, drops secondary carets and the selection, and scrolls with
+  `ScrollType.CENTER_UP`. The functions return the promise so that tests can wait for it.
+- Actions `Marp.NextSlide`, `Marp.PreviousSlide`, `Marp.GoToSlide` (group `Marp.SlideNavigation` in the Navigate menu,
+  `GoToMenu`). Shortcuts Ctrl+Alt+PageDown / Ctrl+Alt+PageUp (`$default` keymap, so Cmd+Opt on macOS); Go to Slide has
+  none because Ctrl+G is Go to Line. The bundled NetBeans and Visual Studio keymaps use these strokes for other actions,
+  so the plugin removes them from those keymaps (`<keyboard-shortcut ... remove="true"/>`) instead of clashing. Update
+  is `BGT` and enables the actions only for the editor of a Marp deck (they are hidden elsewhere). Deliberately not
+  `EditorAction` / `EditorActionHandler`: they need the PSI synchronously, which would mean committing documents on the
+  EDT. So the actions do not work while focus is in the JCEF preview (no editor in the data context).
+- Go to Slide is an input dialog (`Messages.showInputDialog`), prefilled with the current number, with a validator
+  (`parseSlideNumber`: 1 to the slide count). After the dialog the deck is read again and the caret goes to the slide
+  with that number, because the dialog is modal and the text may have changed meanwhile.
+- `MarpSlideWidgetFactory` (`statusBarWidgetFactory` `Marp.SlidePosition`, before the platform's line:column widget) is a
+  `StatusBarEditorBasedWidgetFactory`, and `MarpSlideWidget` an `EditorBasedWidget` with a `TextPresentation`: "Slide 3 /
+  12", click opens Go to Slide. An empty text hides the status bar component, that is how it only shows for Marp decks.
+  It refreshes on caret moves in the widget's editor (`getEditor()`), document changes and editor selection changes.
+  The deck of a document is cached in the document's user data together with the `modificationStamp` it was computed for
+  (also `null` for "not a deck"), so a caret move costs nothing and typing starts one coalesced non-blocking read. Files
+  that are not Markdown never start a read. Not used: `TextWidgetPresentation` (experimental),
+  `StatusBarWidget.getPresentation(PlatformType)` (deprecated), `EditorBasedWidgetHelper` (internal), `myProject` and
+  `registerCustomListeners` (deprecated).
+- `MarpSlideNumberInlayProvider` is a declarative inlay provider (`codeInsight.declarativeInlayProvider`, language
+  Markdown, group `OTHER_GROUP`, id `marp.slideNumbers`, on by default, switchable in Settings | Editor | Inlay Hints).
+  Its `OwnBypassCollector` adds "Slide N" at the end of the line where each slide starts (`EndOfLinePosition`): line 0
+  (the front matter) for the first slide, the `---` line of a separator, the heading line of a `headingDivider` slide.
+  Declarative hints run in the highlighting pass on the committed PSI, off the EDT. `createCollector` returns `null`
+  outside Marp decks. There is no settings preview file (`inlayProviders/marp.slideNumbers/preview.md`), the platform
+  shows the description alone. Chosen over a line marker (icons only) and `EditorLinePainter` (paints on the EDT, would
+  need the deck there).
 
 ## Directive comments and front matter (Kotlin)
 
@@ -414,7 +457,8 @@ The front matter is covered in the "Front matter" bullet at the end of this sect
 - Kotlin (`src/test`): light platform tests based on `MarpLightTestCase` (editor provider, settings page and settings,
   theme service including trust, `.marprc` confinement and download limits), plus plain unit tests for logic that does
   not need the platform: `MarpDetector`, `MarpSlideSplitter` and `MarpHeadingDivider` (slide splitting, tricky cases by
-  hand-built blocks; `MarpSlideParserTest` and `MarpStructureViewTest` cover the PSI adapter and the tree), `MarpBridgeState`, `MarpScrollEchoGuard`, `MarpLinkPolicy` (and request
+  hand-built blocks; `MarpSlideParserTest` and `MarpStructureViewTest` cover the PSI adapter and the tree), the slide navigation
+  (actions, Go to Slide with a replaced test input dialog, status bar widget, inlay hints called through a recording sink), `MarpBridgeState`, `MarpScrollEchoGuard`, `MarpLinkPolicy` (and request
   routing), `MarpResourcePaths`, `MarpJcefStartup`, the `.marprc` parser, `MarpThemePaths`, `MarpThemeFolder`,
   `MarpThemeWatch`, `MarpThemeNames` and the theme URL validation of the settings page. The directive features have plain
   unit tests for the catalog and the comment parser, and light platform tests for highlighting, completion (including
