@@ -22,7 +22,8 @@ import org.intellij.plugins.markdown.lang.psi.impl.MarkdownFile
  * are skipped. Unknown theme names are not reported, the preview warns about them.
  *
  * The front matter holds the metadata of other tools too (`title`, `author`, ...), so an unknown key there is only a weak
- * warning when it is a near miss of a directive, and nothing otherwise. It is found by [MarpFrontMatter] in the text of the
+ * warning when it is a near miss of a directive with a name of at least 5 characters or that differs in case only, and
+ * nothing otherwise. It is found by [MarpFrontMatter] in the text of the
  * file, not in the PSI: the problems are registered on the file itself with document offsets (the Markdown plugin's front
  * matter element is experimental API), and the Markdown file element is visited like any other element. The YAML plugin
  * reports YAML errors, such as a repeated key, so those are not repeated here.
@@ -52,8 +53,10 @@ class MarpDirectiveInspection : LocalInspectionTool(), DumbAware {
                     holder, file, entry.keyRange,
                     MarpBundle.message("inspection.directive.globalWithUnderscore", entry.key, key.directive.name),
                 )
-                // Other keys are the metadata of other tools, only a near miss of a directive is worth a hint.
-                is MarpDirectiveKey.Unknown -> key.suggestion?.let { suggestion ->
+                // Other keys are the metadata of other tools, only a near miss of a directive is worth a hint. A short
+                // directive name is a near miss of ordinary words (`path` and `math`, `site` and `size`), so it only
+                // counts when the key differs from it in case (`Size`).
+                is MarpDirectiveKey.Unknown -> key.suggestion?.takeIf { it.length >= 5 || it.equals(entry.key, ignoreCase = true) }?.let { suggestion ->
                     report(
                         holder, file, entry.keyRange,
                         MarpBundle.message("inspection.frontMatter.unknown", entry.key, suggestion),

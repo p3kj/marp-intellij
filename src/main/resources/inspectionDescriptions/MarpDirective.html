@@ -11,10 +11,11 @@ exist, a global directive written with an underscore, and an invalid value for <
 <pre><code>---
 marp: true
 pagiante: true
-math: katex # KaTeX
+paginate: true # on
 ---</code></pre>
 <p>The front matter also holds metadata of other tools (<code>title</code>, <code>author</code> and so on), so a key in it is only
-reported when it is a near miss of a directive, as a weak warning.</p>
+reported when it is a near miss of a directive, as a weak warning. Short names are only reported when they differ from the
+directive in case (<code>Size</code>), because words such as <code>path</code> or <code>site</code> are ordinary keys.</p>
 <p>Unknown theme names are not reported here, the preview page shows a warning for them.</p>
 </body>
 </html>

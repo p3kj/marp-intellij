@@ -1,5 +1,6 @@
 package cz.p3kj.marp.directives
 
+import com.intellij.codeInsight.lookup.LookupElement
 import com.intellij.codeInsight.lookup.LookupElementPresentation
 import com.intellij.lang.injection.InjectedLanguageManager
 import com.intellij.util.ThreeState
@@ -22,11 +23,13 @@ class MarpFrontMatterCompletionTest : MarpLightTestCase() {
         return myFixture.lookupElementStrings
     }
 
+    private fun typeTextOf(element: LookupElement): String? = LookupElementPresentation().also { presentation -> element.renderElement(presentation) }.typeText
+
     /** The keys offered by this plugin (the other contributors add words and schema keys of their own), by their type text. */
     private fun marpKeys(): List<String> {
         val types = listOf("completion.type.global", "completion.type.local", "completion.type.spot", "completion.type.frontMatter").map { MarpBundle.message(it) }
         return myFixture.lookupElements.orEmpty()
-            .filter { LookupElementPresentation.renderElement(it).typeText in types }
+            .filter { typeTextOf(it) in types }
             .map { it.lookupString }
     }
 
@@ -65,7 +68,7 @@ class MarpFrontMatterCompletionTest : MarpLightTestCase() {
     fun testMarpKeyIsMarkedAsFrontMatterOnly() {
         complete("---\nma<caret>rp: true\n---\n")
         val marp = myFixture.lookupElements!!.first { it.lookupString == "marp" }
-        assertEquals("front matter", LookupElementPresentation.renderElement(marp).typeText)
+        assertEquals("front matter", typeTextOf(marp))
     }
 
     fun testOffersSpotDirectives() {

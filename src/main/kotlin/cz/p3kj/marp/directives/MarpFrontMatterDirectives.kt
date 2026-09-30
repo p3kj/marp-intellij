@@ -22,8 +22,9 @@ data class MarpParsedFrontMatter(val bodyRange: TextRange, val entries: List<Mar
  * an opening line of exactly dashes and a closing line of exactly dashes or dots, Marp for VS Code accepts trailing
  * white space after the opening fence and a closing fence that is indented or followed by text.
  *
- * Differences from a directive comment: `marp` is a known key ([MarpDirectiveCatalog.MARP]), `size` and `math` take the
- * whole rest of the line ([MarpDirectiveComments.readEntries]), and anything nested (indented lines, lists) is left to YAML.
+ * Differences from a directive comment: `marp` is a known key ([MarpDirectiveCatalog.MARP]), and anything nested
+ * (indented lines, lists) is left to YAML. Values are read as in a comment ([MarpDirectiveComments.readEntries]): loose
+ * YAML for the Marpit directives, plain YAML for `size`, `math` and every other key.
  *
  * With the YAML plugin the Markdown plugin injects YAML into the front matter, and completion, hover documentation
  * and completion confidence are then asked about the injected file and its offsets. [hostOf] maps those back to the

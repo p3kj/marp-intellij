@@ -313,10 +313,11 @@ The front matter is covered in the "Front matter" bullet at the end of this sect
     plugin's, which needs opening and closing lines of exactly `---+` (closing may be `...+`); marp-vscode's rule, which
     `MarpDetector` follows, allows white space after the opening fence and an indented or trailing-text closing fence, so
     following it keeps the features right in both cases.
-  - Differences from comments: `marp` is a known key (`resolveInFrontMatter`), `size` and `math` are read with loose YAML
-    like the Marpit directives (not yet confirmed against Marp itself), only unindented lines are keys
-    (nested YAML and lists belong to the entry above and get no completion), and a key that the front matter already has
-    is not offered again (a repeated key makes YAML reject the whole front matter).
+  - Differences from comments: `marp` is a known key (`resolveInFrontMatter`), only unindented lines are keys (nested
+    YAML and lists belong to the entry above and get no completion), and a key that the front matter already has is not
+    offered again (a repeated key makes YAML reject the whole front matter). Values are read exactly as in comments: loose
+    YAML for the Marpit directives only. `size` and `math` are plain YAML in the front matter too (marp-core's custom
+    directive lists are empty at runtime, so the loose set is Marpit's built-ins), so `math: katex # c` is KaTeX.
   - YAML injection: with the YAML plugin (bundled in IntelliJ IDEA) the Markdown plugin parses `FRONT_MATTER_HEADER` and
     injects YAML into it. Completion, completion confidence and documentation are then called with the injected YAML
     file and injected offsets (hover asks the injected file first, then the host), and without the YAML plugin the caret is
@@ -326,13 +327,16 @@ The front matter is covered in the "Front matter" bullet at the end of this sect
   - Completion does not call `stopHere()` for keys, so the other front matter keys (the Markdown plugin's schema adds
     `title`, `layout`, ...) stay and ours rank first by priority. Values of a Marp key are ours alone. The confidence
     opens the popup for every key and for values of directives that have some, and leaves everything else to YAML.
-  - Documentation: the provider is registered `order="first"`, because the YAML support has targets of its own in the
-    injected file and this provider is empty except on Marp keys.
+  - Documentation: no special ordering. The platform merges the targets of all `DocumentationTargetProvider`s, and the
+    YAML plugin has no target provider of its own (only a legacy PSI-fallback documentation provider), so this provider
+    is empty except on Marp keys and the two do not compete.
   - Inspection: the Markdown `PsiFile` is visited like an element (only `MarkdownFile`: the HTML root of the same view
     provider is visited too and would report everything twice), and all problems are registered on the file with document
     offsets (file-relative equals document offset, as `LossyEncodingInspection` does). Unknown keys are the metadata of
-    other tools (`title`, `author`, ...) and only a near miss of a directive gets a weak warning; a front matter that is
-    not a mapping is left to the YAML plugin.
+    other tools (`title`, `author`, ...) and only a near miss of a directive gets a weak warning, and only when the
+    suggested directive has at least 5 characters or the key differs from it in case only (`path` is one edit from
+    `math` and `site` from `size`, both are ordinary metadata); a front matter that is not a mapping is left to the YAML
+    plugin.
   - Rejected: a JSON schema for the front matter. The Markdown plugin's `FrontMatterHeaderJsonSchemaFileProvider`
     (`@ApiStatus.Internal`) maps every front matter to its generic schema, so a second Marp schema would compete with a
     provider that cannot be replaced, would need the JSON and YAML plugins as dependencies, could not express loose YAML

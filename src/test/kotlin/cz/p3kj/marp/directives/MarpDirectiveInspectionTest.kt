@@ -170,12 +170,24 @@ _class: invert
         )
     }
 
-    fun testMathWithATrailingCommentInTheFrontMatter() {
+    fun testMathAndSizeWithATrailingCommentInTheFrontMatterAreQuiet() {
+        // Plain YAML: the comment is not part of the value, so this is KaTeX and 4:3.
+        check("---\nmarp: true\nmath: katex # c\nsize: 4:3 # c\n---\n")
+    }
+
+    fun testNearMissOfALongDirectiveNameOrACaseMismatchInTheFrontMatter() {
         check(
             "---\nmarp: true\n" +
-                "math: <warning descr=\"Invalid value 'katex # c' for 'math', expected one of: mathjax, katex\">katex # c</warning>\n" +
+                "<weak_warning descr=\"'themes' is not a Marp directive, did you mean 'theme'?\">themes</weak_warning>: gaia\n" +
+                "<weak_warning descr=\"'Size' is not a Marp directive, did you mean 'size'?\">Size</weak_warning>: 4:3\n" +
+                "<weak_warning descr=\"'backgroundColour' is not a Marp directive, did you mean 'backgroundColor'?\">backgroundColour</weak_warning>: red\n" +
                 "---\n",
         )
+    }
+
+    fun testShortNearMissesInTheFrontMatterAreMetadata() {
+        // `path` is one edit from `math`, `site` from `size`, `match` from `math`: ordinary metadata, not typos.
+        check("---\nmarp: true\npath: /docs\nsite: example.org\nmatch: all\n---\n")
     }
 
     fun testInvalidValueOfASpotDirectiveInTheFrontMatterNamesTheKeyAsWritten() {

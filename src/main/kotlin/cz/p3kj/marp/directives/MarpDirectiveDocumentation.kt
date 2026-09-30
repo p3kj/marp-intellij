@@ -17,8 +17,9 @@ import cz.p3kj.marp.MarpBundle
  *
  * With the YAML plugin the front matter is an injected YAML file. The IDE asks about the injected file first and then
  * about the Markdown file (hover), so both are mapped to the Markdown file ([MarpFrontMatter.hostOf]) and end up with the
- * same target. The extension is registered `order="first"`: the YAML support has targets of its own in that file, and
- * this provider only answers for the keys of Marp, so it takes them first.
+ * same target. The platform merges the targets of all providers and the YAML plugin has no target provider of its own
+ * (only a legacy PSI-fallback documentation provider), so this provider, which is empty except on Marp keys, needs no
+ * ordering.
  */
 class MarpDirectiveDocumentationTargetProvider : DocumentationTargetProvider, DumbAware {
 

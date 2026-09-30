@@ -61,7 +61,7 @@
         <colorSettingsPage implementation="cz.p3kj.marp.directives.MarpColorSettingsPage"/>
         <completion.contributor language="any" order="first" implementationClass="cz.p3kj.marp.directives.MarpDirectiveCompletionContributor"/>
         <completion.confidence language="any" order="first" implementationClass="cz.p3kj.marp.directives.MarpDirectiveCompletionConfidence"/>
-        <platform.backend.documentation.targetProvider order="first" implementation="cz.p3kj.marp.directives.MarpDirectiveDocumentationTargetProvider"/>
+        <platform.backend.documentation.targetProvider implementation="cz.p3kj.marp.directives.MarpDirectiveDocumentationTargetProvider"/>
         <localInspection language="Markdown" shortName="MarpDirective" bundle="messages.MarpBundle" key="inspection.directive.name"
                          groupKey="inspection.group" enabledByDefault="true" level="WARNING" dumbAware="true"
                          implementationClass="cz.p3kj.marp.directives.MarpDirectiveInspection"/>

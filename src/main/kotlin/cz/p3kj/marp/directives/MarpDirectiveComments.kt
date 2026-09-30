@@ -129,8 +129,8 @@ object MarpDirectiveComments {
      * with `*`, a repeated key, and an indented line after a value that is already complete (see the class comment).
      * The ranges are offsets into [text], so the body of the front matter of a document gives document offsets.
      *
-     * With [frontMatter] the body is the front matter of a deck: `marp` is a known key, and `size` and `math` are
-     * read with loose YAML like the Marpit directives ([isLooseKey]).
+     * With [frontMatter] the body is the front matter of a deck, where `marp` is a known key. Values are read the same
+     * way as in a comment (loose YAML for the Marpit directives only, see [isLooseKey]).
      */
     internal fun readEntries(
         text: CharSequence, bodyStart: Int, bodyEnd: Int, frontMatter: Boolean = false,
@@ -150,7 +150,7 @@ object MarpDirectiveComments {
                 isSequenceItem(trimmed) -> if (entries.isEmpty()) return entries to false
                 line[0] == ' ' || line[0] == '\t' -> {
                     val previous = entries.lastOrNull() ?: return entries to false
-                    if (isCompleteScalar(previous, frontMatter)) return entries to false
+                    if (isCompleteScalar(previous)) return entries to false
                 }
                 else -> {
                     val entry = readKeyLine(line, lineStart, frontMatter) ?: return entries to false
@@ -170,23 +170,21 @@ object MarpDirectiveComments {
      * error: a closed quoted scalar, or a value of a Marpit directive that loose YAML quotes as a whole. Block scalars,
      * flow collections, an unclosed quote and plain scalars of other keys can continue on the next lines.
      */
-    private fun isCompleteScalar(entry: MarpDirectiveEntry, frontMatter: Boolean): Boolean {
+    private fun isCompleteScalar(entry: MarpDirectiveEntry): Boolean {
         val raw = entry.rawValue
         if (raw.isEmpty()) return false
         val first = raw[0]
-        if (isLooseKey(entry.key, frontMatter) && first !in MarpHeadingDivider.YAML_SPECIAL_START) return true
+        if (isLooseKey(entry.key) && first !in MarpHeadingDivider.YAML_SPECIAL_START) return true
         return (first == '"' || first == '\'') && raw.length >= 2 && raw.last() == first
     }
 
     /**
-     * The directives (`_` form included) that are parsed with loose YAML: in a comment the Marpit directives, marp-core's
-     * own `size` and `math` are not. In the front matter `size` and `math` are read the same way, which is not yet
-     * confirmed against Marp itself. `marp` and unknown keys are plain YAML everywhere.
+     * The directives (`_` form included) that are parsed with loose YAML: the Marpit directives, in comments and in the
+     * front matter alike. marp-core's own `size` and `math` are plain YAML (its custom directive lists are empty at
+     * runtime), and so are `marp` and unknown keys.
      */
-    private fun isLooseKey(key: String, frontMatter: Boolean): Boolean {
-        val directive = MarpDirectiveCatalog.find(key.removePrefix("_")) ?: return false
-        return frontMatter || directive.origin == MarpDirectiveOrigin.MARPIT
-    }
+    private fun isLooseKey(key: String): Boolean =
+        MarpDirectiveCatalog.find(key.removePrefix("_"))?.origin == MarpDirectiveOrigin.MARPIT
 
     private fun readKeyLine(line: String, lineOffset: Int, frontMatter: Boolean): MarpDirectiveEntry? {
         val match = KEY_LINE.find(line) ?: return null
@@ -195,7 +193,7 @@ object MarpDirectiveComments {
         val afterColon = match.range.last + 1
         var valueStart = afterColon
         while (valueStart < line.length && (line[valueStart] == ' ' || line[valueStart] == '\t')) valueStart++
-        val rawValue = rawValueOf(line.substring(valueStart), isLooseKey(key, frontMatter))
+        val rawValue = rawValueOf(line.substring(valueStart), isLooseKey(key))
         val keyRange = TextRange(lineOffset + keyGroup.range.first, lineOffset + keyGroup.range.last + 1)
         val resolved = if (frontMatter) MarpDirectiveCatalog.resolveInFrontMatter(key) else MarpDirectiveCatalog.resolve(key)
         if (rawValue.isEmpty()) return MarpDirectiveEntry(key, keyRange, "", "", null, resolved)

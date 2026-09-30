@@ -45,11 +45,11 @@ class MarpFrontMatterTest {
     }
 
     @Test
-    fun sizeAndMathTakeTheRestOfTheLineInTheFrontMatterButNotInAComment() {
+    fun sizeAndMathAreReadAsPlainYamlInTheFrontMatterAndInAComment() {
         val frontMatter = "---\nmarp: true\nsize: 4:3 # c\nmath: katex # c\n---\n"
         val entries = parse(frontMatter).entries
-        assertEquals("4:3 # c", entries[1].rawValue)
-        assertEquals("katex # c", entries[2].rawValue)
+        assertEquals("4:3", entries[1].rawValue)
+        assertEquals("katex", entries[2].rawValue)
         assertEquals("4:3", MarpDirectiveComments.parse("<!-- size: 4:3 # c -->")!!.entries.single().rawValue)
         assertEquals("katex", MarpDirectiveComments.parse("<!-- math: katex # c -->")!!.entries.single().rawValue)
     }
