@@ -23,7 +23,7 @@
 - File | New | Marp Presentation creates a starter deck: front matter with `marp: true`, `theme` and `paginate`, a lead title slide, example slides and presenter notes
 - Live templates for Marp decks: `slide` (new slide), `lead` (`<!-- _class: lead -->`), `bg` (background image) and `notes` (presenter notes). They expand only in Markdown files with `marp: true` and are listed under Settings | Editor | Live Templates | Marp
 - Directive comments in Marp decks are highlighted: directive keys and values get their own colors and presenter-note comments are shown differently (Settings | Editor | Color Scheme | Marp)
-- Completion of directive names in comments (global, local and the `_` form for one slide) and of values: `paginate`, `math`, `size`, `headingDivider`, `class`, background options and built-in and custom theme names
+- Completion of directive names in comments (global, local and the `_` form for one slide) and of values: `paginate`, `math`, `size`, `headingDivider`, `class`, background options and built-in and custom theme names. Each name shows where it applies ("whole deck", "this and following slides", "this slide only"; "all slides" in the front matter), `class` and `_class` sit next to each other, and hover docs name the form under the caret and explain the difference
 - Quick documentation and hover docs for directives
 - Marp directive inspection: unknown directives (with a "did you mean"), global directives written with `_` such as `_theme`, invalid `paginate`, `math` and `headingDivider` values
 - Completion, hover docs and the Marp directive inspection in the front matter of Marp decks: directive names and values, theme names, `marp`, and values Marp ignores or misreads

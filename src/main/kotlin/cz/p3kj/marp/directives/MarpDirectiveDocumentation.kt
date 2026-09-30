@@ -32,17 +32,20 @@ class MarpDirectiveDocumentationTargetProvider : DocumentationTargetProvider, Du
     private fun targetOf(entries: List<MarpDirectiveEntry>, offset: Int): List<DocumentationTarget> {
         // The end of the key counts: the caret is often right behind the last letter.
         val entry = entries.firstOrNull { offset >= it.keyRange.startOffset && offset <= it.keyRange.endOffset } ?: return emptyList()
-        val directive = when (val key = entry.resolved) {
-            is MarpDirectiveKey.Known -> key.directive
-            is MarpDirectiveKey.GlobalWithUnderscore -> key.directive
-            is MarpDirectiveKey.Unknown -> return emptyList()
+        return when (val key = entry.resolved) {
+            is MarpDirectiveKey.Known -> listOf(MarpDirectiveDocumentationTarget(key.directive, key.spot))
+            is MarpDirectiveKey.GlobalWithUnderscore -> listOf(MarpDirectiveDocumentationTarget(key.directive))
+            is MarpDirectiveKey.Unknown -> emptyList()
         }
-        return listOf(MarpDirectiveDocumentationTarget(directive))
     }
 }
 
-/** The documentation of one directive, built by [MarpDirectiveDocs]. It holds no PSI, so its pointer is the target itself. */
-class MarpDirectiveDocumentationTarget(val directive: MarpDirective) : DocumentationTarget {
+/**
+ * The documentation of one directive, built by [MarpDirectiveDocs]. [spot] tells whether the key under the caret is the
+ * `_` form of a local directive, which the text of a local directive names. It holds no PSI, so its pointer is the
+ * target itself.
+ */
+class MarpDirectiveDocumentationTarget(val directive: MarpDirective, val spot: Boolean = false) : DocumentationTarget {
 
     override fun createPointer(): Pointer<out DocumentationTarget> = Pointer.hardPointer(this)
 
@@ -50,11 +53,11 @@ class MarpDirectiveDocumentationTarget(val directive: MarpDirective) : Documenta
 
     override fun computeDocumentationHint(): String = MarpDirectiveDocs.hint(directive)
 
-    override fun computeDocumentation(): DocumentationResult = DocumentationResult.documentation(MarpDirectiveDocs.html(directive))
+    override fun computeDocumentation(): DocumentationResult = DocumentationResult.documentation(MarpDirectiveDocs.html(directive, spot))
 
-    override fun equals(other: Any?): Boolean = other is MarpDirectiveDocumentationTarget && other.directive == directive
+    override fun equals(other: Any?): Boolean = other is MarpDirectiveDocumentationTarget && other.directive == directive && other.spot == spot
 
-    override fun hashCode(): Int = directive.hashCode()
+    override fun hashCode(): Int = 31 * directive.hashCode() + spot.hashCode()
 }
 
 /** The texts of the directive documentation. Everything user-visible comes from the message bundle. */
@@ -76,17 +79,22 @@ object MarpDirectiveDocs {
     /** A short line for the hint: the name and where the directive applies. */
     fun hint(directive: MarpDirective): String = MarpBundle.message("directive.doc.hint", directive.name, typeText(directive))
 
-    /** The documentation popup: the name, the description and scope, then the values and who defines the directive. */
-    fun html(directive: MarpDirective): String = buildString {
+    /**
+     * The documentation popup: the name, the description and scope, then the values and who defines the directive. For a
+     * local directive the scope names the form under the caret, [spot] being true for the `_` form, and how it differs
+     * from the other one.
+     */
+    fun html(directive: MarpDirective, spot: Boolean = false): String = buildString {
         append(DocumentationMarkup.DEFINITION_START).append(directive.name).append(DocumentationMarkup.DEFINITION_END)
         append(DocumentationMarkup.CONTENT_START)
         append("<p>").append(MarpBundle.message(directive.docKey)).append("</p>")
         val scope = when {
             directive.origin == MarpDirectiveOrigin.MARP_VSCODE -> "directive.doc.scope.frontMatter"
             directive.scope == MarpDirectiveScope.GLOBAL -> "directive.doc.scope.global"
+            spot -> "directive.doc.scope.spot"
             else -> "directive.doc.scope.local"
         }
-        append("<p>").append(MarpBundle.message(scope)).append("</p>")
+        append("<p>").append(MarpBundle.message(scope, directive.name)).append("</p>")
         append(DocumentationMarkup.CONTENT_END)
         append(DocumentationMarkup.SECTIONS_START)
         val values = if (directive.themeValue) MarpDirectiveCatalog.BUILT_IN_THEMES else directive.suggestions

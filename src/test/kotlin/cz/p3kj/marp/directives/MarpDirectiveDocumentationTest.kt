@@ -173,6 +173,31 @@ class MarpDirectiveDocumentationTest : MarpLightTestCase() {
         assertTrue(html, html.contains("https://marpit.marp.app/directives"))
     }
 
+    fun testHtmlOfALocalDirectiveNamesTheFormAndTheDifference() {
+        val plain = MarpDirectiveDocs.html(MarpDirectiveCatalog.find("class")!!)
+        assertTrue(plain, plain.contains("<code>class</code> (as written here) applies to this slide and the following ones, <code>_class</code> applies to this slide only"))
+        val spot = MarpDirectiveDocs.html(MarpDirectiveCatalog.find("class")!!, spot = true)
+        assertTrue(spot, spot.contains("<code>_class</code> (as written here) applies to this slide only, <code>class</code> applies to this slide and the following ones"))
+    }
+
+    fun testHtmlOfAGlobalDirectiveHasNoFormSentence() {
+        val html = MarpDirectiveDocs.html(MarpDirectiveCatalog.find("theme")!!)
+        assertFalse(html, html.contains("as written here"))
+    }
+
+    fun testTheFormUnderTheCaretDecidesTheSentence() {
+        myFixture.configureByText("deck.md", "$deck<!-- cl<caret>ass: lead -->")
+        val plain = provider.documentationTargets(myFixture.file, myFixture.caretOffset).single() as MarpDirectiveDocumentationTarget
+        assertFalse(plain.spot)
+        assertTrue(MarpDirectiveDocs.html(plain.directive, plain.spot).contains("<code>class</code> (as written here)"))
+        myFixture.configureByText("deck.md", "$deck<!-- _cl<caret>ass: lead -->")
+        val spot = provider.documentationTargets(myFixture.file, myFixture.caretOffset).single() as MarpDirectiveDocumentationTarget
+        assertTrue(spot.spot)
+        assertTrue(MarpDirectiveDocs.html(spot.directive, spot.spot).contains("<code>_class</code> (as written here)"))
+        assertNotSame(plain, spot)
+        assertFalse(plain == spot)
+    }
+
     fun testHtmlOfAGlobalMarpCoreDirective() {
         val html = MarpDirectiveDocs.html(MarpDirectiveCatalog.find("math")!!)
         assertTrue(html, html.contains("Global directive"))

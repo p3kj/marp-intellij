@@ -22,7 +22,8 @@ import cz.p3kj.marp.themes.MarpThemeService
 /**
  * Completes directive names (`_pa` gives `_paginate`) and values (`paginate: ` offers `true`, `hold`, ...) in HTML
  * comments and in the front matter of Marp decks. The front matter also offers `marp`, and does not offer a key that
- * the front matter already has (a repeated key makes Marp reject the whole front matter).
+ * the front matter already has (a repeated key makes Marp reject the whole front matter). Every name shows where the
+ * directive applies as its type text (`class` and `_class` differ in exactly that).
  *
  * The comment is looked up in the original Markdown tree, not at [CompletionParameters.position]: with the XML module
  * the IDE parses a Markdown file a second time as HTML (template data), so the caret element is usually an HTML comment
@@ -46,7 +47,7 @@ class MarpDirectiveCompletionContributor : CompletionContributor(), DumbAware {
         val context = MarpDirectiveCompletion.contextAt(file, offset) ?: return
         when (val spot = context.spot ?: return) {
             is MarpCompletionSpot.Key -> {
-                addKeys(result.withPrefixMatcher(spot.prefix), spot.prefix, MarpDirectiveCatalog.ALL)
+                addKeys(result.withPrefixMatcher(spot.prefix), spot.prefix, MarpDirectiveCatalog.ALL, frontMatter = false)
                 // Where a directive is being written, plain word completion would only add noise.
                 if (context.directiveIsLikely) result.stopHere()
             }
@@ -59,7 +60,7 @@ class MarpDirectiveCompletionContributor : CompletionContributor(), DumbAware {
         when (spot) {
             is MarpCompletionSpot.Key -> {
                 val taken = MarpFrontMatter.keysOutsideLine(text, offset)
-                addKeys(result.withPrefixMatcher(spot.prefix), spot.prefix, MarpDirectiveCatalog.FRONT_MATTER_ONLY + MarpDirectiveCatalog.ALL, taken)
+                addKeys(result.withPrefixMatcher(spot.prefix), spot.prefix, MarpDirectiveCatalog.FRONT_MATTER_ONLY + MarpDirectiveCatalog.ALL, frontMatter = true, exclude = taken)
             }
             is MarpCompletionSpot.Value -> addValues(result, spot, MarpDirectiveCatalog.resolveInFrontMatter(spot.key), file)
         }
@@ -80,22 +81,38 @@ class MarpDirectiveCompletionContributor : CompletionContributor(), DumbAware {
     /**
      * Every name of [directives] and the `_` form of the local ones, except the names in [exclude]. The matcher treats
      * `_` as a word break, so `foot` would also match `_footer`: the two forms are only offered together for an empty
-     * prefix.
+     * prefix. The items keep the order of [directives] and each `_` form sits right behind its plain name, so that the
+     * pair is seen together: the priorities count down from the first item. Each item shows in its type text where the
+     * directive applies, see [scopeText].
      */
-    private fun addKeys(result: CompletionResultSet, prefix: String, directives: List<MarpDirective>, exclude: Set<String> = emptySet()) {
+    private fun addKeys(result: CompletionResultSet, prefix: String, directives: List<MarpDirective>, frontMatter: Boolean, exclude: Set<String> = emptySet()) {
         val spotOnly = prefix.startsWith("_")
         val plainOnly = prefix.isNotEmpty() && !spotOnly
+        val items = ArrayList<LookupElement>()
         for (directive in directives) {
-            val type = MarpDirectiveDocs.typeText(directive)
-            if (!spotOnly && directive.name !in exclude) {
-                result.addElement(PrioritizedLookupElement.withPriority(key(directive.name, directive, type), 2.0))
-            }
+            if (!spotOnly && directive.name !in exclude) items.add(key(directive.name, directive, scopeText(directive, spot = false, frontMatter)))
             val spotName = "_" + directive.name
             if (!plainOnly && directive.scope == MarpDirectiveScope.LOCAL && spotName !in exclude) {
-                result.addElement(PrioritizedLookupElement.withPriority(key(spotName, directive, MarpBundle.message("completion.type.spot")), 1.0))
+                items.add(key(spotName, directive, scopeText(directive, spot = true, frontMatter)))
             }
         }
+        items.forEachIndexed { index, item -> result.addElement(PrioritizedLookupElement.withPriority(item, (items.size - index).toDouble())) }
     }
+
+    /**
+     * Where the directive applies, for the type text. In a comment a plain local directive holds from its slide on and
+     * the `_` form for that slide only. The front matter comes before the first slide, so a plain local directive holds
+     * for all slides there and the `_` form for the first one only (Marpit applies a spot directive of the front matter
+     * to the first slide). The `marp` key belongs to the front matter and is no directive of the engine.
+     */
+    private fun scopeText(directive: MarpDirective, spot: Boolean, frontMatter: Boolean): String = MarpBundle.message(
+        when {
+            directive.origin == MarpDirectiveOrigin.MARP_VSCODE -> "completion.type.frontMatter"
+            directive.scope == MarpDirectiveScope.GLOBAL -> "completion.scope.deck"
+            spot -> if (frontMatter) "completion.scope.firstSlide" else "completion.scope.spot"
+            else -> if (frontMatter) "completion.scope.allSlides" else "completion.scope.following"
+        },
+    )
 
     private fun key(name: String, directive: MarpDirective, type: String): LookupElement =
         LookupElementBuilder.create(name).withTypeText(type, true).withInsertHandler(KeyInsertHandler(directive))

@@ -27,7 +27,9 @@ class MarpFrontMatterCompletionTest : MarpLightTestCase() {
 
     /** The keys offered by this plugin (the other contributors add words and schema keys of their own), by their type text. */
     private fun marpKeys(): List<String> {
-        val types = listOf("completion.type.global", "completion.type.local", "completion.type.spot", "completion.type.frontMatter").map { MarpBundle.message(it) }
+        val types = listOf(
+            "completion.scope.deck", "completion.scope.allSlides", "completion.scope.firstSlide", "completion.type.frontMatter",
+        ).map { MarpBundle.message(it) }
         return myFixture.lookupElements.orEmpty()
             .filter { typeTextOf(it) in types }
             .map { it.lookupString }
@@ -69,6 +71,23 @@ class MarpFrontMatterCompletionTest : MarpLightTestCase() {
         complete("---\nma<caret>rp: true\n---\n")
         val marp = myFixture.lookupElements!!.first { it.lookupString == "marp" }
         assertEquals("front matter", typeTextOf(marp))
+    }
+
+    fun testItemsShowWhereTheDirectiveApplies() {
+        complete("${head}<caret>\n---\n")
+        val types = myFixture.lookupElements.orEmpty().associate { it.lookupString to typeTextOf(it) }
+        assertEquals("whole deck", types["theme"])
+        assertEquals("all slides", types["class"])
+        assertEquals("all slides", types["paginate"])
+        // The front matter comes before the first slide: Marpit applies its spot directives to that slide only.
+        assertEquals("first slide only", types["_class"])
+    }
+
+    fun testEachSpotDirectiveSitsRightBehindItsPlainName() {
+        complete("${head}<caret>\n---\n")
+        val items = marpKeys()
+        assertEquals(items.indexOf("class") + 1, items.indexOf("_class"))
+        assertEquals(items.indexOf("paginate") + 1, items.indexOf("_paginate"))
     }
 
     fun testOffersSpotDirectives() {
