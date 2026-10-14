@@ -1,6 +1,7 @@
 package cz.p3kj.marp.directives
 
 import com.intellij.lang.ASTNode
+import com.intellij.lang.injection.InjectedLanguageManager
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
@@ -256,9 +257,13 @@ object MarpDirectiveComments {
     /** The Markdown tree of [file]: the file itself, or the Markdown side of a multi-language view provider. */
     fun markdownFile(file: PsiFile): MarkdownFile? = file.viewProvider.allFiles.firstOrNull { it is MarkdownFile } as? MarkdownFile
 
-    /** `true` when [file] is Markdown with `marp: true` in its front matter. Cached until the file changes. */
+    /**
+     * `true` when [file] is Markdown with `marp: true` in its front matter. Cached until the file changes. Markdown in a
+     * fenced `markdown` code block is injected as a file of its own: a sample deck there is no deck.
+     */
     fun isMarpDeck(file: PsiFile): Boolean {
         val markdown = markdownFile(file) ?: return false
+        if (InjectedLanguageManager.getInstance(markdown.project).isInjectedFragment(markdown)) return false
         return CachedValuesManager.getCachedValue(markdown) {
             CachedValueProvider.Result.create(MarpDetector.isMarp(markdown.viewProvider.contents), markdown)
         }

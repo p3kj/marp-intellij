@@ -488,7 +488,7 @@ Issues #15 and #22. One pure edit function and three ways to trigger it, all in 
 Package `cz.p3kj.marp.folding` (#10). `MarpSlideFoldingBuilder` is a `FoldingBuilderEx` (`lang.foldingBuilder`, language
 Markdown, `DumbAware`) that returns one region per slide of a Marp deck and nothing for other files
 (`MarpDirectiveComments.isMarpDeck`). The slides come from `MarpSlideParser.deck`, so they are the ones of the preview,
-`headingDivider` included. No settings, regions are never collapsed by default.
+`headingDivider` included. No settings, regions are never collapsed by default. A sample deck inside a fenced `markdown` code block is injected Markdown and no deck, so it gets no slide folds (#24, see the directives section).
 
 - `folds(deck, document)` (pure, tested) maps a slide to a region. A slide started by the front matter or a `---` line
   (`bodyOffset > startOffset`) gets a region that starts at the end of that line (`bodyOffset - 1`), so the marker sits
@@ -522,6 +522,7 @@ Markdown, `DumbAware`) that returns one region per slide of a Marp deck and noth
 
 Package `cz.p3kj.marp.directives`. Every feature is limited to Marp decks: `MarpDirectiveComments.isMarpDeck(file)`
 (front matter `marp: true`, cached per PSI modification) is checked first, and other Markdown files are untouched.
+Markdown injected into a fenced `markdown` code block (the Markdown plugin's fence injection) is never a deck, even when it starts with a Marp front matter: `isMarpDeck` is false for injected fragments, so slide folds, slide-number hints, directive highlighting and the inspections stay out of code samples. The front matter fold the Markdown plugin builds there is upstream (#24): its `MarkdownFoldingBuilder` also folds injected files; `MarkdownFrontMatterFoldingPolicy` (master) is experimental and not in 262 or 263.
 The front matter is covered in the "Front matter" bullet at the end of this section, everything else is about comments.
 
 - `MarpDirectiveCatalog` is the one source of directive facts, taken from Marpit 3.2 and marp-core 4.4 (the versions in

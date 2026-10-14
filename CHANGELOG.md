@@ -48,6 +48,7 @@
 - Locked-down preview page: Content Security Policy, no navigation away from the preview. Links open in the IDE (local files inside the project) or in the system browser
 - Untrusted projects render without HTML and without custom themes until trusted
 - Third-party license notices for the bundled webview packages (THIRD-PARTY-NOTICES.txt inside the plugin)
+- A sample deck inside a fenced `markdown` code block is left alone: no slide folds, directive colors or Marp inspections in it. The fold on its front matter comes from the bundled Markdown plugin and is reported to JetBrains
 - Compatible with all IntelliJ-based IDEs on the 2026.2 platform and newer
 
 ### Security

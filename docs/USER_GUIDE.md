@@ -77,7 +77,7 @@ Assign or change them in Settings | Keymap (search "Marp"). The NetBeans and Vis
 
 ## Editing help
 
-All of this works in decks only, so the file has to contain `marp: true` already.
+All of this works in decks only, so the file has to contain `marp: true` already. A sample deck inside a fenced `markdown` code block does not count as a deck.
 
 ### Directives
 
@@ -260,4 +260,5 @@ Live preview, scroll sync, custom themes, math, Twemoji, inline HTML modes and r
 - Decks that use `headingDivider` cannot be reordered. Slides cannot be dragged in the Structure view or in the normal preview, and only one at a time in the overview.
 - PPTX and image export always export the whole deck: no single slide, no editable PPTX, no image scale, no notes.
 - Present Deck is a snapshot, with no live reload.
+- The bundled Markdown plugin folds the front matter of a sample deck inside a fenced `markdown` code block. That fold is not Marp's and is reported to JetBrains.
 - Marp CLI on Windows and Remote Development (JetBrains Gateway) are not tested. On a thin client the preview may stay empty, because JCEF has to run in the process that shows the editor. Please report what you see.
