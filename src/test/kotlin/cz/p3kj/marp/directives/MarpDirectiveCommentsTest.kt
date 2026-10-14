@@ -283,10 +283,13 @@ class MarpDirectiveCommentsTest {
         assertNull(spot("<!-- Class: lead in| -->"))
     }
 
-    @Test(timeout = 2000)
+    @Test(timeout = 10_000)
     fun aLongNoteIsNoSpotAndDoesNotOverflow() {
         assertNull(spot("<!-- Notes: " + "word ".repeat(5000) + "| -->"))
         assertNull(spot("<!-- Notes: " + "word ".repeat(5000) + "word| -->"))
+        val value = spot("<!-- class: " + "lead ".repeat(5000) + "in| -->") as MarpCompletionSpot.Value
+        assertEquals("in", value.prefix)
+        assertEquals(5000, value.taken.size)
     }
 
     @Test

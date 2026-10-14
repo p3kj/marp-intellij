@@ -8,7 +8,7 @@ package cz.p3kj.marp.themes
  * of `:not(...)` and `:has(...)` are skipped. Escaped characters in class names are not supported, and `@import` is not
  * followed. A theme can be large and comes from the network, so the work stays linear: a nested rule whose resolved
  * selector would be longer than [MAX_SELECTOR] or have more than [MAX_COMBINATIONS] parent and child pairs is not
- * resolved and its classes are not collected.
+ * resolved and its classes are not collected, and neither is a block nested deeper than [MAX_DEPTH].
  */
 object MarpThemeClasses {
 
@@ -18,10 +18,13 @@ object MarpThemeClasses {
     private val ATTRIBUTE = Regex("\\[[^\\[\\]]*]")
 
     /** A CSS identifier after a dot: letters, digits, `-`, `_` and any non-ASCII character. */
-    private val CLASS = Regex("\\.(-?(?:[A-Za-z_]|[^\\x00-\\x7F])(?:[\\w-]|[^\\x00-\\x7F])*)")
+    private val CLASS = Regex("""\.(-?[A-Za-z_\u0080-\uFFFF][\w\-\u0080-\uFFFF]*)""")
 
     private const val MAX_SELECTOR = 2048
     private const val MAX_COMBINATIONS = 256
+
+    /** Blocks nested deeper are not resolved or collected: every open block holds a selector. */
+    private const val MAX_DEPTH = 32
 
     /** The slide classes [css] styles, each once, in order of first appearance. */
     fun classesOf(css: CharSequence): List<String> {
@@ -35,7 +38,9 @@ object MarpThemeClasses {
                 '{' -> {
                     val prelude = text.substring(segmentStart, i).trim()
                     val parent = stack.lastOrNull()
-                    if (prelude.startsWith("@")) {
+                    if (stack.size >= MAX_DEPTH) {
+                        stack.addLast(null)
+                    } else if (prelude.startsWith("@")) {
                         stack.addLast(parent)
                     } else {
                         val selector = if (parent == null) prelude else resolveNesting(parent, prelude)

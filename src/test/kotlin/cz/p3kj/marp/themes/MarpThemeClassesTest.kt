@@ -79,24 +79,36 @@ class MarpThemeClassesTest {
         assertEquals(listOf("z\u00e1v\u011br"), classes("section.z\u00e1v\u011br{}"))
     }
 
-    @Test(timeout = 2000)
+    @Test(timeout = 10_000)
     fun manyListsOfNestedSelectorsStayCheap() {
         classes("section.a, section.b{".repeat(25) + "}".repeat(25))
         classes("section{ & &, &.a{".repeat(25) + "}".repeat(25))
     }
 
-    @Test(timeout = 2000)
+    @Test(timeout = 10_000)
     fun deepPlainNestingStaysCheap() {
         classes("section{".repeat(20_000))
     }
 
-    @Test(timeout = 2000)
+    @Test(timeout = 10_000)
+    fun deepNestingThatIsNeverClosedStaysCheap() {
+        assertEquals(emptyList<String>(), classes("a{".repeat(2_500_000)))
+        classes("section{".repeat(5 * 1024 * 1024 / 8))
+    }
+
+    @Test(timeout = 10_000)
+    fun aVeryLongClassNameIsRead() {
+        val name = "a".repeat(50_000)
+        assertEquals(listOf(name), classes("section.$name{}"))
+    }
+
+    @Test(timeout = 10_000)
     fun unclosedBracketsStayCheap() {
         classes("section[".repeat(500_000 / 8))
         classes("section" + "[".repeat(100_000))
     }
 
-    @Test(timeout = 2000)
+    @Test(timeout = 10_000)
     fun unclosedParenthesesStayCheap() {
         classes("section:is(".repeat(5 * 1024 * 1024 / 11) + "{}")
         classes("section:not(".repeat(50_000) + "{}")

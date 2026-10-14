@@ -230,10 +230,23 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
     private fun classesOf(set: MarpThemeSet): Map<String, List<String>> {
         classes?.let { if (it.first === set) return it.second }
         val result = set.themes.mapNotNull { theme ->
-            MarpThemeNames.nameOf(theme.css)?.let { it to MarpThemeClasses.classesOf(theme.css) }
+            MarpThemeNames.nameOf(theme.css)?.let { it to slideClassesOf(theme) }
         }.toMap()
         classes = set to result
         return result
+    }
+
+    /** Class completion must never break theme loading: a stylesheet that cannot be scanned has no classes. */
+    private fun slideClassesOf(theme: MarpThemeCss): List<String> = try {
+        MarpThemeClasses.classesOf(theme.css)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: RuntimeException) {
+        LOG.warn("Cannot read the slide classes of theme ${theme.source}", e)
+        emptyList()
+    } catch (e: StackOverflowError) {
+        LOG.warn("Cannot read the slide classes of theme ${theme.source}", e)
+        emptyList()
     }
 
     @Volatile
