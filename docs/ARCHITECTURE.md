@@ -278,6 +278,7 @@ string:
 
 ## Kotlin contracts
 
+- The "Marp deck detected" banner (`MarpEditorNotificationProvider`) reopens the file with `FileEditorManager.closeFile` and `OpenFileDescriptor(project, file).navigateInEditor(project, true)`, so `MarpSplitEditorProvider` takes over. Not used: `FileEditorManager.openFile` (deprecated in 263; its replacement `requestOpenFile` is experimental), `NavigationService` (signatures differ between 262 and 263), `Navigatable.navigate` (override-only since 263).
 - `MarpSettings` (project service, `.idea/marp.xml`): `themes`, `useMarprcThemeSet`, `html`, `math`;
   `update { }` publishes `MarpSettingsListener.TOPIC` when the block changed anything.
 - `MarpAppSettings` (application service, `options/marp.xml`, settings category Tools): `scrollSync`,
@@ -590,7 +591,7 @@ The front matter is covered in the "Front matter" bullet at the end of this sect
     `MarpThemeChooser.choose` so tests can replace it.
   - Not used: `DaemonCodeAnalyzer.restart()` and `restart(PsiFile)` (deprecated),
     `FileChooserDescriptorFactory.createSingleFileOrFolderDescriptor*` (obsolete), `FileEditorManager.openFile` overloads
-    (experimental flags, `OpenFileDescriptor` instead).
+    (deprecated since 263, the replacements are experimental, `OpenFileDescriptor.navigateInEditor` instead).
 - Theme navigation (#8): `MarpThemeGotoDeclarationHandler` (`GotoDeclarationHandler`, `DumbAware`) opens the CSS file of a
   custom theme from the value of `theme:` (front matter and comments, not `_theme`). It is a handler rather than a
   reference because the platform asks handlers first, before references, about the injected YAML and then about the host
