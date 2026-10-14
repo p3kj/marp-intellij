@@ -4,17 +4,24 @@ package cz.p3kj.marp.themes
  * Reads the slide classes a Marp theme styles, for `class` completion. A slide class is a class on the compound
  * selector of the slide element: `section.lead`, `section.a.b h1`, `section:where(.lead)`, `:is(section.x)`,
  * `:root.invert`, also inside `@media` and in nested rules (`section { &.lead { } }`). Classes that only appear further
- * along a selector (`section .columns`, `section > .note`) or on other elements are not slide classes. Classes in
- * `:not(...)` are skipped. Escaped characters in class names are not supported, and `@import` is not followed.
+ * along a selector (`section .columns`, `section > .note`) or on other elements are not slide classes. The arguments
+ * of `:not(...)` and `:has(...)` are skipped. Escaped characters in class names are not supported, and `@import` is not
+ * followed. A theme can be large and comes from the network, so the work stays linear: a nested rule whose resolved
+ * selector would be longer than [MAX_SELECTOR] or have more than [MAX_COMBINATIONS] parent and child pairs is not
+ * resolved and its classes are not collected.
  */
 object MarpThemeClasses {
 
     /** The slide element: `section`, `:root`, or `:is(section)` / `:where(section)`, not part of a longer word or selector. */
     private val ELEMENT = Regex("(?<![\\w\\-.#:\\\\])(?:section|:root|:(?:is|where)\\(\\s*section\\s*\\))(?![\\w-])", RegexOption.IGNORE_CASE)
 
-    private val NOT = Regex(":not\\([^()]*\\)", RegexOption.IGNORE_CASE)
-    private val ATTRIBUTE = Regex("\\[[^\\]]*]")
-    private val CLASS = Regex("\\.(-?[A-Za-z_][\\w-]*)")
+    private val ATTRIBUTE = Regex("\\[[^\\[\\]]*]")
+
+    /** A CSS identifier after a dot: letters, digits, `-`, `_` and any non-ASCII character. */
+    private val CLASS = Regex("\\.(-?(?:[A-Za-z_]|[^\\x00-\\x7F])(?:[\\w-]|[^\\x00-\\x7F])*)")
+
+    private const val MAX_SELECTOR = 2048
+    private const val MAX_COMBINATIONS = 256
 
     /** The slide classes [css] styles, each once, in order of first appearance. */
     fun classesOf(css: CharSequence): List<String> {
@@ -32,7 +39,7 @@ object MarpThemeClasses {
                         stack.addLast(parent)
                     } else {
                         val selector = if (parent == null) prelude else resolveNesting(parent, prelude)
-                        collect(selector, found)
+                        if (selector != null) collect(selector, found)
                         stack.addLast(selector)
                     }
                     segmentStart = i + 1
@@ -74,12 +81,26 @@ object MarpThemeClasses {
         return out.toString()
     }
 
-    /** The selector of a nested rule: `&` stands for the parent, without it the child is a descendant. */
-    private fun resolveNesting(parent: String, child: String): String {
+    /**
+     * The selector of a nested rule: `&` stands for the parent, without it the child is a descendant. `null` when the
+     * result would be too big, see [MAX_SELECTOR] and [MAX_COMBINATIONS].
+     */
+    private fun resolveNesting(parent: String, child: String): String? {
+        if (parent.length > MAX_SELECTOR || child.length > MAX_SELECTOR) return null
         val parents = splitTopLevel(parent)
-        return splitTopLevel(child).flatMap { part ->
-            parents.map { p -> if ('&' in part) part.replace("&", p) else "$p $part" }
-        }.joinToString(", ")
+        val children = splitTopLevel(child)
+        if (parents.size * children.size > MAX_COMBINATIONS) return null
+        val out = StringBuilder()
+        for (part in children) {
+            val ampersands = part.count { it == '&' }
+            for (p in parents) {
+                val size = if (ampersands > 0) part.length + ampersands * p.length else p.length + 1 + part.length
+                if (out.length + size + 2 > MAX_SELECTOR) return null
+                if (out.isNotEmpty()) out.append(", ")
+                if (ampersands > 0) out.append(part.replace("&", p)) else out.append(p).append(' ').append(part)
+            }
+        }
+        return out.toString()
     }
 
     private fun splitTopLevel(selectors: String): List<String> {
@@ -101,16 +122,39 @@ object MarpThemeClasses {
     }
 
     private fun collect(selector: String, found: MutableSet<String>) {
-        for (element in ELEMENT.findAll(selector)) {
-            val compound = compoundAfter(selector, element.range.last + 1)
-                .replace(NOT, "")
-                .replace(ATTRIBUTE, "")
+        val text = withoutNegations(selector)
+        var position = 0
+        while (position <= text.length) {
+            val element = ELEMENT.find(text, position) ?: break
+            val end = compoundEnd(text, element.range.last + 1)
+            val compound = text.substring(element.range.last + 1, end).replace(ATTRIBUTE, "")
             for (match in CLASS.findAll(compound)) found += match.groupValues[1]
+            // What lies inside the compound was read with it, an unclosed parenthesis must not be scanned again.
+            position = maxOf(end, element.range.last + 1)
         }
     }
 
-    /** The text from [start] up to the end of the compound selector: white space, a combinator or a comma at depth 0, or an unmatched `)`. */
-    private fun compoundAfter(selector: String, start: Int): String {
+    /** [selector] without the arguments of `:not(...)` and `:has(...)`, found by counting parentheses. */
+    private fun withoutNegations(selector: String): String {
+        val out = StringBuilder(selector.length)
+        var i = 0
+        while (i < selector.length) {
+            if (selector[i] == ':' && (selector.startsWith(":not(", i, ignoreCase = true) || selector.startsWith(":has(", i, ignoreCase = true))) {
+                var depth = 0
+                i += 4
+                while (i < selector.length) {
+                    val c = selector[i++]
+                    if (c == '(') depth++ else if (c == ')' && --depth == 0) break
+                }
+            } else {
+                out.append(selector[i++])
+            }
+        }
+        return out.toString()
+    }
+
+    /** The end of the compound selector that starts at [start]: white space, a combinator or a comma at depth 0, or an unmatched `)`. */
+    private fun compoundEnd(selector: String, start: Int): Int {
         var depth = 0
         var i = start
         while (i < selector.length) {
@@ -122,6 +166,6 @@ object MarpThemeClasses {
             }
             i++
         }
-        return selector.substring(start, i)
+        return i
     }
 }

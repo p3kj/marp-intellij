@@ -16,8 +16,8 @@ enum class MarpValueCheck { NONE, ONE_OF, ONE_OF_IGNORE_CASE, HEADING_DIVIDER }
 
 /**
  * One Marp directive. [suggestions] are the values offered by completion and, with [MarpValueCheck.ONE_OF] or
- * [MarpValueCheck.ONE_OF_IGNORE_CASE], the only valid ones. [themeValue] marks `theme`, whose values are theme names. [classValue] marks `class`: the value is slide classes
- * separated by spaces.
+ * [MarpValueCheck.ONE_OF_IGNORE_CASE], the only valid ones. [themeValue] marks `theme`, whose values are theme names.
+ * [classValue] marks `class`: the value is slide classes separated by spaces.
  * The documentation text lives in the message bundle under [docKey].
  */
 data class MarpDirective(

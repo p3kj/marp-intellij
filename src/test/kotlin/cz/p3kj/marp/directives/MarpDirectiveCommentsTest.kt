@@ -283,6 +283,12 @@ class MarpDirectiveCommentsTest {
         assertNull(spot("<!-- Class: lead in| -->"))
     }
 
+    @Test(timeout = 2000)
+    fun aLongNoteIsNoSpotAndDoesNotOverflow() {
+        assertNull(spot("<!-- Notes: " + "word ".repeat(5000) + "| -->"))
+        assertNull(spot("<!-- Notes: " + "word ".repeat(5000) + "word| -->"))
+    }
+
     @Test
     fun noSpotInASentence() {
         assertNull(spot("<!-- Say hello, then| -->"))

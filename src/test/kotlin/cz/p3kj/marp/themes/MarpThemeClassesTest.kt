@@ -66,6 +66,43 @@ class MarpThemeClassesTest {
     }
 
     @Test
+    fun negationsAndHasAreSkippedWithBalancedParentheses() {
+        assertEquals(emptyList<String>(), classes("section:has(.columns){}"))
+        assertEquals(emptyList<String>(), classes("div:not(section.x){}"))
+        assertEquals(emptyList<String>(), classes("section:not(section.x){}"))
+        assertEquals(listOf("b"), classes("section:not(:is(.a)).b{}"))
+        assertEquals(listOf("b"), classes("section.b:has(> .c .d){}"))
+    }
+
+    @Test
+    fun nonAsciiClassNames() {
+        assertEquals(listOf("z\u00e1v\u011br"), classes("section.z\u00e1v\u011br{}"))
+    }
+
+    @Test(timeout = 2000)
+    fun manyListsOfNestedSelectorsStayCheap() {
+        classes("section.a, section.b{".repeat(25) + "}".repeat(25))
+        classes("section{ & &, &.a{".repeat(25) + "}".repeat(25))
+    }
+
+    @Test(timeout = 2000)
+    fun deepPlainNestingStaysCheap() {
+        classes("section{".repeat(20_000))
+    }
+
+    @Test(timeout = 2000)
+    fun unclosedBracketsStayCheap() {
+        classes("section[".repeat(500_000 / 8))
+        classes("section" + "[".repeat(100_000))
+    }
+
+    @Test(timeout = 2000)
+    fun unclosedParenthesesStayCheap() {
+        classes("section:is(".repeat(5 * 1024 * 1024 / 11) + "{}")
+        classes("section:not(".repeat(50_000) + "{}")
+    }
+
+    @Test
     fun emptyCss() {
         assertEquals(emptyList<String>(), classes(""))
     }

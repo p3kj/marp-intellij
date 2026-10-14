@@ -16,6 +16,8 @@ class MarpClassCompletionTest : MarpLightTestCase() {
     private lateinit var previousProjectDir: () -> Path?
     private lateinit var previousTrusted: () -> Boolean
     private lateinit var previousFetcher: (String) -> String
+    private lateinit var previousThemes: List<String>
+    private var previousUseMarprc = true
 
     override fun setUp() {
         super.setUp()
@@ -24,6 +26,10 @@ class MarpClassCompletionTest : MarpLightTestCase() {
         previousProjectDir = service.projectDirProvider
         previousTrusted = service.trustedProvider
         previousFetcher = service.urlFetcher
+        MarpSettings.getInstance(project).let {
+            previousThemes = it.themes.toList()
+            previousUseMarprc = it.useMarprcThemeSet
+        }
         service.projectDirProvider = { base }
         service.trustedProvider = { true }
         LocalFileSystem.getInstance().refreshAndFindFileByNioFile(base)
@@ -37,7 +43,11 @@ class MarpClassCompletionTest : MarpLightTestCase() {
         try {
             service.trustedProvider = previousTrusted
             service.urlFetcher = previousFetcher
-            settings()
+            MarpSettings.getInstance(project).update {
+                themes.clear()
+                themes.addAll(previousThemes)
+                useMarprcThemeSet = previousUseMarprc
+            }
             service.projectDirProvider = previousProjectDir
             base.toFile().deleteRecursively()
         } finally {
@@ -119,5 +129,6 @@ class MarpClassCompletionTest : MarpLightTestCase() {
     fun testNoClassesForAnotherDirectiveAfterAWord() {
         val items = complete(front("alpha") + "<!-- paginate: true <caret> -->")
         assertTrue(items.isNullOrEmpty())
+        myFixture.checkResult(front("alpha") + "<!-- paginate: true  -->")
     }
 }

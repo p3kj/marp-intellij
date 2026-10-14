@@ -98,8 +98,9 @@ object MarpDirectiveComments {
     private val KEY_PREFIX = Regex("^_?[\\w-]*$")
     private val VALUE_PREFIX = Regex("^([\"']?)([^\\s\"':#][^:\"']*?)\\1[ \\t]*:[ \\t]+([^\\s\"']*)$")
 
-    /** The value of a directive with several words (`class: lead in`): the finished words, then the word being typed. */
-    private val WORDS_VALUE_PREFIX = Regex("^([\"']?)([^\\s\"':#][^:\"']*?)\\1[ \\t]*:[ \\t]+((?:[^\\s\"']+[ \\t]+)+)([^\\s\"']*)$")
+    /** The value of a directive with several words (`class: lead in`): every word after the colon, no quotes. */
+    private val WORDS_VALUE_PREFIX = Regex("^([\"']?)([^\\s\"':#][^:\"']*?)\\1[ \\t]*:[ \\t]+([^\"']*)$")
+    private val WHITE_SPACE = Regex("[ \\t]+")
 
     // Text part -------------------------------------------------------------------------------------------------------
 
@@ -254,10 +255,18 @@ object MarpDirectiveComments {
         if (KEY_PREFIX.matches(prefix)) return MarpCompletionSpot.Key(prefix)
         val value = VALUE_PREFIX.matchEntire(prefix)
         if (value != null) return MarpCompletionSpot.Value(value.groupValues[2], value.groupValues[3])
+        return wordsSpot(prefix)
+    }
+
+    /** The spot in a value of words (`class: lead in`), only for the directives that take several, see [MarpDirective.classValue]. */
+    private fun wordsSpot(prefix: String): MarpCompletionSpot.Value? {
+        val colon = prefix.indexOf(':')
+        if (colon < 0 || MarpDirectiveCatalog.find(prefix.substring(0, colon).trim().trim('"', '\'').removePrefix("_"))?.classValue != true) return null
         val words = WORDS_VALUE_PREFIX.matchEntire(prefix) ?: return null
         val key = words.groupValues[2]
         if (MarpDirectiveCatalog.find(key.removePrefix("_"))?.classValue != true) return null
-        return MarpCompletionSpot.Value(key, words.groupValues[4], words.groupValues[3].trim().split(Regex("[ \\t]+")))
+        val all = words.groupValues[3].split(WHITE_SPACE)
+        return MarpCompletionSpot.Value(key, all.last(), all.dropLast(1).filter { it.isNotEmpty() })
     }
 
     // PSI part --------------------------------------------------------------------------------------------------------
