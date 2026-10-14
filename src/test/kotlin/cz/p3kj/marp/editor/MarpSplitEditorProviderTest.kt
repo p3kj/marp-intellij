@@ -73,10 +73,13 @@ class MarpSplitEditorProviderTest : MarpLightTestCase() {
 
     fun testReopenOpensTheFileAgain() {
         val file = myFixture.configureByText("reopen.md", deck).virtualFile
-        MarpEditorNotificationProvider().reopen(project, file)
         val manager = FileEditorManager.getInstance(project)
+        val before = manager.getSelectedEditor(file)
+        assertNotNull(before)
+        MarpEditorNotificationProvider().reopen(project, file)
         assertTrue(manager.isFileOpen(file))
         assertEquals(file, manager.selectedFiles.firstOrNull())
+        assertNotSame(before, manager.getSelectedEditor(file))
     }
 
     fun testReopenIgnoresAnInvalidFile() {

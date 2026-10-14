@@ -45,6 +45,7 @@ class MarpEditorNotificationProvider : EditorNotificationProvider, DumbAware {
         if (project.isDisposed || !file.isValid) return
         FileEditorManager.getInstance(project).closeFile(file)
         // Not FileEditorManager.openFile: deprecated in 263, its replacement requestOpenFile is experimental.
-        OpenFileDescriptor(project, file).navigateInEditor(project, true)
+        // The current window is forced, so a tab in a detached window is not reused.
+        OpenFileDescriptor(project, file).setUseCurrentWindow(true).navigateInEditor(project, true)
     }
 }
