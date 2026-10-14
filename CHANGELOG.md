@@ -48,6 +48,7 @@
 - Locked-down preview page: Content Security Policy, no navigation away from the preview. Links open in the IDE (local files inside the project) or in the system browser
 - Untrusted projects render without HTML and without custom themes until trusted
 - Third-party license notices for the bundled webview packages (THIRD-PARTY-NOTICES.txt inside the plugin)
+- `class` completion offers the classes of the deck's theme next to `lead` and `invert`: the `section.<name>` classes of a custom theme's CSS, `gaia` for the gaia theme, and the classes of all custom themes when the deck's theme cannot be found. It also completes a second class after a space and does not offer a class twice
 - A sample deck inside a fenced `markdown` code block is left alone: no slide folds, directive colors or Marp inspections in it. The fold on its front matter comes from the bundled Markdown plugin and is reported to JetBrains
 - Compatible with all IntelliJ-based IDEs on the 2026.2 platform and newer
 

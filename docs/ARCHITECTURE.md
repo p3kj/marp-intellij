@@ -41,7 +41,7 @@ avoids internal, deprecated and experimental APIs.
 | `cz.p3kj.marp.sync` | editor <-> preview scroll sync, caret -> active slide |
 | `cz.p3kj.marp.notifications` | "Marp deck detected, reopen with preview" banner |
 | `cz.p3kj.marp.settings` | project settings (`.idea/marp.xml`), settings page |
-| `cz.p3kj.marp.themes` | theme resolution, reading, URL cache, VFS watching, theme names from `@theme` comments |
+| `cz.p3kj.marp.themes` | theme resolution, reading, URL cache, VFS watching, theme names from `@theme` comments, slide classes from `section.<name>` selectors (`MarpThemeClasses`) |
 
 ## Build wiring
 
@@ -289,6 +289,9 @@ string:
   It also restarts the daemon (`DaemonCodeAnalyzer.restart(PsiFile, Object)`) for the open Markdown files after every
   publish (the set is loaded first, so the highlighting restarts once with a cached set) and after a load that
   `themeNamesForInspection()` started, because the unknown-theme warnings depend on the set.
+  `cachedThemeClasses()` returns the slide classes of every named theme for `class` completion: they are parsed by
+  `MarpThemeClasses` inside `loadThemes` on `Dispatchers.IO`, once per loaded set, so it never blocks (like
+  `cachedThemeNames()` it starts a load and returns an empty map when nothing is cached).
 - Theme sources: settings `themes` entries (file / folder / `http(s)` URL; relative paths resolve against the project
   dir, and are reported as invalid when there is none) plus, when enabled, `themeSet` from `.marprc.yml` /
   `.marprc.yaml` / `.marprc.json` / `.marprc` (no extension) in the project root (string or list; relative to the
@@ -319,7 +322,8 @@ string:
 
 `MarpDeck` (package `cz.p3kj.marp.slides`) is the Kotlin side's view of a deck: a list of `MarpSlide`s that partition the
 whole text (`startOffset` / `endOffset`, the front matter belongs to slide 1, a `---` line belongs to the slide it
-starts), the headings of each slide, and `slideIndexAt(offset)`. Features that need slides use it: the Structure view,
+starts), the headings of each slide, the text of every HTML comment outside the front matter (`comments`, document
+order, the list `MarpHeadingDivider` and the `class` completion read), and `slideIndexAt(offset)`. Features that need slides use it: the Structure view,
 slide navigation and slide folding.
 
 - `MarpSlideParser.deck(MarkdownFile)` (cached per PSI modification, call in a read action) walks the Markdown plugin's
@@ -566,6 +570,13 @@ The front matter is covered in the "Front matter" bullet at the end of this sect
   comment) and skips it elsewhere in comments, because the IDE would otherwise pop up directive names while typing a
   presenter note. Documentation in the completion popup is not provided: that needs
   `LookupElementDocumentationTargetProvider`, which is `@ApiStatus.Experimental`.
+- `class` values (`MarpClassValues`): `lead` and `invert` first, then the slide classes of the deck's theme. The theme is
+  chosen like Marpit does it: the last `theme` value (front matter first, then comments in document order, from
+  `MarpDeck.comments`) that names a custom or a built-in theme wins, a custom theme beats a built-in one of the same
+  name, no `theme` value means `default` (`MarpDirectiveCatalog.BUILT_IN_THEME_CLASSES`) and only unknown names offer the
+  classes of all custom themes. A deck without a `theme` value never starts a theme load. `class` and `_class` take
+  several words: `spotInLine` has a second pattern for directives with `classValue`, and `MarpCompletionSpot.Value.taken`
+  holds the words before the caret, which are not offered again. `@import` inheritance is not followed.
 - Documentation (Ctrl+Q and hover) is a `DocumentationTargetProvider` returning a `DocumentationTarget` for the key under
   the caret; the popup HTML (`MarpDirectiveDocs`) uses the public `DocumentationMarkup` strings, not the `CLASS_*`
   constants (`@ApiStatus.Internal`). The provider interface is `@ApiStatus.OverrideOnly`, which is fine to implement.
@@ -947,9 +958,9 @@ would follow the internals of one CLI version).
   hand-built blocks; `MarpSlideParserTest` and `MarpStructureViewTest` cover the PSI adapter and the tree), the slide navigation
   (actions, Go to Slide with a replaced test input dialog, status bar widget, inlay hints called through a recording sink), slide reordering (`MarpSlideReorderTest` for the pure move: one place equals `move`, over several slides, mixed separators, tight decks, the front matter, round trips; `MarpSlideReorderingTest` for the actions and for `moveSlide` (applied, one undo step, requests from another deck ignored), undo and caret, `MarpSlideMoveTest` for the message, `MarpSlideStatementMoverTest` for Move Statement through the editor actions; the tight-deck cases use real parsed decks, including a `# A` directly above `---` and two `---` lines in a row, see "Slide model"), slide folding (regions from the builder, and the real fold model after the initial folding pass next to the Markdown regions), `MarpBridgeState` (state setters and commands), `MarpPageReplies`, `MarpPdfSettings`, `MarpExportFormat`, `MarpScrollEchoGuard`, `MarpLinkPolicy` (and request
   routing), `MarpResourcePaths`, `MarpJcefStartup`, the `.marprc` parser, `MarpThemePaths`, `MarpThemeFolder`,
-  `MarpThemeWatch`, `MarpThemeNames` and the theme URL validation of the settings page. The directive features have plain
+  `MarpThemeWatch`, `MarpThemeNames`, `MarpThemeClasses` (selector forms, comments and strings, nesting, at-rules), `MarpClassValues` (theme choice and offered values) and the theme URL validation of the settings page. The directive features have plain
   unit tests for the catalog and the comment parser, and light platform tests for highlighting, completion (including
-  the automatic popup with `CompletionAutoPopupTester`), documentation and the inspection. The image syntax has a
+  the automatic popup with `CompletionAutoPopupTester`, and `MarpClassCompletionTest` for `class` values with custom themes), documentation and the inspection. The image syntax has a
   plain unit test for the catalog and the alt text finder and light platform tests for completion, the automatic popup
   and documentation.
 - Export: `MarpExportActionsTest` (both actions registered, in `FileExportGroup` and in the toolbar popup, hidden without a

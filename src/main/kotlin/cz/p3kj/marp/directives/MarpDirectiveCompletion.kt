@@ -69,7 +69,7 @@ class MarpDirectiveCompletionContributor : CompletionContributor(), DumbAware {
     /** The values of the directive [key] resolves to, in the order of the list: the common values come first. */
     private fun addValues(result: CompletionResultSet, spot: MarpCompletionSpot.Value, key: MarpDirectiveKey, file: PsiFile) {
         val directive = (key as? MarpDirectiveKey.Known)?.directive ?: return
-        val values = MarpDirectiveCompletion.values(directive, file)
+        val values = MarpDirectiveCompletion.values(directive, file).filter { it !in spot.taken }
         if (values.isEmpty()) return
         val prefixed = result.withPrefixMatcher(spot.prefix)
         values.forEachIndexed { index, value ->
@@ -219,9 +219,19 @@ internal object MarpDirectiveCompletion {
 
     fun hasValues(directive: MarpDirective): Boolean = directive.suggestions.isNotEmpty() || directive.themeValue
 
-    /** The values to offer for [directive]: its suggestions, and for `theme` the built-in and the custom theme names. */
+    /**
+     * The values to offer for [directive]: its suggestions, for `theme` the built-in and the custom theme names, and for
+     * `class` also the classes of the theme of the deck. A deck without a `theme` value never starts a theme load here.
+     */
     fun values(directive: MarpDirective, file: PsiFile): List<String> {
-        if (!directive.themeValue) return directive.suggestions
-        return (MarpDirectiveCatalog.BUILT_IN_THEMES + MarpThemeService.getInstance(file.project).cachedThemeNames()).distinct()
+        if (directive.themeValue) {
+            return (MarpDirectiveCatalog.BUILT_IN_THEMES + MarpThemeService.getInstance(file.project).cachedThemeNames()).distinct()
+        }
+        if (directive.classValue) {
+            val themes = MarpClassValues.themeValuesOf(file)
+            val custom = if (themes.isEmpty()) emptyMap() else MarpThemeService.getInstance(file.project).cachedThemeClasses()
+            return MarpClassValues.offered(themes, custom)
+        }
+        return directive.suggestions
     }
 }

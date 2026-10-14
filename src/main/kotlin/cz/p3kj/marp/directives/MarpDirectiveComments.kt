@@ -67,7 +67,8 @@ data class MarpParsedComment(
 /** What can be completed at the caret of a directive comment. [prefix] is the text typed so far. */
 sealed interface MarpCompletionSpot {
     data class Key(val prefix: String) : MarpCompletionSpot
-    data class Value(val key: String, val prefix: String) : MarpCompletionSpot
+    /** [taken] are the words before the prefix in a value of words (`class: lead in`), empty for every other value. */
+    data class Value(val key: String, val prefix: String, val taken: List<String> = emptyList()) : MarpCompletionSpot
 }
 
 /**
@@ -96,6 +97,9 @@ object MarpDirectiveComments {
 
     private val KEY_PREFIX = Regex("^_?[\\w-]*$")
     private val VALUE_PREFIX = Regex("^([\"']?)([^\\s\"':#][^:\"']*?)\\1[ \\t]*:[ \\t]+([^\\s\"']*)$")
+
+    /** The value of a directive with several words (`class: lead in`): the finished words, then the word being typed. */
+    private val WORDS_VALUE_PREFIX = Regex("^([\"']?)([^\\s\"':#][^:\"']*?)\\1[ \\t]*:[ \\t]+((?:[^\\s\"']+[ \\t]+)+)([^\\s\"']*)$")
 
     // Text part -------------------------------------------------------------------------------------------------------
 
@@ -248,8 +252,12 @@ object MarpDirectiveComments {
      */
     internal fun spotInLine(prefix: String): MarpCompletionSpot? {
         if (KEY_PREFIX.matches(prefix)) return MarpCompletionSpot.Key(prefix)
-        val value = VALUE_PREFIX.matchEntire(prefix) ?: return null
-        return MarpCompletionSpot.Value(value.groupValues[2], value.groupValues[3])
+        val value = VALUE_PREFIX.matchEntire(prefix)
+        if (value != null) return MarpCompletionSpot.Value(value.groupValues[2], value.groupValues[3])
+        val words = WORDS_VALUE_PREFIX.matchEntire(prefix) ?: return null
+        val key = words.groupValues[2]
+        if (MarpDirectiveCatalog.find(key.removePrefix("_"))?.classValue != true) return null
+        return MarpCompletionSpot.Value(key, words.groupValues[4], words.groupValues[3].trim().split(Regex("[ \\t]+")))
     }
 
     // PSI part --------------------------------------------------------------------------------------------------------
