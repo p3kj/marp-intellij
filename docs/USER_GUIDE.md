@@ -260,5 +260,5 @@ Live preview, scroll sync, custom themes, math, Twemoji, inline HTML modes and r
 - Decks that use `headingDivider` cannot be reordered. Slides cannot be dragged in the Structure view or in the normal preview, and only one at a time in the overview.
 - PPTX and image export always export the whole deck: no single slide, no editable PPTX, no image scale, no notes.
 - Present Deck is a snapshot, with no live reload.
-- The bundled Markdown plugin folds the front matter of a sample deck inside a fenced `markdown` code block. That fold is not Marp's and is reported to JetBrains.
+- The bundled Markdown plugin folds the front matter of a sample deck inside a fenced `markdown` code block. That fold is not Marp's: it comes from the Markdown plugin.
 - Marp CLI on Windows and Remote Development (JetBrains Gateway) are not tested. On a thin client the preview may stay empty, because JCEF has to run in the process that shows the editor. Please report what you see.
