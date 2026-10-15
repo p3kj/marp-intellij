@@ -1,13 +1,18 @@
 package cz.p3kj.marp.folding
 
 import com.intellij.lang.folding.FoldingDescriptor
+import com.intellij.lang.injection.InjectedLanguageManager
 import com.intellij.lang.folding.LanguageFolding
 import com.intellij.openapi.application.runReadActionBlocking
 import com.intellij.openapi.project.DumbService
+import com.intellij.psi.PsiDocumentManager
 import com.intellij.testFramework.EditorTestUtil
 import cz.p3kj.marp.MarpBundle
+import cz.p3kj.marp.MarpDetector
 import cz.p3kj.marp.MarpLightTestCase
+import cz.p3kj.marp.directives.MarpDirectiveComments
 import org.intellij.plugins.markdown.lang.MarkdownLanguage
+import org.intellij.plugins.markdown.lang.psi.impl.MarkdownFile
 
 class MarpSlideFoldingBuilderTest : MarpLightTestCase() {
 
@@ -193,6 +198,22 @@ class MarpSlideFoldingBuilderTest : MarpLightTestCase() {
             ),
             regions.map { it.placeholder },
         )
+    }
+
+    fun testNoRegionsInADeckSampleInsideAMarkdownCodeFence() {
+        val sample = "---\nmarp: true\ntheme: showcase\n---\n\n# Hello, Marp\n\nSlides in your IDE, live.\n\n---\n\n## Second slide"
+        val text = "---\nmarp: true\n---\n\n# Docs\n\nSample:\n\n```markdown\n$sample\n```\n\n---\n\n# Next\n\ntext\n"
+        myFixture.configureByText("deck.md", text)
+        val host = InjectedLanguageManager.getInstance(project).getTopLevelFile(myFixture.file)
+        val injected = InjectedLanguageManager.getInstance(project)
+            .findInjectedElementAt(host, text.indexOf("Slides in your IDE"))?.containingFile
+        assertNotNull("markdown fence injected, is the fence injection module loaded in tests?", injected)
+        assertTrue(injected is MarkdownFile)
+        assertTrue(MarpDetector.isMarp(injected!!.viewProvider.contents))
+        assertFalse(MarpDirectiveComments.isMarpDeck(injected))
+        val document = PsiDocumentManager.getInstance(project).getDocument(injected)!!
+        assertEquals(0, runReadActionBlocking { builder.buildFoldRegions(injected, document, false).size })
+        assertTrue(runReadActionBlocking { builder.buildFoldRegions(host, myFixture.editor.document, false).isNotEmpty() })
     }
 
     fun testNoRegionsInPlainMarkdown() {

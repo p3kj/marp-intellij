@@ -156,7 +156,8 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
         return loadMutex.withLock {
             cached?.let { return@withLock it }
             val startedAt = generation.get()
-            val result = withContext(Dispatchers.IO) { resolve() }
+            // The slide classes are parsed here, so that completion only reads them.
+            val result = withContext(Dispatchers.IO) { resolve().also { classesOf(it) } }
             if (startedAt == generation.get()) cached = result
             result
         }
@@ -173,6 +174,20 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
             return emptyList()
         }
         return namesOf(set)
+    }
+
+    /**
+     * The slide classes of every named custom theme of the cached set, for `class` completion: never suspends and never
+     * blocks. While nothing is cached it starts loading in the background and returns an empty map, like
+     * [cachedThemeNames]. A theme that styles no class maps to an empty list, the last declaration of a name wins.
+     */
+    fun cachedThemeClasses(): Map<String, List<String>> {
+        val set = cached
+        if (set == null) {
+            cs.launch { loadThemes() }
+            return emptyMap()
+        }
+        return classesOf(set)
     }
 
     /**
@@ -210,6 +225,32 @@ class MarpThemeService(private val project: Project, private val cs: CoroutineSc
 
     @Volatile
     private var names: Pair<MarpThemeSet, List<String>>? = null
+
+    /** The classes of one set are parsed once, when it is loaded. */
+    private fun classesOf(set: MarpThemeSet): Map<String, List<String>> {
+        classes?.let { if (it.first === set) return it.second }
+        val result = set.themes.mapNotNull { theme ->
+            MarpThemeNames.nameOf(theme.css)?.let { it to slideClassesOf(theme) }
+        }.toMap()
+        classes = set to result
+        return result
+    }
+
+    /** Class completion must never break theme loading: a stylesheet that cannot be scanned has no classes. */
+    private fun slideClassesOf(theme: MarpThemeCss): List<String> = try {
+        MarpThemeClasses.classesOf(theme.css)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: RuntimeException) {
+        LOG.warn("Cannot read the slide classes of theme ${theme.source}", e)
+        emptyList()
+    } catch (e: StackOverflowError) {
+        LOG.warn("Cannot read the slide classes of theme ${theme.source}", e)
+        emptyList()
+    }
+
+    @Volatile
+    private var classes: Pair<MarpThemeSet, Map<String, List<String>>>? = null
 
     private val inspectionLoad = AtomicBoolean()
 

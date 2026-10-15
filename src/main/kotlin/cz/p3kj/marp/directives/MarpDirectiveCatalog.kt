@@ -17,6 +17,7 @@ enum class MarpValueCheck { NONE, ONE_OF, ONE_OF_IGNORE_CASE, HEADING_DIVIDER }
 /**
  * One Marp directive. [suggestions] are the values offered by completion and, with [MarpValueCheck.ONE_OF] or
  * [MarpValueCheck.ONE_OF_IGNORE_CASE], the only valid ones. [themeValue] marks `theme`, whose values are theme names.
+ * [classValue] marks `class`: the value is slide classes separated by spaces.
  * The documentation text lives in the message bundle under [docKey].
  */
 data class MarpDirective(
@@ -26,6 +27,7 @@ data class MarpDirective(
     val suggestions: List<String> = emptyList(),
     val check: MarpValueCheck = MarpValueCheck.NONE,
     val themeValue: Boolean = false,
+    val classValue: Boolean = false,
 ) {
     val docKey: String get() = "directive.doc.$name"
 }
@@ -58,6 +60,16 @@ object MarpDirectiveCatalog {
     /** Themes that ship with marp-core. */
     val BUILT_IN_THEMES: List<String> = listOf("default", "gaia", "uncover")
 
+    /**
+     * The slide classes the built-in themes style, from the `section:where(.x)` rules of marp-core 4.4: `default` and
+     * `uncover` only `invert`, `gaia` also `lead` and `gaia`.
+     */
+    val BUILT_IN_THEME_CLASSES: Map<String, List<String>> = mapOf(
+        "default" to listOf("invert"),
+        "gaia" to listOf("lead", "invert", "gaia"),
+        "uncover" to listOf("invert"),
+    )
+
     val ALL: List<MarpDirective> = listOf(
         MarpDirective("theme", MarpDirectiveScope.GLOBAL, themeValue = true),
         MarpDirective("style", MarpDirectiveScope.GLOBAL),
@@ -77,7 +89,7 @@ object MarpDirectiveCatalog {
         ),
         MarpDirective("header", MarpDirectiveScope.LOCAL),
         MarpDirective("footer", MarpDirectiveScope.LOCAL),
-        MarpDirective("class", MarpDirectiveScope.LOCAL, suggestions = listOf("lead", "invert")),
+        MarpDirective("class", MarpDirectiveScope.LOCAL, suggestions = listOf("lead", "invert"), classValue = true),
         MarpDirective("backgroundColor", MarpDirectiveScope.LOCAL),
         MarpDirective("backgroundImage", MarpDirectiveScope.LOCAL),
         MarpDirective(
