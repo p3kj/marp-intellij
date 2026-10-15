@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-10-15
+
 ### Fixed
 
 - `class` completion offers the classes of the deck's theme next to `lead` and `invert`: the `section.<name>` classes of a custom theme's CSS, `gaia` for the gaia theme, and the classes of all custom themes when the deck's theme cannot be found. It also completes a second class after a space and does not offer a class twice
@@ -27,5 +29,6 @@
 - MathJax or KaTeX, Twemoji, local images and backgrounds, inline HTML modes
 - Locked-down preview page and a restricted mode for untrusted projects
 
-[Unreleased]: https://github.com/p3kj/marp-intellij/compare/0.9.0...HEAD
+[Unreleased]: https://github.com/p3kj/marp-intellij/compare/0.9.1...HEAD
+[0.9.1]: https://github.com/p3kj/marp-intellij/compare/0.9.0...0.9.1
 [0.9.0]: https://github.com/p3kj/marp-intellij/commits/0.9.0
