@@ -45,6 +45,6 @@ A version like `0.2.0-beta.1` is published to the `beta` channel. Users subscrib
 
 ## After the first Marketplace release
 
-- README: in the Installation section, make the Marketplace path the main one and drop the "not on the Marketplace yet" sentence.
+- README: in the Installation section, add the Marketplace steps (Settings | Plugins, Marketplace tab, search "Marp Preview", Install) as the main path, keep the ZIP steps as the alternative and drop the "not on the Marketplace yet" sentence.
 - README: uncomment the Marketplace version and downloads badges and replace `NNNNN` with the numeric plugin id.
 - Node: `NODE_VERSION` in the workflows is 24. Node 26 becomes LTS on 2026-10-28, bump it then (Dependabot does not change `env:` values).

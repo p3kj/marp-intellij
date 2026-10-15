@@ -3,6 +3,7 @@ package cz.p3kj.marp.notifications
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditor
 import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.fileEditor.TextEditor
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
@@ -40,10 +41,11 @@ class MarpEditorNotificationProvider : EditorNotificationProvider, DumbAware {
         }
     }
 
-    private fun reopen(project: Project, file: VirtualFile) {
+    internal fun reopen(project: Project, file: VirtualFile) {
         if (project.isDisposed || !file.isValid) return
-        val manager = FileEditorManager.getInstance(project)
-        manager.closeFile(file)
-        manager.openFile(file, true)
+        FileEditorManager.getInstance(project).closeFile(file)
+        // Not FileEditorManager.openFile: deprecated in 263, its replacement requestOpenFile is experimental.
+        // The current window is forced, so a tab in a detached window is not reused.
+        OpenFileDescriptor(project, file).setUseCurrentWindow(true).navigateInEditor(project, true)
     }
 }

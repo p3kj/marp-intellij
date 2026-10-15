@@ -1,8 +1,8 @@
 # Architecture
 
 Marp Preview renders Marp decks with [marp-core](https://github.com/marp-team/marp-core) inside JCEF (the IDE's
-Chromium). The plugin owns its split editor; it does not plug into the bundled Markdown preview (that has no stable
-renderer API).
+Chromium). The plugin owns its split editor; it does not plug into the bundled Markdown preview. That preview renders a
+document, not a deck (no slide breaks, directives, themes or backgrounds), and it has no stable renderer API.
 
 ```
 Markdown file with `marp: true`
@@ -278,6 +278,7 @@ string:
 
 ## Kotlin contracts
 
+- The "Marp deck detected" banner (`MarpEditorNotificationProvider`) reopens the file with `FileEditorManager.closeFile` and `OpenFileDescriptor(project, file).setUseCurrentWindow(true).navigateInEditor(project, true)`, so `MarpSplitEditorProvider` takes over. Not used there: `FileEditorManager.openFile` (deprecated in 263; its replacement `requestOpenFile` is experimental) and `NavigationService` (signatures differ between 262 and 263). The three calls in `MarpStructureView`, `MarpPreviewPanel` and `MarpThemeQuickFixes` still use `OpenFileDescriptor.navigate`, which is override-only since 263 and not flagged by the verifier yet (known follow-up).
 - `MarpSettings` (project service, `.idea/marp.xml`): `themes`, `useMarprcThemeSet`, `html`, `math`;
   `update { }` publishes `MarpSettingsListener.TOPIC` when the block changed anything.
 - `MarpAppSettings` (application service, `options/marp.xml`, settings category Tools): `scrollSync`,
@@ -590,7 +591,7 @@ The front matter is covered in the "Front matter" bullet at the end of this sect
     `MarpThemeChooser.choose` so tests can replace it.
   - Not used: `DaemonCodeAnalyzer.restart()` and `restart(PsiFile)` (deprecated),
     `FileChooserDescriptorFactory.createSingleFileOrFolderDescriptor*` (obsolete), `FileEditorManager.openFile` overloads
-    (experimental flags, `OpenFileDescriptor` instead).
+    (deprecated since 263, the replacements are experimental, `OpenFileDescriptor` instead).
 - Theme navigation (#8): `MarpThemeGotoDeclarationHandler` (`GotoDeclarationHandler`, `DumbAware`) opens the CSS file of a
   custom theme from the value of `theme:` (front matter and comments, not `_theme`). It is a handler rather than a
   reference because the platform asks handlers first, before references, about the injected YAML and then about the host
@@ -834,7 +835,7 @@ condition as the export actions) and `MarpPresenter`. Since #20 there are two wa
 - Security and trust: same content rules as the HTML export (untrusted project: HTML off and no custom themes; `html: all`
   in a trusted project keeps the deck's scripts). The only script added is `runPresentation`, which does no network
   access and no `fetch`.
-- Limits: browsers installed as Snap or Flatpak cannot read the temp folder (README, troubleshooting). Out of scope for
+- Limits: browsers installed as Snap or Flatpak cannot read the temp folder (USER_GUIDE.md, Troubleshooting). Out of scope for
   this page (the presentation of Marp CLI below has some of them): presenter view and notes, timers, remote control, click, touch and swipe navigation, on-screen controls, transitions, a
   slide counter, live reload of the browser, a JCEF presentation window, deleting files before the IDE exits. Not used:
   a second or offscreen JCEF browser (its own resource handler, CSP, navigation policy, focus and per-OS full screen),

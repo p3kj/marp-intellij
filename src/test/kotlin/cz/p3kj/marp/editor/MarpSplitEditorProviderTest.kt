@@ -4,6 +4,7 @@ import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.application.runReadActionBlocking
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.FileEditorPolicy
 import com.intellij.openapi.vfs.VirtualFile
 import cz.p3kj.marp.MarpDetector
@@ -68,6 +69,24 @@ class MarpSplitEditorProviderTest : MarpLightTestCase() {
         assertNotNull(runReadActionBlocking { provider.collectNotificationData(project, marp) })
         assertNull(runReadActionBlocking { provider.collectNotificationData(project, plain) })
         assertTrue(documents.all { it != null })
+    }
+
+    fun testReopenOpensTheFileAgain() {
+        val file = myFixture.configureByText("reopen.md", deck).virtualFile
+        val manager = FileEditorManager.getInstance(project)
+        val before = manager.getSelectedEditor(file)
+        assertNotNull(before)
+        MarpEditorNotificationProvider().reopen(project, file)
+        assertTrue(manager.isFileOpen(file))
+        assertEquals(file, manager.selectedFiles.firstOrNull())
+        assertNotSame(before, manager.getSelectedEditor(file))
+    }
+
+    fun testReopenIgnoresAnInvalidFile() {
+        val file = myFixture.addFileToProject("gone.md", deck).virtualFile
+        WriteAction.runAndWait<Throwable> { file.delete(this) }
+        MarpEditorNotificationProvider().reopen(project, file)
+        assertFalse(FileEditorManager.getInstance(project).isFileOpen(file))
     }
 
     fun testUntrustedProjectsRenderNoHtml() {
