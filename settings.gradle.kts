@@ -4,7 +4,7 @@ rootProject.name = "marp-intellij"
 
 pluginManagement {
     plugins {
-        id("org.jetbrains.kotlin.jvm") version "2.4.20"
+        id("org.jetbrains.kotlin.jvm") version "2.4.21"
         id("org.jetbrains.changelog") version "2.5.0"
         id("org.jetbrains.kotlinx.kover") version "0.9.11"
     }
@@ -15,8 +15,8 @@ pluginManagement {
 buildscript {
     dependencies {
         constraints {
-            classpath("com.fasterxml.jackson.core:jackson-databind:2.21.7")
-            classpath("org.jsoup:jsoup:1.23.1")
+            classpath("com.fasterxml.jackson.core:jackson-databind:2.22.3")
+            classpath("org.jsoup:jsoup:1.23.2")
         }
     }
 }
