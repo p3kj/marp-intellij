@@ -8,6 +8,7 @@
 
 - `class` completion offers the classes of the deck's theme next to `lead` and `invert`: the `section.<name>` classes of a custom theme's CSS, `gaia` for the gaia theme, and the classes of all custom themes when the deck's theme cannot be found. It also completes a second class after a space and does not offer a class twice
 - A sample deck inside a fenced `markdown` code block is left alone: no slide folds, directive colors or Marp inspections in it. The fold on its front matter comes from the bundled Markdown plugin, not from Marp
+- Ready for 2026.3: the "Marp deck detected" banner reopens the file without an editor API that is deprecated there, so the Plugin Verifier no longer warns about it
 
 ## [0.9.0] - 2026-10-15
 
