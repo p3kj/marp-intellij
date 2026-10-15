@@ -38,5 +38,5 @@ cd webview && npm run notices        # after webview dependency changes
 
 1. `./gradlew check` passes.
 2. `cd webview && npm test` passes when the webview changed.
-3. New strings are in the bundle, docs and CHANGELOG are updated.
+3. New strings are in the bundle, docs and CHANGELOG are updated. User-facing behavior goes into `docs/USER_GUIDE.md`, the README gets at most a feature bullet.
 4. No em dashes in the diff.

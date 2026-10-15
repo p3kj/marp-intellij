@@ -1,6 +1,7 @@
 package cz.p3kj.marp.directives
 
 import com.intellij.lang.ASTNode
+import com.intellij.lang.injection.InjectedLanguageManager
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
@@ -66,7 +67,8 @@ data class MarpParsedComment(
 /** What can be completed at the caret of a directive comment. [prefix] is the text typed so far. */
 sealed interface MarpCompletionSpot {
     data class Key(val prefix: String) : MarpCompletionSpot
-    data class Value(val key: String, val prefix: String) : MarpCompletionSpot
+    /** [taken] are the words before the prefix in a value of words (`class: lead in`), empty for every other value. */
+    data class Value(val key: String, val prefix: String, val taken: List<String> = emptyList()) : MarpCompletionSpot
 }
 
 /**
@@ -95,6 +97,10 @@ object MarpDirectiveComments {
 
     private val KEY_PREFIX = Regex("^_?[\\w-]*$")
     private val VALUE_PREFIX = Regex("^([\"']?)([^\\s\"':#][^:\"']*?)\\1[ \\t]*:[ \\t]+([^\\s\"']*)$")
+
+    /** The value of a directive with several words (`class: lead in`): every word after the colon, no quotes. */
+    private val WORDS_VALUE_PREFIX = Regex("^([\"']?)([^\\s\"':#][^:\"']*?)\\1[ \\t]*:[ \\t]+([^\"']*)$")
+    private val WHITE_SPACE = Regex("[ \\t]+")
 
     // Text part -------------------------------------------------------------------------------------------------------
 
@@ -247,8 +253,20 @@ object MarpDirectiveComments {
      */
     internal fun spotInLine(prefix: String): MarpCompletionSpot? {
         if (KEY_PREFIX.matches(prefix)) return MarpCompletionSpot.Key(prefix)
-        val value = VALUE_PREFIX.matchEntire(prefix) ?: return null
-        return MarpCompletionSpot.Value(value.groupValues[2], value.groupValues[3])
+        val value = VALUE_PREFIX.matchEntire(prefix)
+        if (value != null) return MarpCompletionSpot.Value(value.groupValues[2], value.groupValues[3])
+        return wordsSpot(prefix)
+    }
+
+    /** The spot in a value of words (`class: lead in`), only for the directives that take several, see [MarpDirective.classValue]. */
+    private fun wordsSpot(prefix: String): MarpCompletionSpot.Value? {
+        val colon = prefix.indexOf(':')
+        if (colon < 0 || MarpDirectiveCatalog.find(prefix.substring(0, colon).trim().trim('"', '\'').removePrefix("_"))?.classValue != true) return null
+        val words = WORDS_VALUE_PREFIX.matchEntire(prefix) ?: return null
+        val key = words.groupValues[2]
+        if (MarpDirectiveCatalog.find(key.removePrefix("_"))?.classValue != true) return null
+        val all = words.groupValues[3].split(WHITE_SPACE)
+        return MarpCompletionSpot.Value(key, all.last(), all.dropLast(1).filter { it.isNotEmpty() })
     }
 
     // PSI part --------------------------------------------------------------------------------------------------------
@@ -256,9 +274,13 @@ object MarpDirectiveComments {
     /** The Markdown tree of [file]: the file itself, or the Markdown side of a multi-language view provider. */
     fun markdownFile(file: PsiFile): MarkdownFile? = file.viewProvider.allFiles.firstOrNull { it is MarkdownFile } as? MarkdownFile
 
-    /** `true` when [file] is Markdown with `marp: true` in its front matter. Cached until the file changes. */
+    /**
+     * `true` when [file] is Markdown with `marp: true` in its front matter. Cached until the file changes. Markdown in a
+     * fenced `markdown` code block is injected as a file of its own: a sample deck there is no deck.
+     */
     fun isMarpDeck(file: PsiFile): Boolean {
         val markdown = markdownFile(file) ?: return false
+        if (InjectedLanguageManager.getInstance(markdown.project).isInjectedFragment(markdown)) return false
         return CachedValuesManager.getCachedValue(markdown) {
             CachedValueProvider.Result.create(MarpDetector.isMarp(markdown.viewProvider.contents), markdown)
         }

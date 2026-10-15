@@ -371,6 +371,11 @@ class MarpSlideParserTest : MarpLightTestCase() {
         assertEquals(listOf("A", "B"), second.slides.map { it.title })
     }
 
+    fun testDeckListsTheCommentsInOrderWithoutTheFrontMatter() {
+        val text = "---\nmarp: true\ntheme: a # <!-- not a comment -->\n---\n\n<!-- one -->\n\n# Title <!-- two -->\n\n---\n\ntext <!-- three --> more\n\n> <!-- four -->\n"
+        assertEquals(listOf("<!-- one -->", "<!-- two -->", "<!-- three -->", "<!-- four -->"), deck(text).comments)
+    }
+
     fun testLargeDeckIsParsedQuickly() {
         val slide = "# Slide\n\nSome text\n\n- a\n- b\n\n---\n\n"
         val text = front + slide.repeat(2_000)

@@ -49,8 +49,11 @@ data class MarpSlide(
     val title: String? get() = headings.firstOrNull()?.text?.takeIf { it.isNotEmpty() }
 }
 
-/** The slides of a document (always at least one) and the heading levels that start new slides. */
-data class MarpDeck(val slides: List<MarpSlide>, val headingDivider: Set<Int>) {
+/**
+ * The slides of a document (always at least one), the heading levels that start new slides and the text of every HTML
+ * comment outside the front matter ([comments], block and inline, in document order: the directives live there).
+ */
+data class MarpDeck(val slides: List<MarpSlide>, val headingDivider: Set<Int>, val comments: List<String> = emptyList()) {
 
     /**
      * Index of the slide that contains [offset]. An offset on a separator line belongs to the slide that separator
@@ -128,7 +131,7 @@ object MarpSlideSplitter {
             }.coerceIn(start, end)
             slides += MarpSlide(index, start, end, body, contentOffset(text, start, body, end), headings[index])
         }
-        return MarpDeck(slides, levels)
+        return MarpDeck(slides, levels, comments)
     }
 
     /** The first non-blank line start of `[body, end)`; without one, [body] if it is inside the slide, else [start]. */

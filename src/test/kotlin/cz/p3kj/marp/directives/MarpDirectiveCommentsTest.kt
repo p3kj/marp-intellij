@@ -275,10 +275,28 @@ class MarpDirectiveCommentsTest {
     }
 
     @Test
+    fun classValuesAreSpaceSeparatedWords() {
+        assertEquals(MarpCompletionSpot.Value("class", "in", listOf("lead")), spot("<!-- class: lead in| -->"))
+        assertEquals(MarpCompletionSpot.Value("_class", "", listOf("lead", "invert")), spot("<!-- _class: lead invert | -->"))
+        assertNull(spot("<!-- paginate: true h| -->"))
+        assertNull(spot("<!-- theme: a b| -->"))
+        assertNull(spot("<!-- Class: lead in| -->"))
+    }
+
+    @Test(timeout = 10_000)
+    fun aLongNoteIsNoSpotAndDoesNotOverflow() {
+        assertNull(spot("<!-- Notes: " + "word ".repeat(5000) + "| -->"))
+        assertNull(spot("<!-- Notes: " + "word ".repeat(5000) + "word| -->"))
+        val value = spot("<!-- class: " + "lead ".repeat(5000) + "in| -->") as MarpCompletionSpot.Value
+        assertEquals("in", value.prefix)
+        assertEquals(5000, value.taken.size)
+    }
+
+    @Test
     fun noSpotInASentence() {
         assertNull(spot("<!-- Say hello, then| -->"))
         assertNull(spot("<!-- Say hello| world -->"))
-        assertNull(spot("<!-- class: lead in| -->"))
+        assertNull(spot("<!-- header: Hello wor| -->"))
         assertNull(spot("<!-- see https://exa| -->"))
     }
 }

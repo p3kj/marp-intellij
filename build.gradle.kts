@@ -87,6 +87,8 @@ intellijPlatform {
 changelog {
     groups.empty()
     repositoryUrl = providers.gradleProperty("pluginRepositoryUrl")
+    // Release tags are the bare version (the Release workflow checks the tag against it), so links use 0.9.0, not v0.9.0.
+    versionPrefix = ""
 }
 
 kover {

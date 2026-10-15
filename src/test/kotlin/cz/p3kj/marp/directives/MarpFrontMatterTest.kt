@@ -129,6 +129,11 @@ class MarpFrontMatterTest {
     }
 
     @Test
+    fun classValueSpotHasTheWordsBeforeIt() {
+        assertEquals(MarpCompletionSpot.Value("class", "t", listOf("lead")), spot("---\nmarp: true\nclass: lead t|\n---\n"))
+    }
+
+    @Test
     fun noSpotOnIndentedLinesOrListItems() {
         assertNull(spot("---\nmarp: true\nimages:\n  pa|\n---\n"))
         assertNull(spot("---\nmarp: true\ntags:\n  - pa|\n---\n"))

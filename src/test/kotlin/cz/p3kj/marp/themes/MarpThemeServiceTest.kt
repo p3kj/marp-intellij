@@ -102,6 +102,28 @@ class MarpThemeServiceTest : MarpLightTestCase() {
         assertSame(service.cachedThemeNames(), service.cachedThemeNames())
     }
 
+    fun testCachedThemeClassesForCompletion() {
+        write("a.css", "/* @theme alpha */\nsection.one{} section.two h1{}")
+        write("b.css", "/* @theme beta */\nsection.three{}")
+        write("c.css", "section.unnamed{}")
+        settings(false, "a.css", "b.css", "c.css")
+        // Nothing is cached yet: the call does not wait for the themes, it only starts loading them.
+        assertEquals(emptyMap<String, List<String>>(), service.cachedThemeClasses())
+        load()
+        assertEquals(mapOf("alpha" to listOf("one", "two"), "beta" to listOf("three")), service.cachedThemeClasses())
+        // The classes of a cached set are parsed once.
+        assertSame(service.cachedThemeClasses(), service.cachedThemeClasses())
+    }
+
+    fun testCachedThemeClassesOfADuplicateNameAreTheLastOnes() {
+        write("a.css", "/* @theme alpha */\nsection.first{}")
+        write("b.css", "/* @theme alpha */\nsection.second{}")
+        write("c.css", "/* @theme beta */")
+        settings(false, "a.css", "b.css", "c.css")
+        load()
+        assertEquals(mapOf("alpha" to listOf("second"), "beta" to emptyList<String>()), service.cachedThemeClasses())
+    }
+
     fun testCachedThemeFileForNavigation() {
         val alpha = write("a.css", "/* @theme alpha */")
         write("b.css", "section {}")
