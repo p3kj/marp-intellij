@@ -13,7 +13,7 @@
     "dev": "node dev/serve.mjs"
   },
   "dependencies": {
-    "@marp-team/marp-core": "4.4.0"
+    "@marp-team/marp-core": "5.0.2"
   },
   "devDependencies": {
     "esbuild": "0.28.2",
