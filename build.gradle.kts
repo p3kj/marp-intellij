@@ -33,9 +33,9 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // Patched versions of libraries of the IntelliJ test framework (Dependabot alerts). Tests only, never shipped.
     // The test framework is resolved through this configuration of the IntelliJ Platform Gradle Plugin.
-    "intellijPlatformTestDependencies"(platform("io.opentelemetry:opentelemetry-bom:1.62.0"))
+    "intellijPlatformTestDependencies"(platform("io.opentelemetry:opentelemetry-bom:1.67.0"))
     constraints {
-        "intellijPlatformTestDependencies"("tools.jackson.core:jackson-databind:3.1.7")
+        "intellijPlatformTestDependencies"("tools.jackson.core:jackson-databind:3.2.3")
     }
 
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html
