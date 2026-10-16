@@ -1,10 +1,8 @@
 # Marp Preview
 
 [![Build](https://github.com/p3kj/marp-intellij/actions/workflows/build.yml/badge.svg)](https://github.com/p3kj/marp-intellij/actions/workflows/build.yml)
-<!-- Enable after the first Marketplace release, replace NNNNN with the numeric plugin id:
-[![Version](https://img.shields.io/jetbrains/plugin/v/NNNNN-marp-preview.svg)](https://plugins.jetbrains.com/plugin/NNNNN-marp-preview)
-[![Downloads](https://img.shields.io/jetbrains/plugin/d/NNNNN-marp-preview.svg)](https://plugins.jetbrains.com/plugin/NNNNN-marp-preview)
--->
+[![Version](https://img.shields.io/jetbrains/plugin/v/35113-marp-preview.svg)](https://plugins.jetbrains.com/plugin/35113-marp-preview)
+[![Downloads](https://img.shields.io/jetbrains/plugin/d/35113-marp-preview.svg)](https://plugins.jetbrains.com/plugin/35113-marp-preview)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ![Marp Preview: write Markdown, get slides, live in every JetBrains IDE](docs/media/social-preview.png)
@@ -59,11 +57,13 @@ More in the [screenshots](docs/SCREENSHOTS.md): slide overview and drag to reord
 
 ## Installation
 
-The plugin is not on the JetBrains Marketplace yet. Install a release build from disk:
+Install it from the [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/35113-marp-preview): open Settings | Plugins | Marketplace in the IDE, search for "Marp Preview" and click Install. No restart is needed.
+
+To install a specific release or your own build instead:
 
 1. Download `marp-intellij-<version>.zip` from the [Releases](https://github.com/p3kj/marp-intellij/releases) page, or build it yourself (see [Development](#development)).
 2. Open Settings | Plugins, click the gear icon and choose Install Plugin from Disk.
-3. Select the ZIP without unpacking it. No restart is needed.
+3. Select the ZIP without unpacking it.
 
 It needs an IntelliJ-based IDE on the 2026.2 platform or newer (IntelliJ IDEA, PhpStorm, WebStorm, PyCharm, GoLand, CLion, Rider, RubyMine and others) running on the JetBrains Runtime with JCEF, the default in all JetBrains IDEs. Node.js and Marp CLI are only needed for PowerPoint and image export and for Marp's own presentation.
 
