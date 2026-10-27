@@ -15,7 +15,7 @@ pluginManagement {
 buildscript {
     dependencies {
         constraints {
-            classpath("com.fasterxml.jackson.core:jackson-databind:2.22.3")
+            classpath("com.fasterxml.jackson.core:jackson-databind:2.22.4")
             classpath("org.jsoup:jsoup:1.23.2")
         }
     }

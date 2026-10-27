@@ -35,7 +35,7 @@ dependencies {
     // The test framework is resolved through this configuration of the IntelliJ Platform Gradle Plugin.
     "intellijPlatformTestDependencies"(platform("io.opentelemetry:opentelemetry-bom:1.67.0"))
     constraints {
-        "intellijPlatformTestDependencies"("tools.jackson.core:jackson-databind:3.2.3")
+        "intellijPlatformTestDependencies"("tools.jackson.core:jackson-databind:3.2.4")
     }
 
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html
